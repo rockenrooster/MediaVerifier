@@ -36,7 +36,7 @@ Do not redesign the updater. Differences from the source must be listed in the d
 | Installer asset | `FastTaskMgr-Setup.exe` | `MediaVerifier-Setup.exe` |
 | Manifest asset | `FastTaskMgr-Setup.exe.manifest.json` | `MediaVerifier-Setup.exe.manifest.json` |
 | Signature asset | `FastTaskMgr-Setup.exe.manifest.sig` | `MediaVerifier-Setup.exe.manifest.sig` |
-| Portable asset | `FastTaskMgr.exe` (+ `.sha256`) | `MediaVerifier.exe` (+ `.sha256`) |
+| Portable asset | `FastTaskMgr.exe` (+ `.sha256`) | `MediaVerifier-portable.zip` (+ `.sha256`): the whole app folder, because the app is more than one file |
 | User agent | `FastTaskMgr/<version>` | `MediaVerifier/<version>` |
 | Download folder | `%LOCALAPPDATA%\FastTaskMgr\Updates` | `AppPaths.Updates` |
 | CI secret | `FASTTASKMGR_UPDATE_SIGNING_PRIVATE_KEY_PEM` | `MEDIAVERIFIER_UPDATE_SIGNING_PRIVATE_KEY_PEM` |
@@ -92,15 +92,30 @@ Manifest schema is unchanged (`schemaVersion` 1).
 
 Port with these properties:
 
-- Publish `src/MediaVerifier/MediaVerifier.csproj`: `-c Release -r win-x64 --self-contained false
-  /p:PublishSingleFile=true /p:PublishReadyToRun=true` into an intermediate folder, then copy
-  `MediaVerifier.exe` to `artifacts\` with a `.sha256` file.
-- If Inno Setup 6 is available, build `artifacts\MediaVerifier-Setup.exe`, its `.sha256`, the manifest
-  and the signature. Under GitHub Actions a missing compiler or a missing signing key is an error;
-  locally it is a warning and the signed assets are skipped.
-- The published exe must be a single file with no loose DLLs. All product dependencies are managed
-  (subplan 00, dependencies); if a native library ever appears, the installer and the portable asset
-  must be revisited before release.
+1. Run `scripts/Get-FfmpegBundle.ps1` (subplan 17). It fails the build if the bundle cannot be fetched
+   or verified.
+2. Publish `src/MediaVerifier/MediaVerifier.csproj`: `-c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishReadyToRun=true /p:EnableCompressionInSingleFile=false` into an
+   intermediate folder.
+3. Assemble the app folder `artifacts\MediaVerifier\`:
+
+   ```
+   MediaVerifier\
+     MediaVerifier.exe          self-contained single file (about 125 MB)
+     e_sqlite3.dll              SQLite 3.49.1 from SQLitePCLRaw.bundle_e_sqlite3
+     ffmpeg\                    the bundle exactly as verified (subplan 17)
+     THIRD-PARTY-NOTICES.md     licences of everything shipped (subplan 16)
+   ```
+
+   Fail if the publish output contains any file other than `MediaVerifier.exe` and `e_sqlite3.dll`
+   (ignoring `.pdb`): a new native file means a dependency was added without updating the installer
+   and this list.
+4. Write `artifacts\MediaVerifier-portable.zip` (the folder above, at the root of the zip) and its
+   `.sha256`.
+5. If Inno Setup 6 is available, build `artifacts\MediaVerifier-Setup.exe` from the folder, its
+   `.sha256`, the manifest and the signature. Under GitHub Actions a missing compiler, bundle or
+   signing key is an error; locally it is a warning and the signed assets are skipped.
+6. Check the size budgets from the master plan (app folder at most 200 MB, installer at most 90 MB)
+   and print both sizes.
 
 ## Release script and workflow
 
@@ -111,7 +126,10 @@ Port with these properties:
   .NET 10, install Inno Setup, resolve and validate the version from the tag, **run unit tests**,
   run `build.ps1 -Version <v> -NoIncrement` with the signing secret, create or update the GitHub
   release with notes taken from the matching `CHANGELOG.md` section (generated notes as the fallback),
-  upload the six assets.
+  upload the six assets (`MediaVerifier-Setup.exe`, its `.sha256`, `.manifest.json` and
+  `.manifest.sig`, `MediaVerifier-portable.zip` and its `.sha256`), and mark it as the latest release.
+  The release notes end with a line naming the bundled FFmpeg version and linking to its
+  `ffmpeg-bundle-…` release, where its source is.
 - `ci.yml` (new, not in FastTaskMgr): on pushes and pull requests to the default branch: build
   Release with warnings as errors, run unit tests, run `--self-check` on the built exe. Launch the exe
   with `Start-Process -Wait -PassThru` and test `ExitCode`; a GUI-subsystem exe does not block a
@@ -132,7 +150,11 @@ Start from FastTaskMgr's script and change:
   (`skipifnotsilent` run entry) as in the source script.
 - `[UninstallRun]`: `{app}\MediaVerifier.exe --cleanup` so scheduled tasks and per-user registry
   entries are removed. Leave the user's data folder in place and say so on the final page.
-- Files: the single exe. No FFmpeg.
+- Files: everything in `artifacts\MediaVerifier\`, recursively, with `ignoreversion`. An upgrade
+  replaces the whole `ffmpeg\` folder (`[InstallDelete]` of `{app}\ffmpeg\*` first, so DLLs from an
+  older FFmpeg with different version suffixes never linger).
+- `Compression=lzma2/ultra64` and `SolidCompression=yes` (the self-contained runtime compresses well;
+  the 90 MB installer budget depends on it).
 
 ## Signing key
 
@@ -161,8 +183,8 @@ self-check still passes because it tests the algorithm with a throwaway key.
 | U-02 | Port `UpdateService`, `UpdateTrust`, records | Compiles with the new constants; behaviour list above holds |
 | U-03 | Unit tests for trust and validation | Valid signature accepted; tampered manifest, wrong key, wrong tag, wrong version, wrong asset name, wrong size, bad hash, non-HTTPS URL, foreign host and path mismatch are each rejected |
 | U-04 | Download and install path tests against a local HTTP listener | Correct file installs to the update folder; short stream, long stream, wrong hash and wrong `Content-Length` each delete the temp file and report an error |
-| U-05 | `build.ps1`, `Directory.Build.props` versioning | Local run produces `artifacts\MediaVerifier.exe` as a single file; version increments; `-NoIncrement` and `-Version` honoured; without a key the manifest is skipped with a warning |
-| U-06 | `installer/MediaVerifier.iss` | Compiles with Inno Setup 6; per-user install without elevation; upgrade in place keeps settings; uninstall removes tasks and registry entries; silent install relaunches the app |
+| U-05 | `build.ps1`, `Directory.Build.props` versioning | Local run produces the `artifacts\MediaVerifier\` folder exactly as listed and the portable zip; the folder runs on a machine with no .NET installed; version increments; `-NoIncrement` and `-Version` honoured; without a key the manifest is skipped with a warning; an unexpected file in the publish output fails the build |
+| U-06 | `installer/MediaVerifier.iss` | Compiles with Inno Setup 6 within the size budget; per-user install without elevation; installs and runs on a clean Windows 10 22H2 virtual machine with no .NET runtime; upgrade in place keeps settings and replaces `ffmpeg\` cleanly; uninstall removes tasks and registry entries; silent install relaunches the app |
 | U-07 | `release.ps1`, `release.yml` (and `ci.yml` if task F-01 has not already added it) | CI green on a pull request. A tag on a fork or test repository with a test key produces a release with all six assets; a tag without the secret fails the workflow |
 | U-08 | Settings → Updates card and nav indicator | States: never checked, checking, up to date, update available, downloading with percentage, validation failed, offline. Buttons enable exactly per `CanDownload` / `CanInstall` |
 | U-09 | Startup check timing, active-scan confirmation, portable *Install* path | Manual test of all three |
@@ -175,6 +197,8 @@ self-check still passes because it tests the algorithm with a throwaway key.
 - A release whose manifest or signature is missing, altered or signed by another key never enables
   the install button.
 - The private key appears nowhere in the repository, the build output, or the logs.
+- The installed app and the portable zip run on a Windows machine that has never had .NET or FFmpeg
+  installed.
 
 ## Pitfalls
 

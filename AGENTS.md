@@ -17,8 +17,14 @@ documents only; the first code is written in phase 1.
 - **User media is read-only** everywhere except the remediation module, which must follow the
   safe-operation protocol in subplan 12: never modify in place, verify before swapping, journal
   everything.
-- **All decoding goes through external `ffmpeg.exe` / `ffprobe.exe` processes.** Do not load FFmpeg
-  libraries in-process. Pass arguments only through `ProcessStartInfo.ArgumentList`; never use a shell.
+- **All decoding goes through the bundled `ffmpeg.exe` / `ffprobe.exe` as separate processes**
+  (subplans 04 and 17). Do not load FFmpeg libraries in-process and do not look for another FFmpeg.
+  Pass arguments only through `ProcessStartInfo.ArgumentList`; never use a shell.
+- **Everything ships inside the app folder.** Self-contained .NET, bundled FFmpeg and SQLite. Never
+  download, install or look up a component at run time, and never depend on an optional Windows
+  component (master plan D-16).
+- **Do not design.** Colours, sizes, layout, icons, states and every user-facing string are fixed by
+  subplans 08 and 09 and `docs/design/`. Reproduce them; log anything they do not cover.
 - **Do not trust exit codes** from FFmpeg or ffprobe. Classify their log output
   ([appendix A](plans/appendix-a-ffmpeg-verified-behavior.md) shows why).
 - **Do not overstate certainty.** Heuristic findings carry a confidence and hedged wording
@@ -33,17 +39,17 @@ documents only; the first code is written in phase 1.
 
 ## Working conventions
 
-- C# on .NET 10, WinForms, `win-x64`, framework-dependent single-file publish. Nullable enabled,
-  warnings as errors.
+- C# on .NET 10, WinForms, `win-x64`, self-contained single-file publish with ReadyToRun and without
+  compression. Nullable enabled, warnings as errors.
 - Low overhead, no leaks: dispose what you create, no allocations in paint or scroll paths.
 - Measure before optimising. Prefer SIMD-capable library routines and keep a scalar fallback.
 - Small, focused commits. Do not touch unrelated files.
 - Before a major or potentially breaking refactor, copy the affected source tree to
   `Backup_pre-<topic>-<yyyyMMdd-HHmmss>/` at the repository root (ignored by git).
 - Parse and format numbers in files, logs, JSON and SQL with the invariant culture.
-- UI: human readable and space-efficient; every interactive element has clear, high-contrast hover,
-  pressed, focused and disabled states driven by the theme tokens (subplan 08). Everything is
-  keyboard reachable. Severity is never shown by colour alone.
+- UI: compare every screen you build with its reference render in `docs/design/png/` using the
+  `--render-screens` harness (subplan 08). Everything is keyboard reachable. Severity is never shown
+  by colour alone.
 - Add user-visible changes to the `Unreleased` section of `CHANGELOG.md`.
 
 ## When a plan is wrong
@@ -61,11 +67,13 @@ These apply once phase 1 has created the solution.
 dotnet build MediaVerifier.sln -c Release
 dotnet test MediaVerifier.sln
 dotnet run --project src/MediaVerifier/MediaVerifier.csproj
-.\build.ps1 -NoIncrement          # after task U-05: publish to artifacts\
+.\scripts\Get-FfmpegBundle.ps1    # after task FFB-06: fetch and verify the bundled FFmpeg
+.\build.ps1 -NoIncrement          # after task U-05: app folder, portable zip and installer in artifacts\
 ```
 
-Integration tests need FFmpeg 6.1 or newer on `PATH` (or the app-managed copy) and skip themselves
-when it is missing.
+Integration tests use the bundled FFmpeg (or `MEDIAVERIFIER_FFMPEG_DIR` before the first bundle
+exists). Test media is generated with a full FFmpeg build on `PATH`. Tests skip themselves when either
+is missing (subplan 15).
 
 ## Reference project
 

@@ -125,8 +125,7 @@ the next start (the journal identifies them; never delete by pattern alone).
 
 Setting *Keep originals in*: **Quarantine folder** (default), Recycle Bin, or a custom folder.
 
-- Quarantine lives inside each root: `<root>\.mediaverifier-quarantine\<operation id>\<relative
-  path>`, hidden attribute set, excluded from scans. Same volume, so moves are instant, undo is exact,
+- Quarantine lives inside each root: `<root>\.mediaverifier-quarantine\<operation id>\<relative path>`, hidden attribute set, excluded from scans. Same volume, so moves are instant, undo is exact,
   and it works on network shares that have no Recycle Bin.
 - Items are purged after `QuarantineDays` (default 30) by the next run, or manually from the Tools
   page. Purging is the only permanent deletion in the product and always shows count and size first.
@@ -172,7 +171,7 @@ From Issues (current filter), a run, or the Tools page:
 | R-06 | `ACT-FIX-EXT` | Collision handling; index row updated, not duplicated |
 | R-07 | `ACT-SHRINK-BITDEPTH`, `ACT-REENCODE-FLAC` with PCM-equality verification | Output PCM MD5 equals input; a truncated encode fails verification |
 | R-08 | `ACT-SALVAGE`, `ACT-EXTRACT-PREVIEW` | Salvaged copy of a mid-file-damaged MP4 decodes clean; preview extracted from a truncated camera JPEG |
-| R-09 | `ACT-DECLIP-COPY` (optional; requires `adeclip`) | Hidden when the filter is missing; output has no overs |
+| R-09 | `ACT-DECLIP-COPY` (uses the bundle's `adeclip` filter and `flac` encoder) | Output decodes, has no samples above full scale, and is labelled as an estimate |
 | R-10 | Meta and advice actions, including `ACT-ACCEPT-BASELINE` confirmation | Accepting replaces the baseline and resolves `INT-ROT` |
 | R-11 | `RecommendationEngine` with finding-based and library-level sources | Table-driven tests from synthetic libraries; ordering and grouping as specified |
 | R-12 | Preview dialog, batch summary, toasts with Undo; Dashboard recommendations wired | Flow in subplan 09 works by keyboard |

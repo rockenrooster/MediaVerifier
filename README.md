@@ -23,8 +23,10 @@ source code and nothing to download yet.
   a journal and undo.
 - **Run on a schedule** through Windows Task Scheduler with no background process, and notify only
   when something new needs attention.
-- **Stay small and fast.** One small executable, a clean owner-drawn interface, full keyboard
-  support, and a signed built-in updater.
+- **Everything included.** Its own .NET runtime, FFmpeg and SQLite ship inside the app: nothing else
+  to install, nothing downloaded at run time.
+- **Light and fast.** A custom-painted interface that opens in about a tenth of a second, full
+  keyboard support, and a signed built-in updater.
 
 It will be honest about limits. Decoding cannot catch every kind of damage (a single flipped byte in
 a JPEG usually decodes without complaint), which is why fingerprints matter; and no method reliably
@@ -53,16 +55,27 @@ Start at [plans/README.md](plans/README.md). The master plan is
 | Updater and release pipeline | [14](plans/14-updater-and-release.md) |
 | Testing, fixtures, calibration | [15](plans/15-testing-fixtures-calibration.md) |
 | Hardening, release criteria, backlog | [16](plans/16-hardening-and-backlog.md) |
+| Bundled FFmpeg | [17](plans/17-bundled-ffmpeg.md) |
 | Verified FFmpeg behaviour, audio prototype | [A](plans/appendix-a-ffmpeg-verified-behavior.md), [B](plans/appendix-b-audio-prototype.md) |
 
 The detection methods in the plans were checked with throwaway experiments before being written
 down; the commands and their real output are in the appendices.
 
+## Design
+
+The interface is fully designed: every screen, component, state, icon, colour and string. See the
+[design reference](docs/design/README.md).
+
+<p align="center">
+  <img src="docs/design/png/dashboard-dark.png" alt="Dashboard, dark theme" width="640">
+</p>
+
 ## Technology
 
-C# on .NET 10 with WinForms for Windows 10 and 11 (x64). Media is decoded by external FFmpeg
-processes, never in-process, so a corrupt file cannot crash the app. Storage is SQLite. The updater
-follows the signed-manifest flow in [docs/updater.md](docs/updater.md).
+C# on .NET 10 with WinForms for Windows 10 and 11 (x64), published self-contained. Media is decoded
+by a bundled LGPL build of FFmpeg 9.0.2 that runs as separate processes, never in-process, so a
+corrupt file cannot crash the app; the build contains no network code. Storage is a bundled SQLite.
+The updater follows the signed-manifest flow in [docs/updater.md](docs/updater.md).
 
 ## For implementers
 
@@ -70,8 +83,8 @@ Agents and developers: read [AGENTS.md](AGENTS.md) first.
 
 ## Privacy
 
-No telemetry. Planned network use is limited to update checks against GitHub Releases, an optional
-FFmpeg download that the user starts, and optional user-configured webhooks.
+No telemetry. Planned network use is limited to update checks against GitHub Releases and optional
+user-configured webhooks.
 
 ## License
 

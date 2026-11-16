@@ -77,7 +77,6 @@ ffmpeg <std> -noaccurate_seek -ss <t0> -i <file> -noaccurate_seek -ss <t1> -i <f
 - `frame.log` has per-frame `lavfi.block`, `lavfi.blur`, `lavfi.siti.si` values.
 - Verified cost: about 0.3 s for three samples and two candidates at 1080p.
 - Compute sizes in C# from the probe; do not use `scale2ref` (deprecated).
-- `siti` is optional; when the filter is missing, treat all frames as usable.
 
 ### Decision
 
@@ -228,8 +227,8 @@ chosen thresholds and the resulting error rates in `docs/calibration/video.md` a
 | V-03 | `VID-STARVED` with bitrate derivation and codec factors | Tests for each bitrate source and codec; the starved fixture is flagged |
 | V-04 | `VID-BLOCKY`, `VID-INFLATED` | Fixture tests; thresholds read from `RuleDefaults` |
 | V-05 | Evidence: frame strip, compare view, bitrate card | Compare images generated on demand in under 2 s and cached |
-| V-06 | `VID-INTERLACE`, `VID-HDR` (M3) | Fixtures: interlaced clip flagged progressive (make with `tinterlace`); PQ-tagged 8-bit clip |
-| V-07 | `VID-FROZEN`, `VID-BLACK`, `VID-AUDIO-SILENT` (M3) | Fixtures from `lavfi` colour and frozen sources; parsers match the verified line formats |
+| V-06 | `VID-INTERLACE`, `VID-HDR` (M3) | Fixtures (made with the tooling FFmpeg, subplan 15): interlaced clip flagged progressive (`tinterlace`); PQ-tagged 8-bit clip |
+| V-07 | `VID-FROZEN`, `VID-BLACK`, `VID-AUDIO-SILENT` (M3) | Fixtures from the tooling FFmpeg's `lavfi` colour and frozen sources; the bundle parses them and the parsers match the verified line formats |
 | P-01 | `IMG-UPSCALED` including the single-process path | Fixtures: native photo not flagged; 2× enlargement flagged; screenshot skipped |
 | P-02 | `IMG-HEAVY-COMPRESSION` with the quality estimator | Estimated Q within ±3 of the encoder setting for JPEGs written at quality 20–95 with standard tables |
 | P-03 | `IMG-LOW-RES` | Disabled by default; works when enabled |

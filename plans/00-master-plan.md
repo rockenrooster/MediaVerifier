@@ -15,7 +15,8 @@ Target user: someone with a large local or NAS library (tens of thousands to a m
 wants to know about silent damage before the backups rotate out, and who cares whether a "lossless"
 album or a "4K" film is genuine.
 
-Platform: Windows 10 22H2 and Windows 11, x64. Requires the .NET 10 Desktop Runtime.
+Platform: Windows 10 22H2 and Windows 11, x64. Nothing else to install: the app carries its own .NET
+runtime, FFmpeg and SQLite, and never downloads components at run time.
 
 ## 2. Requirements and where they are addressed
 
@@ -33,13 +34,15 @@ Platform: Windows 10 22H2 and Windows 11, x64. Requires the .NET 10 Desktop Runt
 | Beautiful, functional, lightweight UI with excellent UX | 08, 09, budgets in section 8 below |
 | Built-in updater like FastTaskMgr | 14 |
 | Public GitHub repository | Done in phase 0 (`rockenrooster/MediaVerifier`) |
+| UI kit and all design decisions specified exactly, not left to the implementer | 08, 09 and the reference mockups in `docs/design/` (D-15) |
+| All dependencies self-contained | D-01, D-04, D-05, D-16; bundled FFmpeg in 17 |
 | Anything else appropriate | Healthy-copy restore (06, 12), evidence views (09), reports (12), headless mode (13), calibration harness (15) |
 
 ## 3. Non-goals for v1
 
 - Not a tagger, organiser, converter, player or duplicate finder. Tools exist only to repair findings.
-- No cloud service, account, telemetry or analytics. Network use is limited to update checks, the
-  optional FFmpeg download and optional user-configured webhooks.
+- No cloud service, account, telemetry or analytics. Network use is limited to update checks and
+  optional user-configured webhooks.
 - No guarantee of detecting AI-upscaled content. Learned upscalers synthesise plausible detail; the
   detectors here find conventional (interpolation) upscales and say so honestly.
 - No full RAW development. RAW files get structural checks and embedded-preview checks only.
@@ -53,11 +56,11 @@ changes are informed.
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D-01 | C# / .NET 10, WinForms, `win-x64`, framework-dependent single-file publish with ReadyToRun, nullable enabled, warnings as errors | Matches the owner's FastTaskMgr stack and conventions; smallest footprint (FastTaskMgr is about 1 MB); updater and UI patterns port directly |
+| D-01 | C# / .NET 10, WinForms, `win-x64`, nullable enabled, warnings as errors. Published **self-contained** as a single file with ReadyToRun and **without** single-file compression; no trimming | Matches the owner's FastTaskMgr stack, so its updater and UI patterns port directly, while needing no installed runtime. Measured on a WinForms probe with SQLite and hashing referenced: self-contained uncompressed starts in 111–124 ms with 15.5 MB private memory (123.5 MB on disk); compressed is 53 MB on disk but starts in 271–284 ms with 75 MB private memory, because assemblies are unpacked into memory. The installer compresses the download anyway. WinForms and the late-bound COM used for scheduling do not support trimming |
 | D-02 | Three projects: `MediaVerifier` (WinForms exe), `MediaVerifier.Core` (engine library, no UI references), `MediaVerifier.Tests` (xUnit) | The engine must be testable and usable headless; single-file publish still yields one exe |
 | D-03 | All decoding goes through external `ffmpeg.exe` / `ffprobe.exe` processes. No FFmpeg libraries are loaded in-process | The inputs are corrupt files by definition. A decoder crash or hang must never take the app down, and a stuck decode must be killable. Also avoids unsafe code and native leaks, and keeps FFmpeg licensing separate |
-| D-04 | FFmpeg is not bundled. The app finds an existing install, or downloads a pinned build after asking, verified by a SHA-256 compiled into the app | Keeps the installer small; no redistribution of FFmpeg by this project |
-| D-05 | Storage is SQLite through `Microsoft.Data.Sqlite.Core` with `SQLitePCLRaw.bundle_winsqlite3` (the SQLite that ships in Windows). SQL is limited to SQLite 3.24 features | No native payload, so the single-file exe stays small. Fallback is `bundle_e_sqlite3` if `winsqlite3` proves unusable |
+| D-04 | FFmpeg is bundled: our own LGPL 2.1+ build of FFmpeg 9.0.2 with every decoder and demuxer, no network code, no devices and only the encoders and filters the app uses ([subplan 17](17-bundled-ffmpeg.md)). The app uses no other copy | Self-contained, reproducible and identical on every machine, so results do not depend on what the user has installed. A scanned file can never trigger network access. LGPL 2.1+ keeps licence obligations to offering FFmpeg's own source |
+| D-05 | Storage is SQLite through `Microsoft.Data.Sqlite.Core` 10.0.9 with `SQLitePCLRaw.bundle_e_sqlite3` 2.1.11, which ships its own SQLite (measured: 3.49.1) as `e_sqlite3.dll` beside the executable | Self-contained and identical on every Windows build, with a modern SQL feature set |
 | D-06 | Fingerprints use XXH3-128 from `System.IO.Hashing` | Non-adversarial integrity check; SIMD accelerated and far faster than disk I/O; managed, no native dependency |
 | D-07 | Scheduling uses Windows Task Scheduler (per-user tasks) that launch `MediaVerifier.exe --run-plan <id>`. No always-running background process is required | Zero idle footprint; runs even when the app is closed |
 | D-08 | Notifications are real Windows toasts raised through a thin WinRT COM interop layer, with a tray balloon fallback and an in-app notification centre | Toasts persist in the notification centre after a headless run exits. Referencing the Windows SDK projection would add roughly 25 MB to the exe |
@@ -67,6 +70,8 @@ changes are informed.
 | D-12 | Detectors are pure functions over cached analysis artifacts. Artifact providers own all I/O and process execution | Unit tests need no FFmpeg; one FFmpeg run can feed many detectors |
 | D-13 | Every numeric threshold lives in one place (`RuleDefaults`), is user-tunable per rule, and is calibrated against a generated fixture corpus | "Measure before changing algorithms"; avoids scattered magic numbers |
 | D-14 | Installer is per-user by default (`PrivilegesRequired=lowest`) | Silent updates without a UAC prompt; tasks and registrations are per-user anyway |
+| D-15 | The design is specified, not delegated. Subplans 08 and 09 and the mockups in `docs/design/` fix every colour, size, position, icon, state and string; the implementer reproduces them and logs any case they do not cover | The owner asked for every creative and design decision to be spelled out. A specified design can be checked; an improvised one drifts |
+| D-16 | Nothing is fetched or required at run time beyond Windows itself. The only operating-system parts relied on are ones every supported Windows 10 and 11 installation has: Win32, GDI and GDI+, the Universal C Runtime, ICU, the Segoe UI and Consolas fonts, Task Scheduler, the notification platform and the shell. Icons are drawn from geometry; no icon font (Segoe Fluent Icons exists only on Windows 11), WebView2, Windows App SDK or Visual C++ redistributable is used | Self-contained, as the owner asked, and works the same on every supported machine |
 
 ## 5. Architecture
 
@@ -104,7 +109,7 @@ flowchart TD
     Remediation --> Storage
     Scheduling --> Storage
     Notify --> Storage
-    Ffmpeg --> EXE["ffmpeg.exe / ffprobe.exe (child processes)"]
+    Ffmpeg --> EXE["Bundled ffmpeg.exe / ffprobe.exe (child processes)"]
 ```
 
 Data flow for one file:
@@ -120,22 +125,27 @@ Data flow for one file:
 
 ### Solution layout
 
-Target layout. Only `plans/`, `docs/updater.md` and the top-level documents exist today; everything
-else is created by the tasks in the subplans.
+Target layout. Only `plans/`, `docs/` and the top-level documents exist today; everything else is
+created by the tasks in the subplans.
 
 ```
 MediaVerifier.sln                  (task F-01)
 Directory.Build.props              (task F-01; holds the version)
 build.ps1, release.ps1             (tasks U-05, U-07)
-.github/workflows/ci.yml, release.yml   (task U-07)
+.github/workflows/ci.yml, release.yml   (tasks F-01, U-07)
+.github/workflows/ffmpeg-bundle.yml     (task FFB-04)
 installer/MediaVerifier.iss        (task U-06)
+deps/ffmpeg/build-ffmpeg.sh        (task FFB-01)
+deps/ffmpeg/bundle.lock.json       (task FFB-04)
 scripts/New-UpdateSigningKey.ps1   (task U-01)
+scripts/Get-FfmpegBundle.ps1       (task FFB-06)
+docs/design/                       (exists: mockups, tokens, icons)
 docs/updater.md                    (exists)
 plans/                             (exists)
 src/MediaVerifier/                 WinForms app
   App/            Program glue, AppState, MainForm, IPC host, headless host
   UI/Theme/       tokens, theme service
-  UI/Kit/         owner-drawn controls
+  UI/Kit/         custom-painted controls
   UI/Pages/       one class per page
   UI/Dialogs/
   Diagnostics/    self-check, screen renderer
@@ -192,10 +202,11 @@ These are requirements, verified in subplan 16. Measure before optimising.
 
 | Metric | Budget |
 |--------|--------|
-| Published exe size (single file, framework-dependent) | 6 MB or less |
-| Cold start to interactive window | 500 ms or less on an SSD |
+| Installed size (app folder: self-contained exe, `e_sqlite3.dll`, `ffmpeg\`) | 200 MB or less (expected: about 125 MB exe, 2 MB SQLite, at most 60 MB FFmpeg) |
+| Installer download | 90 MB or less |
+| Cold start to interactive window | 500 ms or less on an SSD (the self-contained probe measured 111–124 ms) |
 | Idle CPU with the window open and no scan | 0 % (no polling timers on hidden pages) |
-| Idle private working set, 100,000-file database | 80 MB or less |
+| Idle private memory, 100,000-file database | 80 MB or less (the probe measured 15.5 MB) |
 | Background processes when the app is closed | None |
 | List scrolling with 1,000,000 rows | No dropped frames at 60 Hz; no per-row allocations while scrolling |
 | Enumeration | 50,000 files/s or more on SSD |
@@ -213,13 +224,14 @@ These are requirements, verified in subplan 16. Measure before optimising.
 | 1 | 01 Foundation | 0 | Solution skeleton, then a shell window with navigation, settings, logging, single instance, self-check |
 | 2 | 02 Findings model | 1 | Model types and full rule catalog compile with tests |
 | 3 | 03 Storage | 2 | Schema v1, migrations, repositories, query layer tested |
-| 4 | 04 FFmpeg toolchain | 1 | FFmpeg located or downloaded; runner, probe model and log classifier tested |
+| 4 | 04 FFmpeg toolchain | 1 | Bundle located and checked; runner, probe model and log classifier tested |
 | 5 | 05 Scan engine | 3, 4 | A run enumerates, schedules, persists and reports progress; resumable |
 | 6 | 06 Integrity and rot | 5 | Baselines stored; modified, rotted, moved and missing files classified correctly |
 | 7 | 07 Corruption detectors | 5 | Corruption matrix passes at all three depths |
 | 8 | 08 UI design system | 1 | Theme tokens, UI kit and screen renderer pass contrast and render checks |
 | 9 | 09 UI screens | 3, 8 | All pages functional against the real engine |
-| — | **M1 (MVP)** | 1–9, 14 | Scan, find corruption and rot, review in UI, self-update. First public release |
+| 17 | 17 Bundled FFmpeg | — | Our LGPL FFmpeg 9.0.2 build published with its source and pinned in the lock file |
+| — | **M1 (MVP)** | 1–9, 14, 17 | Scan, find corruption and rot, review in UI, self-update. First public release |
 | 10 | 10 Audio quality | 7 | Audio authenticity and distortion rules pass calibration |
 | 11 | 11 Video and photo quality | 7 | Upscale and bitrate rules pass calibration |
 | — | **M2** | 10, 11 | Full detection suite with evidence views |
@@ -231,9 +243,10 @@ These are requirements, verified in subplan 16. Measure before optimising.
 | 15 | 15 Testing and calibration | continuous | Fixture generator, corruption matrix and calibration report maintained |
 | 16 | 16 Hardening | all | Budgets met, robustness and accessibility passes done. **v1.0** |
 
-Parallel work that is safe: phase 8 alongside phases 2–7; phase 14 any time after phase 1; phase 9
-against fake data once phases 2 and 8 exist. Phases 10 and 11 are independent of each other, as are
-12 and 13.
+Parallel work that is safe: phase 8 alongside phases 2–7; phase 14 any time after phase 1; phase 17
+at any time (until it lands, developers point `MEDIAVERIFIER_FFMPEG_DIR` at a local FFmpeg 8.0 or
+newer); phase 9 against fake data once phases 2 and 8 exist. Phases 10 and 11 are independent of each
+other, as are 12 and 13.
 
 Version plan: `0.1.x` for M1, `0.2.x` for M2, `0.3.x` for M3, `0.4.x` for M4, `1.0.0.0` after phase 16.
 
@@ -268,6 +281,8 @@ These apply to every task.
 
 **UI**
 
+- Build exactly what subplans 08 and 09 and `docs/design/` specify. Do not introduce colours, sizes,
+  icons, layouts or wording of your own; log any case the specification does not cover (D-15).
 - Human readable and space-efficient.
 - Every interactive element has clearly visible, high-contrast hover, pressed, focused and disabled
   states that follow the tokens in subplan 08.
@@ -278,15 +293,24 @@ These apply to every task.
 
 - No secrets in the repository. The update signing private key lives only in the GitHub Actions secret
   and in the owner's local `artifacts/` folder, which is ignored by git.
-- Downloads (updates, FFmpeg) are verified by size and SHA-256 before use and fail closed.
+- Downloads (app updates at run time; the FFmpeg bundle at build time) are verified by size and
+  SHA-256 before use and fail closed.
 - No telemetry. Logs stay on the machine.
 
 **Dependencies**
 
-Allowed NuGet packages for the product: `Microsoft.Data.Sqlite.Core`, `SQLitePCLRaw.bundle_winsqlite3`,
-`System.IO.Hashing`, `System.Numerics.Tensors`. Adding any other runtime dependency requires a line in
-the deviations log explaining why the platform cannot do it. Test projects may use `xunit`,
-`Microsoft.NET.Test.Sdk` and `xunit.runner.visualstudio`.
+Everything the app needs ships inside its folder (D-01, D-04, D-05, D-16).
+
+- NuGet packages for the product: `Microsoft.Data.Sqlite.Core` 10.0.9, `SQLitePCLRaw.bundle_e_sqlite3`
+  2.1.11, `System.IO.Hashing`, `System.Numerics.Tensors`. Pin exact versions.
+- Native files beside the executable: `e_sqlite3.dll` (from the package above) and the `ffmpeg\`
+  folder (subplan 17). Nothing else.
+- Adding any other dependency requires a deviations-log entry explaining why the platform cannot do it,
+  and it must also ship inside the app folder.
+- Never download, install or look for a component at run time. Never rely on optional Windows
+  components.
+- Test projects may use `xunit`, `Microsoft.NET.Test.Sdk` and `xunit.runner.visualstudio`, and a
+  full FFmpeg build on the developer's `PATH` for generating fixtures (subplan 15).
 
 ## 11. Definition of done
 
@@ -294,9 +318,11 @@ A task is done when:
 
 1. Its acceptance criteria pass.
 2. `dotnet build MediaVerifier.sln -c Release` produces no warnings.
-3. `dotnet test MediaVerifier.sln` passes (integration tests may skip when FFmpeg is absent, never fail).
+3. `dotnet test MediaVerifier.sln` passes (integration tests may skip when no FFmpeg bundle or
+   override is available, never fail).
 4. Once `build.ps1` exists (task U-05): `.\build.ps1 -NoIncrement` succeeds and
-   `artifacts\MediaVerifier.exe --self-check` exits 0. Before that, run the self-check on the built exe.
+   `artifacts\MediaVerifier\MediaVerifier.exe --self-check` exits 0. Before that, run the self-check on
+   the built exe.
 5. User-visible changes are in `CHANGELOG.md` under `Unreleased`.
 6. The status board in `plans/README.md` is current.
 
@@ -305,12 +331,13 @@ A task is done when:
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | False positives in heuristic rules erode trust | High | Confidence values, conservative defaults, calibration corpus (15), per-rule tuning and ignore |
-| FFmpeg log text differs between versions | Medium | Classifier matches message cores, not prefixes; captured log corpus in tests; capability probe at startup |
+| FFmpeg log text differs between versions | Medium | One bundled version; classifier matches message cores, not prefixes; captured log corpus re-run on every FFmpeg update (17) |
+| The FFmpeg build image or source archive disappears upstream | Low | Image pinned by digest; source mirrored into our own release; built bundles stay in our releases, so only a version change needs a rebuild (17) |
+| Installed size is larger than a framework-dependent app | Low | Measured and budgeted; uncompressed single file chosen for start time and memory; the installer compresses (D-01) |
 | Full-library first scan takes many hours | Medium | Depth choice, time estimates before starting, resumable runs, per-volume I/O policy, scrub budgets |
 | Remediation damages a file | Critical | Never in place; verify before swap; journal and undo; packet-hash equality check for remuxes (12) |
 | Toast interop fails on some Windows builds | Low | Balloon fallback and in-app notification centre; self-check exercises the path |
-| `winsqlite3` lacks a needed feature on older Windows 10 builds | Low | Restrict SQL to 3.24 features; version check at startup; fallback bundle |
-| Owner-drawn WinForms UI drifts from the design | Medium | Token-driven kit, contrast unit test, `--render-screens` harness reviewed each UI task (08) |
+| Custom-painted WinForms UI drifts from the design | Medium | Token-driven kit, contrast unit test, `--render-screens` harness compared with the reference mockups after each UI task (08) |
 | Tools that edit tags while preserving the modified time look like rot | Medium | Stream-hash comparison separates payload changes from metadata changes (06) |
 | Corrupt file makes a decoder loop or run extremely slowly | Medium | Idle and hard timeouts, kill on timeout, `COR-HANG` finding (04, 07) |
 
@@ -322,5 +349,3 @@ These do not block implementation.
 2. **Update signing key.** Once task U-01 has added `scripts/New-UpdateSigningKey.ps1`, run it with
    `-SetGitHubSecret` once on the owner's machine (subplan 14). An implementing agent in a sandbox
    must not generate the production key.
-3. **App icon.** Task F-09 generates a placeholder. Supply a designed icon if preferred.
-4. **Pinned FFmpeg build.** Task FF-04 pins a specific upstream build; review the choice.

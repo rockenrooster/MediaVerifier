@@ -18,7 +18,7 @@ The repository contains documents only. This phase writes the first code.
 |------|---------------|
 | `MediaVerifier.sln` | Contains the three projects below |
 | `Directory.Build.props` | `Nullable=enable`, `ImplicitUsings=enable`, `TreatWarningsAsErrors=true`, `LangVersion=latest`, `DebugType=embedded`, `AssemblyVersion` and `FileVersion` `0.1.0.0` (the single place the version lives; subplan 14) |
-| `src/MediaVerifier/MediaVerifier.csproj` | `OutputType=WinExe`, `TargetFramework=net10.0-windows`, `UseWindowsForms=true`, `RuntimeIdentifier=win-x64`, `SelfContained=false`, `PublishSingleFile=true`, `PublishReadyToRun=true`, `PublishTrimmed=false`, `ApplicationHighDpiMode=PerMonitorV2`; references Core. Same shape as FastTaskMgr's project file |
+| `src/MediaVerifier/MediaVerifier.csproj` | `OutputType=WinExe`, `TargetFramework=net10.0-windows`, `UseWindowsForms=true`, `RuntimeIdentifier=win-x64`, `SelfContained=true`, `PublishSingleFile=true`, `PublishReadyToRun=true`, `EnableCompressionInSingleFile=false`, `IncludeNativeLibrariesForSelfExtract=false`, `PublishTrimmed=false`, `ApplicationHighDpiMode=PerMonitorV2`; references Core. Otherwise the same shape as FastTaskMgr's project file. The publish output is `MediaVerifier.exe` plus `e_sqlite3.dll` beside it (D-01; measured in the master plan) |
 | `src/MediaVerifier.Core/MediaVerifier.Core.csproj` | Class library, `net10.0-windows`, no WinForms; `InternalsVisibleTo` the test project |
 | `tests/MediaVerifier.Tests/MediaVerifier.Tests.csproj` | xUnit (`dotnet new xunit`), references both projects |
 | `Program.cs` | `[STAThread] Main`: `--self-check` returns 0; otherwise shows an empty `MainForm` titled `MediaVerifier <version>` |
@@ -40,7 +40,7 @@ Reference implementation for patterns in this phase: FastTaskMgr
 | Database | `%LOCALAPPDATA%\MediaVerifier\library.db` (overridable in settings) |
 | Logs | `%LOCALAPPDATA%\MediaVerifier\logs\` |
 | Caches (thumbnails, evidence images) | `%LOCALAPPDATA%\MediaVerifier\cache\` |
-| Managed FFmpeg | `%LOCALAPPDATA%\MediaVerifier\ffmpeg\<version>\` |
+| Bundled FFmpeg (read-only, part of the install) | `<folder of MediaVerifier.exe>\ffmpeg\` |
 | Update downloads | `%LOCALAPPDATA%\MediaVerifier\Updates\` |
 | Scratch for child processes | `%LOCALAPPDATA%\MediaVerifier\temp\<run>\<job>\` (deleted after each job and at startup) |
 
@@ -130,7 +130,7 @@ Add `app.manifest` to the exe project with: `asInvoker` execution level, `PerMon
 | F-06 | Single-instance mutex, engine mutex, named-pipe IPC | Test: second process sends `activate`; first receives it. Oversized and malformed messages are rejected without crashing |
 | F-07 | `AppState` composition root with ordered disposal | Self-check constructs and disposes it without exceptions |
 | F-08 | `MainForm` shell with navigation rail, lazy pages, status strip; restores placement | Manual: navigate all pages with mouse and keyboard (`Ctrl+1`..`Ctrl+7`); placement survives restart, including on a disconnected monitor (falls back to primary) |
-| F-09 | App icon: generate `Assets/MediaVerifier.ico` (16–256 px) from a script kept in `tools/`; wire `ApplicationIcon` and the installer `SetupIconFile` | Icon shows in Explorer, taskbar and the installer |
+| F-09 | App icon: generate `Assets/MediaVerifier.ico` from the geometry in subplan 08 (*App icon*; `docs/design/app-icon.svg` and `app-icon-small.svg`) with a script kept in `tools/`, at 16, 20, 24 (small version) and 32, 40, 48, 64, 128, 256 px (standard version); wire `ApplicationIcon` and the installer `SetupIconFile` | Icon shows in Explorer, taskbar, Alt+Tab and the installer, and matches the icon sheet in `docs/design/png/icons-dark.png` |
 | F-10 | `app.manifest`, DPI mode, dark title bar (`DwmSetWindowAttribute`, attribute 20) | Title bar follows the theme; window is crisp at 100 %, 150 % and 200 % scale |
 | F-11 | Extend `SelfCheck`: paths writable, settings round trip, log write, IPC loopback | `--self-check` exits 0 on a clean profile and 1 when the data directory is read-only |
 | F-12 | Start-with-Windows toggle (HKCU `Run` value with `--minimized`), tray icon when enabled | Toggle adds and removes the value; tray menu has Open, Scan now (disabled for now), Exit |

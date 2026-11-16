@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility">
+<defs><linearGradient id="ai0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient></defs>
+<rect x="0" y="0" width="1280" height="800" rx="0" fill="#F6F6F6"/>
+<line x1="199.5" y1="0" x2="199.5" y2="800" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<g transform="translate(18 16) scale(0.09375)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#ai0)"/><polygon points="98,80 186,128 98,176" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<text x="50" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">MediaVerifier</text>
+<rect x="8" y="64" width="184" height="40" rx="4" fill="#D6E8F8"/>
+<rect x="8" y="76" width="3" height="16" rx="1.5" fill="#005FB8"/>
+<g transform="translate(22 76) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="4.5" height="5" rx="1"/><rect x="9" y="2.5" width="4.5" height="3" rx="1"/><rect x="9" y="7.5" width="4.5" height="6" rx="1"/><rect x="2.5" y="9.5" width="4.5" height="4" rx="1"/></g>
+<text x="50" y="84" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">Dashboard</text>
+<g transform="translate(22 120) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.5 14,13 2,13"/><line x1="8" y1="6.5" x2="8" y2="9.5"/><circle cx="8" cy="11.25" r="0.5" fill="#1A1A1A"/></g>
+<text x="50" y="128" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Issues</text>
+<rect x="149" y="118" width="33" height="20" rx="10" fill="#F9E7E7"/>
+<text x="165.5" y="128" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#B91C22" dominant-baseline="central" text-anchor="middle">128</text>
+<g transform="translate(22 164) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3.5" y1="2.5" x2="3.5" y2="13.5"/><line x1="7" y1="2.5" x2="7" y2="13.5"/><line x1="10" y1="3.5" x2="13" y2="13.5"/></g>
+<text x="50" y="172" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Library</text>
+<g transform="translate(22 208) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,8 4.5,8 6.5,3.5 9.5,12.5 11.5,8 14.5,8"/></g>
+<text x="50" y="216" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Scans</text>
+<g transform="translate(22 252) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="5.5" y1="2" x2="5.5" y2="4.5"/><line x1="10.5" y1="2" x2="10.5" y2="4.5"/><circle cx="5.5" cy="9.75" r="0.5" fill="#1A1A1A"/><circle cx="8" cy="9.75" r="0.5" fill="#1A1A1A"/><circle cx="10.5" cy="9.75" r="0.5" fill="#1A1A1A"/></g>
+<text x="50" y="260" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Schedule</text>
+<g transform="translate(22 296) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8.5" rx="1.5"/><polyline points="6,5 6,3 10,3 10,5"/><line x1="8" y1="7.5" x2="8" y2="11"/><line x1="6.25" y1="9.25" x2="9.75" y2="9.25"/></g>
+<text x="50" y="304" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Tools</text>
+<g transform="translate(22 720) scale(1)" fill="none" stroke="#005FB8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="5.5,8 8,5.5 10.5,8"/><line x1="8" y1="5.5" x2="8" y2="11"/></g>
+<text x="50" y="728" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Update available</text>
+<g transform="translate(22 764) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="8" y2="4.5"/><line x1="12" y1="4.5" x2="13.5" y2="4.5"/><circle cx="10" cy="4.5" r="1.75"/><line x1="2.5" y1="11.5" x2="4" y2="11.5"/><line x1="8" y1="11.5" x2="13.5" y2="11.5"/><circle cx="6" cy="11.5" r="1.75"/></g>
+<text x="50" y="772" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Settings</text>
+<text x="224" y="28" font-family="Segoe UI, sans-serif" font-size="20" font-weight="600" fill="#1A1A1A" dominant-baseline="central">Dashboard</text>
+<rect x="1149" y="12" width="107" height="32" rx="4" fill="#005FB8"/>
+<line x1="1227.5" y1="18" x2="1227.5" y2="38" stroke="#FFFFFF" stroke-width="1" stroke-linecap="butt" opacity="0.35"/>
+<g transform="translate(1161 20) scale(1)" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3.5 12.5,8 5,12.5"/></g>
+<text x="1185" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#FFFFFF" dominant-baseline="central">Scan</text>
+<g transform="translate(1234 20) scale(1)" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,6 8,10.5 12.5,6"/></g>
+<g transform="translate(1117 20) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 V7.5 C4 5 5.8 3 8 3 C10.2 3 12 5 12 7.5 V11.5"/><line x1="2.75" y1="11.5" x2="13.25" y2="11.5"/><line x1="6.75" y1="13.75" x2="9.25" y2="13.75"/></g>
+<circle cx="1133" cy="21" r="7" fill="#005FB8" stroke="#F6F6F6" stroke-width="2"/>
+<text x="1133" y="21" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#FFFFFF" dominant-baseline="central" text-anchor="middle">2</text>
+<rect x="821.5" y="12.5" width="279" height="31" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<g transform="translate(831 20) scale(1)" fill="none" stroke="#595959" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></g>
+<text x="855" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#595959" dominant-baseline="central">Search files</text>
+<rect x="200" y="764" width="1080" height="36" rx="0" fill="#FFFFFF"/>
+<line x1="200" y1="764.5" x2="1280" y2="764.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<rect x="200" y="764" width="230.04" height="2" rx="0" fill="#005FB8"/>
+<circle cx="232" cy="782" r="7" fill="none" stroke="#005FB8" stroke-width="2" stroke-linecap="round" stroke-dasharray="31.67 43.98" transform="rotate(-60 232 782)"/>
+<text x="248" y="782" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Scanning 12,404 of 58,210 files</text>
+<text x="435.66" y="782" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">·  142 MB/s  ·  about 1 h 12 min left</text>
+<g transform="translate(1201.81 774) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></g>
+<text x="1225.81" y="782" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Stop</text>
+<g transform="translate(1114.12 774) scale(1)" fill="none" stroke="#1A1A1A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5.5" y1="3.5" x2="5.5" y2="12.5"/><line x1="10.5" y1="3.5" x2="10.5" y2="12.5"/></g>
+<text x="1138.12" y="782" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Pause</text>
+<rect x="224.5" y="72.5" width="335" height="135" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="240" y="94" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">HEALTH</text>
+<circle cx="288" cy="152" r="35.0" fill="none" stroke="#D0D0D0" stroke-width="10"/>
+<circle cx="288" cy="152" r="35.0" fill="none" stroke="#1F8A52" stroke-width="10" stroke-linecap="round" stroke-dasharray="217.05 219.91" transform="rotate(-90 288 152)"/>
+<g transform="translate(278 142) scale(1.25)" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.75" fill="#146C3E"/><path d="M4.9 8.2 L7.2 10.4 L11.1 5.9" stroke="#FFFFFF" stroke-width="1.7" fill="none"/></g>
+<text x="348" y="134" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">98.7%</text>
+<text x="435.968" y="140" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">healthy</text>
+<text x="348" y="164" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">12,345 of 12,507 files have no problems</text>
+<text x="348" y="182" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">162 files need attention</text>
+<rect x="572.5" y="72.5" width="335" height="135" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="588" y="94" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">PROTECTION</text>
+<circle cx="636.0" cy="152" r="35.0" fill="none" stroke="#D0D0D0" stroke-width="10"/>
+<circle cx="636.0" cy="152" r="35.0" fill="none" stroke="#005FB8" stroke-width="10" stroke-linecap="round" stroke-dasharray="180.33 219.91" transform="rotate(-90 636.0 152)"/>
+<g transform="translate(626 142) scale(1.25)" fill="none" stroke="#005FB8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/><polyline points="5.75,8 7.4,9.6 10.25,6.5"/></g>
+<text x="696" y="134" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">82%</text>
+<text x="760.448" y="140" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">verified</text>
+<text x="696" y="164" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">Re-read and unchanged in 90 days</text>
+<text x="696" y="182" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">2,251 files are overdue</text>
+<rect x="920.5" y="72.5" width="335" height="135" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="936" y="94" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">SCANS</text>
+<text x="936" y="120" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">Last</text>
+<text x="984" y="120" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Today 03:12  ·  Scheduled  ·  Standard</text>
+<text x="984" y="140" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#404040" dominant-baseline="central">2 new problems, 1 resolved</text>
+<line x1="936" y1="158.5" x2="1240" y2="158.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<text x="936" y="180" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">Next</text>
+<text x="984" y="180" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Tomorrow 03:00  ·  Nightly verification</text>
+<rect x="224.5" y="220.5" width="248" height="87" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<g transform="translate(240 236) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,1.5 11,1.5 14.5,5 14.5,11 11,14.5 5,14.5 1.5,11 1.5,5" fill="#B91C22" stroke="#B91C22" stroke-width="1"/><path d="M5.75 5.75 L10.25 10.25 M10.25 5.75 L5.75 10.25" stroke="#FFFFFF" stroke-width="1.7" fill="none"/></g>
+<text x="264" y="244" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">Critical</text>
+<text x="240" y="280" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">3</text>
+<text x="457" y="286" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">+1 since last scan</text>
+<rect x="485.5" y="220.5" width="248" height="87" rx="8" fill="#EBEBEB" stroke="#6E6E6E" stroke-width="1"/>
+<g transform="translate(501 236) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.25 14.5,13.5 1.5,13.5" fill="#A54300" stroke="#A54300" stroke-width="1.5"/><path d="M8 6.25 L8 9.5" stroke="#EBEBEB" stroke-width="1.7" fill="none"/><circle cx="8" cy="11.6" r="0.95" fill="#EBEBEB"/></g>
+<text x="525" y="244" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">High</text>
+<text x="501" y="280" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">14</text>
+<text x="718" y="286" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">+1 since last scan</text>
+<rect x="746.5" y="220.5" width="248" height="87" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<g transform="translate(762 236) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="#735400" stroke="#735400" stroke-width="1.2"/><path d="M8 4.9 L8 8.6" stroke="#FFFFFF" stroke-width="1.7" fill="none"/><circle cx="8" cy="10.9" r="0.95" fill="#FFFFFF"/></g>
+<text x="786" y="244" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">Medium</text>
+<text x="762" y="280" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">96</text>
+<text x="979" y="286" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">No change</text>
+<rect x="1007.5" y="220.5" width="248" height="87" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<g transform="translate(1023 236) scale(1)" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.75" fill="#1A56B0"/><circle cx="8" cy="5" r="0.95" fill="#FFFFFF"/><path d="M8 7.4 L8 11.2" stroke="#FFFFFF" stroke-width="1.7" fill="none"/></g>
+<text x="1047" y="244" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">Low</text>
+<text x="1023" y="280" font-family="Segoe UI, sans-serif" font-size="28" font-weight="600" fill="#1A1A1A" dominant-baseline="central">212</text>
+<text x="1240" y="286" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">−4 since last scan</text>
+<rect x="224.5" y="320.5" width="1031" height="147" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="240" y="342" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">BY MEDIA TYPE</text>
+<g transform="translate(240 366) scale(1)" fill="none" stroke="#404040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><circle cx="5.75" cy="6.75" r="1"/><polyline points="2.5,11 6,8 8.5,10.25 10.5,8.5 13.5,11"/></g>
+<text x="268" y="374" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">Photos</text>
+<text x="348" y="374" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">8,201 files  ·  212 GB</text>
+<rect x="585" y="370" width="3.97623" height="8" rx="2" fill="#D13438"/>
+<rect x="590.976" y="370" width="3.97623" height="8" rx="2" fill="#D45A00"/>
+<rect x="596.952" y="370" width="4.90337" height="8" rx="2" fill="#A37A00"/>
+<rect x="603.856" y="370" width="500.144" height="8" rx="2" fill="#1F8A52"/>
+<text x="1240" y="374" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central" text-anchor="end">4 problems</text>
+<g transform="translate(240 402) scale(1)" fill="none" stroke="#404040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="8.5" height="8" rx="1.5"/><polyline points="10.5,6.9 14,4.9 14,11.1 10.5,9.1"/></g>
+<text x="268" y="410" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">Videos</text>
+<text x="348" y="410" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">1,105 files  ·  3.2 TB</text>
+<rect x="585" y="406" width="54" height="8" rx="2" fill="#D45A00"/>
+<rect x="641" y="406" width="162" height="8" rx="2" fill="#A37A00"/>
+<rect x="805" y="406" width="63" height="8" rx="2" fill="#2B6FD6"/>
+<rect x="870" y="406" width="234" height="8" rx="2" fill="#1F8A52"/>
+<text x="1240" y="410" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central" text-anchor="end">31 problems</text>
+<g transform="translate(240 438) scale(1)" fill="none" stroke="#404040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,11.5 6,4 12.5,3 12.5,10.5"/><circle cx="4.5" cy="11.5" r="1.5"/><circle cx="11" cy="10.5" r="1.5"/></g>
+<text x="268" y="446" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">Music</text>
+<text x="348" y="446" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central">3,201 files  ·  96 GB</text>
+<rect x="585" y="442" width="6.11976" height="8" rx="2" fill="#D13438"/>
+<rect x="593.12" y="442" width="21.4192" height="8" rx="2" fill="#D45A00"/>
+<rect x="616.539" y="442" width="232.551" height="8" rx="2" fill="#A37A00"/>
+<rect x="851.09" y="442" width="15.2994" height="8" rx="2" fill="#2B6FD6"/>
+<rect x="868.389" y="442" width="235.611" height="8" rx="2" fill="#1F8A52"/>
+<text x="1240" y="446" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#404040" dominant-baseline="central" text-anchor="end">90 problems</text>
+<rect x="224.5" y="480.5" width="679" height="267" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="240" y="502" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">RECOMMENDED NEXT STEPS</text>
+<g transform="translate(240 534) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,1.5 11,1.5 14.5,5 14.5,11 11,14.5 5,14.5 1.5,11 1.5,5" fill="#B91C22" stroke="#B91C22" stroke-width="1"/><path d="M5.75 5.75 L10.25 10.25 M10.25 5.75 L5.75 10.25" stroke="#FFFFFF" stroke-width="1.7" fill="none"/></g>
+<text x="268" y="534" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">3 files changed on their own</text>
+<text x="268" y="553" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#404040" dominant-baseline="central">A healthy copy exists in Backup (E:) for all 3</text>
+<rect x="820" y="529" width="68" height="28" rx="4" fill="#005FB8"/>
+<text x="832.092" y="543" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#FFFFFF" dominant-baseline="central">Review</text>
+<line x1="240" y1="569.5" x2="888" y2="569.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<g transform="translate(240 586) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="#735400" stroke="#735400" stroke-width="1.2"/><path d="M8 4.9 L8 8.6" stroke="#FFFFFF" stroke-width="1.7" fill="none"/><circle cx="8" cy="10.9" r="0.95" fill="#FFFFFF"/></g>
+<text x="268" y="586" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">38 videos have no seek index</text>
+<text x="268" y="605" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#404040" dominant-baseline="central">Rebuilding is lossless and takes about 4 minutes</text>
+<rect x="829.5" y="581.5" width="58" height="27" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="840.755" y="595" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Fix all</text>
+<line x1="240" y1="621.5" x2="888" y2="621.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<g transform="translate(240 638) scale(1)" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.25 14.5,13.5 1.5,13.5" fill="#A54300" stroke="#A54300" stroke-width="1.5"/><path d="M8 6.25 L8 9.5" stroke="#FFFFFF" stroke-width="1.7" fill="none"/><circle cx="8" cy="11.6" r="0.95" fill="#FFFFFF"/></g>
+<text x="268" y="638" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">41 albums look converted from MP3</text>
+<text x="268" y="657" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#404040" dominant-baseline="central">They cannot be repaired, only replaced</text>
+<rect x="822.5" y="633.5" width="65" height="27" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="834.135" y="647" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Review</text>
+<line x1="240" y1="673.5" x2="888" y2="673.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<g transform="translate(240 690) scale(1)" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.75" fill="#1A56B0"/><circle cx="8" cy="5" r="0.95" fill="#FFFFFF"/><path d="M8 7.4 L8 11.2" stroke="#FFFFFF" stroke-width="1.7" fill="none"/></g>
+<text x="268" y="690" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1A1A1A" dominant-baseline="central">18% of files not verified in 90 days</text>
+<text x="268" y="709" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#404040" dominant-baseline="central">At 2 h per night a full pass takes 41 days</text>
+<rect x="803.5" y="685.5" width="84" height="27" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="815.08" y="699" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Verify now</text>
+<rect x="916.5" y="480.5" width="339" height="267" rx="8" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+<text x="932" y="502" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#595959" dominant-baseline="central">RECENT ACTIVITY</text>
+<line x1="939.5" y1="532" x2="939.5" y2="554" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<circle cx="939.5" cy="528" r="4" fill="#FFFFFF" stroke="#6E6E6E" stroke-width="1.5"/>
+<text x="956" y="528" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Scheduled scan finished</text>
+<text x="1240" y="528" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">03:12</text>
+<line x1="939.5" y1="562" x2="939.5" y2="584" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<circle cx="939.5" cy="558" r="4" fill="#FFFFFF" stroke="#6E6E6E" stroke-width="1.5"/>
+<text x="956" y="558" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">1 file restored from backup</text>
+<text x="1240" y="558" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">Yesterday</text>
+<line x1="939.5" y1="592" x2="939.5" y2="614" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<circle cx="939.5" cy="588" r="4" fill="#FFFFFF" stroke="#6E6E6E" stroke-width="1.5"/>
+<text x="956" y="588" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Scan stopped by you</text>
+<text x="1240" y="588" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">Mon</text>
+<circle cx="939.5" cy="618" r="4" fill="#FFFFFF" stroke="#6E6E6E" stroke-width="1.5"/>
+<text x="956" y="618" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#1A1A1A" dominant-baseline="central">Folder added: Music</text>
+<text x="1240" y="618" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central" text-anchor="end">12 Nov</text>
+<line x1="932" y1="649.5" x2="1240" y2="649.5" stroke="#D0D0D0" stroke-width="1" stroke-linecap="butt"/>
+<text x="932" y="666" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#595959" dominant-baseline="central">Open problems, last 30 scans</text>
+<path d="M932.0 731.0 L954.0 718.8 L976.0 704.2 L998.0 709.0 L1020.0 694.4 L1042.0 681.0 L1064.0 684.7 L1086.0 695.6 L1108.0 690.8 L1130.0 682.2 L1152.0 687.1 L1174.0 693.2 L1196.0 698.1 L1218.0 695.6 L1240.0 700.5 L1240.0 734 L932 734 Z" fill="#005FB8" opacity="0.14"/>
+<path d="M932.0 731.0 L954.0 718.8 L976.0 704.2 L998.0 709.0 L1020.0 694.4 L1042.0 681.0 L1064.0 684.7 L1086.0 695.6 L1108.0 690.8 L1130.0 682.2 L1152.0 687.1 L1174.0 693.2 L1196.0 698.1 L1218.0 695.6 L1240.0 700.5" fill="none" stroke="#005FB8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1240" cy="700.512" r="2.5" fill="#005FB8"/>
+</svg>

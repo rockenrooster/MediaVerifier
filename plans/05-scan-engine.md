@@ -49,7 +49,7 @@ A skipped file keeps its row with `state = Skipped` and a reason; it is not a fi
 | `Locked` | Sharing violation on open; retried once at the end of the run |
 | `AccessDenied` | Access denied |
 | `TooLarge` | Above the optional size limit |
-| `UnsupportedByFfmpeg` | No decoder in the user's FFmpeg build (subplan 04) |
+| `UnsupportedByFfmpeg` | No decoder for it in the bundled FFmpeg (subplan 04) |
 
 ### Path checks (`GEN-PATH`, M3)
 

@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility">
+<defs><linearGradient id="ai0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient></defs>
+<rect x="0" y="0" width="1280" height="800" rx="0" fill="#1F1F1F"/>
+<line x1="199.5" y1="0" x2="199.5" y2="800" stroke="#454545" stroke-width="1" stroke-linecap="butt"/>
+<g transform="translate(18 16) scale(0.09375)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#ai0)"/><polygon points="98,80 186,128 98,176" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<text x="50" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#F5F5F5" dominant-baseline="central">MediaVerifier</text>
+<g transform="translate(22 76) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="4.5" height="5" rx="1"/><rect x="9" y="2.5" width="4.5" height="3" rx="1"/><rect x="9" y="7.5" width="4.5" height="6" rx="1"/><rect x="2.5" y="9.5" width="4.5" height="4" rx="1"/></g>
+<text x="50" y="84" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Dashboard</text>
+<g transform="translate(22 120) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.5 14,13 2,13"/><line x1="8" y1="6.5" x2="8" y2="9.5"/><circle cx="8" cy="11.25" r="0.5" fill="#F5F5F5"/></g>
+<text x="50" y="128" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Issues</text>
+<rect x="149" y="118" width="33" height="20" rx="10" fill="#4C2F30"/>
+<text x="165.5" y="128" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#FF8585" dominant-baseline="central" text-anchor="middle">128</text>
+<g transform="translate(22 164) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3.5" y1="2.5" x2="3.5" y2="13.5"/><line x1="7" y1="2.5" x2="7" y2="13.5"/><line x1="10" y1="3.5" x2="13" y2="13.5"/></g>
+<text x="50" y="172" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Library</text>
+<g transform="translate(22 208) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,8 4.5,8 6.5,3.5 9.5,12.5 11.5,8 14.5,8"/></g>
+<text x="50" y="216" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Scans</text>
+<g transform="translate(22 252) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="5.5" y1="2" x2="5.5" y2="4.5"/><line x1="10.5" y1="2" x2="10.5" y2="4.5"/><circle cx="5.5" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="8" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="10.5" cy="9.75" r="0.5" fill="#F5F5F5"/></g>
+<text x="50" y="260" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Schedule</text>
+<rect x="8" y="284" width="184" height="40" rx="4" fill="#243C4D"/>
+<rect x="8" y="296" width="3" height="16" rx="1.5" fill="#60CDFF"/>
+<g transform="translate(22 296) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8.5" rx="1.5"/><polyline points="6,5 6,3 10,3 10,5"/><line x1="8" y1="7.5" x2="8" y2="11"/><line x1="6.25" y1="9.25" x2="9.75" y2="9.25"/></g>
+<text x="50" y="304" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Tools</text>
+<g transform="translate(22 720) scale(1)" fill="none" stroke="#60CDFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="5.5,8 8,5.5 10.5,8"/><line x1="8" y1="5.5" x2="8" y2="11"/></g>
+<text x="50" y="728" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Update available</text>
+<g transform="translate(22 764) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="8" y2="4.5"/><line x1="12" y1="4.5" x2="13.5" y2="4.5"/><circle cx="10" cy="4.5" r="1.75"/><line x1="2.5" y1="11.5" x2="4" y2="11.5"/><line x1="8" y1="11.5" x2="13.5" y2="11.5"/><circle cx="6" cy="11.5" r="1.75"/></g>
+<text x="50" y="772" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Settings</text>
+<text x="224" y="28" font-family="Segoe UI, sans-serif" font-size="20" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Tools</text>
+<rect x="1149" y="12" width="107" height="32" rx="4" fill="#60CDFF"/>
+<line x1="1227.5" y1="18" x2="1227.5" y2="38" stroke="#00131F" stroke-width="1" stroke-linecap="butt" opacity="0.35"/>
+<g transform="translate(1161 20) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3.5 12.5,8 5,12.5"/></g>
+<text x="1185" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#00131F" dominant-baseline="central">Scan</text>
+<g transform="translate(1234 20) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,6 8,10.5 12.5,6"/></g>
+<g transform="translate(1117 20) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 V7.5 C4 5 5.8 3 8 3 C10.2 3 12 5 12 7.5 V11.5"/><line x1="2.75" y1="11.5" x2="13.25" y2="11.5"/><line x1="6.75" y1="13.75" x2="9.25" y2="13.75"/></g>
+<circle cx="1133" cy="21" r="7" fill="#60CDFF" stroke="#1F1F1F" stroke-width="2"/>
+<text x="1133" y="21" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#00131F" dominant-baseline="central" text-anchor="middle">2</text>
+<rect x="821.5" y="12.5" width="279" height="31" rx="4" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(831 20) scale(1)" fill="none" stroke="#B0B0B0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></g>
+<text x="855" y="28" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Search files</text>
+<rect x="224.5" y="72.5" width="335" height="219" rx="8" fill="#2A2A2A" stroke="#8F8F8F" stroke-width="1"/>
+<rect x="240.5" y="88.5" width="35" height="35" rx="8" fill="#1F1F1F" stroke="#454545" stroke-width="1"/>
+<g transform="translate(248 96) scale(1.25)" fill="none" stroke="#60CDFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="3" rx="0.75"/><polyline points="3.5,6 3.5,12.5 12.5,12.5 12.5,6"/><line x1="6.5" y1="8.75" x2="9.5" y2="8.75"/></g>
+<text x="288" y="106" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Quarantine</text>
+<text x="240" y="145.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">Originals kept after a repair, in case you want them</text>
+<text x="240" y="164.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">back.</text>
+<text x="240" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Items</text>
+<text x="544" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">41</text>
+<text x="240" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Size</text>
+<text x="544" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">12.8 GB</text>
+<text x="240" y="230" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Oldest is removed in</text>
+<text x="544" y="230" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">9 days</text>
+<rect x="240.5" y="248.5" width="116" height="27" rx="4" fill="#3A3A3A" stroke="#8F8F8F" stroke-width="1"/>
+<text x="252.155" y="262" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Open quarantine</text>
+<rect x="572.5" y="72.5" width="335" height="219" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<rect x="588.5" y="88.5" width="35" height="35" rx="8" fill="#1F1F1F" stroke="#454545" stroke-width="1"/>
+<g transform="translate(596 96) scale(1.25)" fill="none" stroke="#60CDFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 H10 C12 6.5 13.5 8 13.5 10 C13.5 12 12 13.5 10 13.5 H6.5"/><polyline points="6,4 3.5,6.5 6,9"/></g>
+<text x="636" y="106" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Operations</text>
+<text x="588" y="145.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">Everything MediaVerifier changed, newest first.</text>
+<text x="588" y="164.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">Most can be undone.</text>
+<text x="588" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Last</text>
+<text x="892" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">Rebuilt index of 38 videos</text>
+<text x="588" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">When</text>
+<text x="892" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">Yesterday 21:14</text>
+<text x="588" y="230" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Can be undone</text>
+<text x="892" y="230" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">Yes</text>
+<rect x="588.5" y="248.5" width="95" height="27" rx="4" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<text x="599.99" y="262" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Open journal</text>
+<rect x="920.5" y="72.5" width="335" height="219" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<rect x="936.5" y="88.5" width="35" height="35" rx="8" fill="#1F1F1F" stroke="#454545" stroke-width="1"/>
+<g transform="translate(944 96) scale(1.25)" fill="none" stroke="#60CDFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 H9.5 L12 5 V13.5 H4 Z"/><polyline points="9.5,2.5 9.5,5 12,5"/><line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></g>
+<text x="984" y="106" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Reports</text>
+<text x="936" y="145.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">Save findings as a web page, a spreadsheet file, or</text>
+<text x="936" y="164.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">JSON.</text>
+<text x="936" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Open problems</text>
+<text x="1240" y="190" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">325</text>
+<text x="936" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Last report</text>
+<text x="1240" y="210" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">10 Nov</text>
+<rect x="936.5" y="248.5" width="98" height="27" rx="4" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<text x="947.995" y="262" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Create report</text>
+<rect x="224.5" y="304.5" width="335" height="219" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<rect x="240.5" y="320.5" width="35" height="35" rx="8" fill="#1F1F1F" stroke="#454545" stroke-width="1"/>
+<g transform="translate(248 328) scale(1.25)" fill="none" stroke="#60CDFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/><line x1="6.5" y1="2" x2="6.5" y2="4.5"/><line x1="9.5" y1="2" x2="9.5" y2="4.5"/><line x1="6.5" y1="11.5" x2="6.5" y2="14"/><line x1="9.5" y1="11.5" x2="9.5" y2="14"/><line x1="2" y1="6.5" x2="4.5" y2="6.5"/><line x1="2" y1="9.5" x2="4.5" y2="9.5"/><line x1="11.5" y1="6.5" x2="14" y2="6.5"/><line x1="11.5" y1="9.5" x2="14" y2="9.5"/></g>
+<text x="288" y="338" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Media engine</text>
+<text x="240" y="377.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">FFmpeg is built in. It decodes files to check them</text>
+<text x="240" y="396.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">and performs repairs.</text>
+<text x="240" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Version</text>
+<text x="544" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">9.0.2</text>
+<text x="240" y="442" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Licence</text>
+<text x="544" y="442" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">LGPL 2.1 or later</text>
+<rect x="240.5" y="480.5" width="102" height="27" rx="4" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<text x="251.785" y="494" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">View licences</text>
+<rect x="572.5" y="304.5" width="335" height="219" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<rect x="588.5" y="320.5" width="35" height="35" rx="8" fill="#1F1F1F" stroke="#454545" stroke-width="1"/>
+<g transform="translate(596 328) scale(1.25)" fill="none" stroke="#60CDFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 C3 3.4 5.2 2.5 8 2.5 C10.8 2.5 13 3.4 13 4.5 V11.5 C13 12.6 10.8 13.5 8 13.5 C5.2 13.5 3 12.6 3 11.5 Z"/><path d="M3 4.5 C3 5.6 5.2 6.5 8 6.5 C10.8 6.5 13 5.6 13 4.5"/><path d="M3 8 C3 9.1 5.2 10 8 10 C10.8 10 13 9.1 13 8"/></g>
+<text x="636" y="338" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Database</text>
+<text x="588" y="377.5" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">The index of your library, its fingerprints and history.</text>
+<text x="588" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Size</text>
+<text x="892" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">48.2 MB</text>
+<text x="588" y="442" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Location</text>
+<text x="892" y="442" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">%LOCALAPPDATA%\MediaVerifier</text>
+<text x="588" y="462" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#B0B0B0" dominant-baseline="central">Last backup</text>
+<text x="892" y="462" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#F5F5F5" dominant-baseline="central" text-anchor="end">9 Nov</text>
+<rect x="588.5" y="480.5" width="69" height="27" rx="4" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<text x="600.185" y="494" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#F5F5F5" dominant-baseline="central">Manage</text>
+</svg>

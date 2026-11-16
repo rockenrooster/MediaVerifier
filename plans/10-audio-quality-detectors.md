@@ -203,7 +203,7 @@ Lossy coding smears flat tops, so run detection finds nothing (verified: a clipp
 - A terminal drop is required; gradual roll-off never qualifies, however dull the recording.
 - The knee tables apply to the measured knee, not to tags; never use the encoder tag as evidence of
   quality.
-- DSD sources and files the user's FFmpeg cannot decode are skipped, not flagged.
+- DSD sources and files the bundled FFmpeg cannot decode are skipped, not flagged.
 - High-quality variable-bitrate encodes (LAME V0, AAC at 256 kbps and above) can pass the cutoff
   test. Say so in the rule's explanation: a clean result is not proof of lossless origin.
 

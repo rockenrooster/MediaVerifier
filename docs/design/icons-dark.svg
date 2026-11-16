@@ -1,0 +1,290 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="852" viewBox="0 0 1280 852" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility">
+<defs><linearGradient id="g128" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient><linearGradient id="g64" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient><linearGradient id="g48" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient><linearGradient id="g32" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ED3FF"/><stop offset="1" stop-color="#1F6FE0"/></linearGradient></defs>
+<rect x="0" y="0" width="1280" height="852" rx="0" fill="#1F1F1F"/>
+<text x="24" y="28" font-family="Segoe UI, sans-serif" font-size="20" font-weight="600" fill="#F5F5F5" dominant-baseline="central">Icons</text>
+<text x="24" y="56" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">16 × 16 grid, 1.5 px stroke, round caps and joins. Shown at 16 px, at 32 px, and on the accent colour.</text>
+<rect x="24.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="4.5" height="5" rx="1"/><rect x="9" y="2.5" width="4.5" height="3" rx="1"/><rect x="9" y="7.5" width="4.5" height="6" rx="1"/><rect x="2.5" y="9.5" width="4.5" height="4" rx="1"/></g>
+<g transform="translate(80 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="4.5" height="5" rx="1"/><rect x="9" y="2.5" width="4.5" height="3" rx="1"/><rect x="9" y="7.5" width="4.5" height="6" rx="1"/><rect x="2.5" y="9.5" width="4.5" height="4" rx="1"/></g>
+<rect x="130" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="4.5" height="5" rx="1"/><rect x="9" y="2.5" width="4.5" height="3" rx="1"/><rect x="9" y="7.5" width="4.5" height="6" rx="1"/><rect x="2.5" y="9.5" width="4.5" height="4" rx="1"/></g>
+<text x="95" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">dashboard</text>
+<rect x="178.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.5 14,13 2,13"/><line x1="8" y1="6.5" x2="8" y2="9.5"/><circle cx="8" cy="11.25" r="0.5" fill="#F5F5F5"/></g>
+<g transform="translate(234 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.5 14,13 2,13"/><line x1="8" y1="6.5" x2="8" y2="9.5"/><circle cx="8" cy="11.25" r="0.5" fill="#F5F5F5"/></g>
+<rect x="284" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="8,2.5 14,13 2,13"/><line x1="8" y1="6.5" x2="8" y2="9.5"/><circle cx="8" cy="11.25" r="0.5" fill="#00131F"/></g>
+<text x="249" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">issues</text>
+<rect x="332.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3.5" y1="2.5" x2="3.5" y2="13.5"/><line x1="7" y1="2.5" x2="7" y2="13.5"/><line x1="10" y1="3.5" x2="13" y2="13.5"/></g>
+<g transform="translate(388 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="3.5" y1="2.5" x2="3.5" y2="13.5"/><line x1="7" y1="2.5" x2="7" y2="13.5"/><line x1="10" y1="3.5" x2="13" y2="13.5"/></g>
+<rect x="438" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3.5" y1="2.5" x2="3.5" y2="13.5"/><line x1="7" y1="2.5" x2="7" y2="13.5"/><line x1="10" y1="3.5" x2="13" y2="13.5"/></g>
+<text x="403" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">library</text>
+<rect x="486.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,8 4.5,8 6.5,3.5 9.5,12.5 11.5,8 14.5,8"/></g>
+<g transform="translate(542 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,8 4.5,8 6.5,3.5 9.5,12.5 11.5,8 14.5,8"/></g>
+<rect x="592" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,8 4.5,8 6.5,3.5 9.5,12.5 11.5,8 14.5,8"/></g>
+<text x="557" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">scans</text>
+<rect x="640.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="5.5" y1="2" x2="5.5" y2="4.5"/><line x1="10.5" y1="2" x2="10.5" y2="4.5"/><circle cx="5.5" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="8" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="10.5" cy="9.75" r="0.5" fill="#F5F5F5"/></g>
+<g transform="translate(696 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="5.5" y1="2" x2="5.5" y2="4.5"/><line x1="10.5" y1="2" x2="10.5" y2="4.5"/><circle cx="5.5" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="8" cy="9.75" r="0.5" fill="#F5F5F5"/><circle cx="10.5" cy="9.75" r="0.5" fill="#F5F5F5"/></g>
+<rect x="746" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="5.5" y1="2" x2="5.5" y2="4.5"/><line x1="10.5" y1="2" x2="10.5" y2="4.5"/><circle cx="5.5" cy="9.75" r="0.5" fill="#00131F"/><circle cx="8" cy="9.75" r="0.5" fill="#00131F"/><circle cx="10.5" cy="9.75" r="0.5" fill="#00131F"/></g>
+<text x="711" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">schedule</text>
+<rect x="794.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8.5" rx="1.5"/><polyline points="6,5 6,3 10,3 10,5"/><line x1="8" y1="7.5" x2="8" y2="11"/><line x1="6.25" y1="9.25" x2="9.75" y2="9.25"/></g>
+<g transform="translate(850 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8.5" rx="1.5"/><polyline points="6,5 6,3 10,3 10,5"/><line x1="8" y1="7.5" x2="8" y2="11"/><line x1="6.25" y1="9.25" x2="9.75" y2="9.25"/></g>
+<rect x="900" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8.5" rx="1.5"/><polyline points="6,5 6,3 10,3 10,5"/><line x1="8" y1="7.5" x2="8" y2="11"/><line x1="6.25" y1="9.25" x2="9.75" y2="9.25"/></g>
+<text x="865" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">tools</text>
+<rect x="948.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(968 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="8" y2="4.5"/><line x1="12" y1="4.5" x2="13.5" y2="4.5"/><circle cx="10" cy="4.5" r="1.75"/><line x1="2.5" y1="11.5" x2="4" y2="11.5"/><line x1="8" y1="11.5" x2="13.5" y2="11.5"/><circle cx="6" cy="11.5" r="1.75"/></g>
+<g transform="translate(1004 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="8" y2="4.5"/><line x1="12" y1="4.5" x2="13.5" y2="4.5"/><circle cx="10" cy="4.5" r="1.75"/><line x1="2.5" y1="11.5" x2="4" y2="11.5"/><line x1="8" y1="11.5" x2="13.5" y2="11.5"/><circle cx="6" cy="11.5" r="1.75"/></g>
+<rect x="1054" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1058 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="8" y2="4.5"/><line x1="12" y1="4.5" x2="13.5" y2="4.5"/><circle cx="10" cy="4.5" r="1.75"/><line x1="2.5" y1="11.5" x2="4" y2="11.5"/><line x1="8" y1="11.5" x2="13.5" y2="11.5"/><circle cx="6" cy="11.5" r="1.75"/></g>
+<text x="1019" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">settings</text>
+<rect x="1102.5" y="84.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(1122 102) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></g>
+<g transform="translate(1158 94) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></g>
+<rect x="1208" y="98" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1212 102) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></g>
+<text x="1173" y="146" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">search</text>
+<rect x="24.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 V7.5 C4 5 5.8 3 8 3 C10.2 3 12 5 12 7.5 V11.5"/><line x1="2.75" y1="11.5" x2="13.25" y2="11.5"/><line x1="6.75" y1="13.75" x2="9.25" y2="13.75"/></g>
+<g transform="translate(80 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 V7.5 C4 5 5.8 3 8 3 C10.2 3 12 5 12 7.5 V11.5"/><line x1="2.75" y1="11.5" x2="13.25" y2="11.5"/><line x1="6.75" y1="13.75" x2="9.25" y2="13.75"/></g>
+<rect x="130" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 V7.5 C4 5 5.8 3 8 3 C10.2 3 12 5 12 7.5 V11.5"/><line x1="2.75" y1="11.5" x2="13.25" y2="11.5"/><line x1="6.75" y1="13.75" x2="9.25" y2="13.75"/></g>
+<text x="95" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">bell</text>
+<rect x="178.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="2.5,3.5 13.5,3.5 9.5,8.5 9.5,12.5 6.5,13.5 6.5,8.5"/></g>
+<g transform="translate(234 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="2.5,3.5 13.5,3.5 9.5,8.5 9.5,12.5 6.5,13.5 6.5,8.5"/></g>
+<rect x="284" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="2.5,3.5 13.5,3.5 9.5,8.5 9.5,12.5 6.5,13.5 6.5,8.5"/></g>
+<text x="249" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">filter</text>
+<rect x="332.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8 C13 10.76 10.76 13 8 13 C5.24 13 3 10.76 3 8 C3 5.24 5.24 3 8 3 C9.6 3 11 3.75 11.9 4.9"/><polyline points="12.25,2.25 12.25,5.25 9.25,5.25"/></g>
+<g transform="translate(388 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8 C13 10.76 10.76 13 8 13 C5.24 13 3 10.76 3 8 C3 5.24 5.24 3 8 3 C9.6 3 11 3.75 11.9 4.9"/><polyline points="12.25,2.25 12.25,5.25 9.25,5.25"/></g>
+<rect x="438" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8 C13 10.76 10.76 13 8 13 C5.24 13 3 10.76 3 8 C3 5.24 5.24 3 8 3 C9.6 3 11 3.75 11.9 4.9"/><polyline points="12.25,2.25 12.25,5.25 9.25,5.25"/></g>
+<text x="403" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">refresh</text>
+<rect x="486.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3.5 12.5,8 5,12.5"/></g>
+<g transform="translate(542 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3.5 12.5,8 5,12.5"/></g>
+<rect x="592" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3.5 12.5,8 5,12.5"/></g>
+<text x="557" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">play</text>
+<rect x="640.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5.5" y1="3.5" x2="5.5" y2="12.5"/><line x1="10.5" y1="3.5" x2="10.5" y2="12.5"/></g>
+<g transform="translate(696 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="5.5" y1="3.5" x2="5.5" y2="12.5"/><line x1="10.5" y1="3.5" x2="10.5" y2="12.5"/></g>
+<rect x="746" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5.5" y1="3.5" x2="5.5" y2="12.5"/><line x1="10.5" y1="3.5" x2="10.5" y2="12.5"/></g>
+<text x="711" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">pause</text>
+<rect x="794.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></g>
+<g transform="translate(850 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></g>
+<rect x="900" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></g>
+<text x="865" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">stop</text>
+<rect x="948.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(968 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></g>
+<g transform="translate(1004 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></g>
+<rect x="1054" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1058 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></g>
+<text x="1019" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">close</text>
+<rect x="1102.5" y="176.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(1122 194) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></g>
+<g transform="translate(1158 186) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></g>
+<rect x="1208" y="190" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1212 194) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></g>
+<text x="1173" y="238" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">add</text>
+<rect x="24.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8.5 6.5,12 13,4.5"/></g>
+<g transform="translate(80 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8.5 6.5,12 13,4.5"/></g>
+<rect x="130" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8.5 6.5,12 13,4.5"/></g>
+<text x="95" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">check</text>
+<rect x="178.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3.5 10.5,8 6,12.5"/></g>
+<g transform="translate(234 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3.5 10.5,8 6,12.5"/></g>
+<rect x="284" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3.5 10.5,8 6,12.5"/></g>
+<text x="249" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">chevron-right</text>
+<rect x="332.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,6 8,10.5 12.5,6"/></g>
+<g transform="translate(388 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,6 8,10.5 12.5,6"/></g>
+<rect x="438" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,6 8,10.5 12.5,6"/></g>
+<text x="403" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">chevron-down</text>
+<rect x="486.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 5.5,8 10,12.5"/></g>
+<g transform="translate(542 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 5.5,8 10,12.5"/></g>
+<rect x="592" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 5.5,8 10,12.5"/></g>
+<text x="557" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">chevron-left</text>
+<rect x="640.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,10 8,5.5 12.5,10"/></g>
+<g transform="translate(696 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,10 8,5.5 12.5,10"/></g>
+<rect x="746" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,10 8,5.5 12.5,10"/></g>
+<text x="711" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">chevron-up</text>
+<rect x="794.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.5" cy="8" r="0.6" fill="#F5F5F5"/><circle cx="8" cy="8" r="0.6" fill="#F5F5F5"/><circle cx="12.5" cy="8" r="0.6" fill="#F5F5F5"/></g>
+<g transform="translate(850 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.5" cy="8" r="0.6" fill="#F5F5F5"/><circle cx="8" cy="8" r="0.6" fill="#F5F5F5"/><circle cx="12.5" cy="8" r="0.6" fill="#F5F5F5"/></g>
+<rect x="900" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.5" cy="8" r="0.6" fill="#00131F"/><circle cx="8" cy="8" r="0.6" fill="#00131F"/><circle cx="12.5" cy="8" r="0.6" fill="#00131F"/></g>
+<text x="865" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">more</text>
+<rect x="948.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(968 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/></g>
+<g transform="translate(1004 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/></g>
+<rect x="1054" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1058 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/></g>
+<text x="1019" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">folder</text>
+<rect x="1102.5" y="268.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(1122 286) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/><line x1="8" y1="7.75" x2="8" y2="10.75"/><line x1="6.5" y1="9.25" x2="9.5" y2="9.25"/></g>
+<g transform="translate(1158 278) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/><line x1="8" y1="7.75" x2="8" y2="10.75"/><line x1="6.5" y1="9.25" x2="9.5" y2="9.25"/></g>
+<rect x="1208" y="282" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1212 286) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5 H6 L7.5 6 H14 V12.5 H2 Z"/><line x1="8" y1="7.75" x2="8" y2="10.75"/><line x1="6.5" y1="9.25" x2="9.5" y2="9.25"/></g>
+<text x="1173" y="330" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">folder-add</text>
+<rect x="24.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><circle cx="5.75" cy="6.75" r="1"/><polyline points="2.5,11 6,8 8.5,10.25 10.5,8.5 13.5,11"/></g>
+<g transform="translate(80 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><circle cx="5.75" cy="6.75" r="1"/><polyline points="2.5,11 6,8 8.5,10.25 10.5,8.5 13.5,11"/></g>
+<rect x="130" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><circle cx="5.75" cy="6.75" r="1"/><polyline points="2.5,11 6,8 8.5,10.25 10.5,8.5 13.5,11"/></g>
+<text x="95" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">photo</text>
+<rect x="178.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="8.5" height="8" rx="1.5"/><polyline points="10.5,6.9 14,4.9 14,11.1 10.5,9.1"/></g>
+<g transform="translate(234 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="8.5" height="8" rx="1.5"/><polyline points="10.5,6.9 14,4.9 14,11.1 10.5,9.1"/></g>
+<rect x="284" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="8.5" height="8" rx="1.5"/><polyline points="10.5,6.9 14,4.9 14,11.1 10.5,9.1"/></g>
+<text x="249" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">video</text>
+<rect x="332.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,11.5 6,4 12.5,3 12.5,10.5"/><circle cx="4.5" cy="11.5" r="1.5"/><circle cx="11" cy="10.5" r="1.5"/></g>
+<g transform="translate(388 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,11.5 6,4 12.5,3 12.5,10.5"/><circle cx="4.5" cy="11.5" r="1.5"/><circle cx="11" cy="10.5" r="1.5"/></g>
+<rect x="438" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,11.5 6,4 12.5,3 12.5,10.5"/><circle cx="4.5" cy="11.5" r="1.5"/><circle cx="11" cy="10.5" r="1.5"/></g>
+<text x="403" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">music</text>
+<rect x="486.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="8,4.75 8,8 10.25,9.5"/></g>
+<g transform="translate(542 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="8,4.75 8,8 10.25,9.5"/></g>
+<rect x="592" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="8,4.75 8,8 10.25,9.5"/></g>
+<text x="557" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">clock</text>
+<rect x="640.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/></g>
+<g transform="translate(696 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/></g>
+<rect x="746" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/></g>
+<text x="711" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">shield</text>
+<rect x="794.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/><polyline points="5.75,8 7.4,9.6 10.25,6.5"/></g>
+<g transform="translate(850 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/><polyline points="5.75,8 7.4,9.6 10.25,6.5"/></g>
+<rect x="900" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 L13 4 V8 C13 10.9 10.9 13.2 8 14 C5.1 13.2 3 10.9 3 8 V4 Z"/><polyline points="5.75,8 7.4,9.6 10.25,6.5"/></g>
+<text x="865" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">shield-check</text>
+<rect x="948.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(968 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 H10 C12 6.5 13.5 8 13.5 10 C13.5 12 12 13.5 10 13.5 H6.5"/><polyline points="6,4 3.5,6.5 6,9"/></g>
+<g transform="translate(1004 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 H10 C12 6.5 13.5 8 13.5 10 C13.5 12 12 13.5 10 13.5 H6.5"/><polyline points="6,4 3.5,6.5 6,9"/></g>
+<rect x="1054" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1058 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 H10 C12 6.5 13.5 8 13.5 10 C13.5 12 12 13.5 10 13.5 H6.5"/><polyline points="6,4 3.5,6.5 6,9"/></g>
+<text x="1019" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">undo</text>
+<rect x="1102.5" y="360.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(1122 378) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="3" rx="0.75"/><polyline points="3.5,6 3.5,12.5 12.5,12.5 12.5,6"/><line x1="6.5" y1="8.75" x2="9.5" y2="8.75"/></g>
+<g transform="translate(1158 370) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="3" rx="0.75"/><polyline points="3.5,6 3.5,12.5 12.5,12.5 12.5,6"/><line x1="6.5" y1="8.75" x2="9.5" y2="8.75"/></g>
+<rect x="1208" y="374" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1212 378) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="3" rx="0.75"/><polyline points="3.5,6 3.5,12.5 12.5,12.5 12.5,6"/><line x1="6.5" y1="8.75" x2="9.5" y2="8.75"/></g>
+<text x="1173" y="422" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">quarantine</text>
+<rect x="24.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><polyline points="6,4.5 6,3 10,3 10,4.5"/><polyline points="4.25,4.5 5,13.5 11,13.5 11.75,4.5"/><line x1="6.75" y1="7" x2="6.75" y2="11"/><line x1="9.25" y1="7" x2="9.25" y2="11"/></g>
+<g transform="translate(80 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><polyline points="6,4.5 6,3 10,3 10,4.5"/><polyline points="4.25,4.5 5,13.5 11,13.5 11.75,4.5"/><line x1="6.75" y1="7" x2="6.75" y2="11"/><line x1="9.25" y1="7" x2="9.25" y2="11"/></g>
+<rect x="130" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><polyline points="6,4.5 6,3 10,3 10,4.5"/><polyline points="4.25,4.5 5,13.5 11,13.5 11.75,4.5"/><line x1="6.75" y1="7" x2="6.75" y2="11"/><line x1="9.25" y1="7" x2="9.25" y2="11"/></g>
+<text x="95" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">trash</text>
+<rect x="178.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,3.5 3.5,3.5 3.5,12.5 12.5,12.5 12.5,9"/><polyline points="9.5,3.5 12.5,3.5 12.5,6.5"/><line x1="12.5" y1="3.5" x2="7.5" y2="8.5"/></g>
+<g transform="translate(234 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,3.5 3.5,3.5 3.5,12.5 12.5,12.5 12.5,9"/><polyline points="9.5,3.5 12.5,3.5 12.5,6.5"/><line x1="12.5" y1="3.5" x2="7.5" y2="8.5"/></g>
+<rect x="284" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,3.5 3.5,3.5 3.5,12.5 12.5,12.5 12.5,9"/><polyline points="9.5,3.5 12.5,3.5 12.5,6.5"/><line x1="12.5" y1="3.5" x2="7.5" y2="8.5"/></g>
+<text x="249" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">open</text>
+<rect x="332.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><polyline points="10.5,3.5 10.5,2.5 2.5,2.5 2.5,10.5 3.5,10.5"/></g>
+<g transform="translate(388 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><polyline points="10.5,3.5 10.5,2.5 2.5,2.5 2.5,10.5 3.5,10.5"/></g>
+<rect x="438" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><polyline points="10.5,3.5 10.5,2.5 2.5,2.5 2.5,10.5 3.5,10.5"/></g>
+<text x="403" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">copy</text>
+<rect x="486.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2.5" x2="8" y2="10.5"/><polyline points="4.5,7.5 8,11 11.5,7.5"/><line x1="3" y1="13.5" x2="13" y2="13.5"/></g>
+<g transform="translate(542 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2.5" x2="8" y2="10.5"/><polyline points="4.5,7.5 8,11 11.5,7.5"/><line x1="3" y1="13.5" x2="13" y2="13.5"/></g>
+<rect x="592" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2.5" x2="8" y2="10.5"/><polyline points="4.5,7.5 8,11 11.5,7.5"/><line x1="3" y1="13.5" x2="13" y2="13.5"/></g>
+<text x="557" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">download</text>
+<rect x="640.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 H9.5 L12 5 V13.5 H4 Z"/><polyline points="9.5,2.5 9.5,5 12,5"/><line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></g>
+<g transform="translate(696 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 H9.5 L12 5 V13.5 H4 Z"/><polyline points="9.5,2.5 9.5,5 12,5"/><line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></g>
+<rect x="746" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 H9.5 L12 5 V13.5 H4 Z"/><polyline points="9.5,2.5 9.5,5 12,5"/><line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></g>
+<text x="711" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">report</text>
+<rect x="794.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="7.25" x2="8" y2="11"/><circle cx="8" cy="5.1" r="0.5" fill="#F5F5F5"/></g>
+<g transform="translate(850 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="7.25" x2="8" y2="11"/><circle cx="8" cy="5.1" r="0.5" fill="#F5F5F5"/></g>
+<rect x="900" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="8" y1="7.25" x2="8" y2="11"/><circle cx="8" cy="5.1" r="0.5" fill="#00131F"/></g>
+<text x="865" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">info</text>
+<rect x="948.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(968 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="4.1" y1="4.1" x2="11.9" y2="11.9"/></g>
+<g transform="translate(1004 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="4.1" y1="4.1" x2="11.9" y2="11.9"/></g>
+<rect x="1054" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1058 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><line x1="4.1" y1="4.1" x2="11.9" y2="11.9"/></g>
+<text x="1019" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">ignore</text>
+<rect x="1102.5" y="452.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(1122 470) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="11" height="8" rx="1.5"/><line x1="2.5" y1="9" x2="13.5" y2="9"/><circle cx="11" cy="10.5" r="0.4" fill="#F5F5F5"/></g>
+<g transform="translate(1158 462) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="11" height="8" rx="1.5"/><line x1="2.5" y1="9" x2="13.5" y2="9"/><circle cx="11" cy="10.5" r="0.4" fill="#F5F5F5"/></g>
+<rect x="1208" y="466" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(1212 470) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="11" height="8" rx="1.5"/><line x1="2.5" y1="9" x2="13.5" y2="9"/><circle cx="11" cy="10.5" r="0.4" fill="#00131F"/></g>
+<text x="1173" y="514" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">drive</text>
+<rect x="24.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(44 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="5.5,8 8,5.5 10.5,8"/><line x1="8" y1="5.5" x2="8" y2="11"/></g>
+<g transform="translate(80 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="5.5,8 8,5.5 10.5,8"/><line x1="8" y1="5.5" x2="8" y2="11"/></g>
+<rect x="130" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(134 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><polyline points="5.5,8 8,5.5 10.5,8"/><line x1="8" y1="5.5" x2="8" y2="11"/></g>
+<text x="95" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">update</text>
+<rect x="178.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(198 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/></g>
+<g transform="translate(234 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/></g>
+<rect x="284" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(288 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/></g>
+<text x="249" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">menu</text>
+<rect x="332.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(352 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 C3 3.4 5.2 2.5 8 2.5 C10.8 2.5 13 3.4 13 4.5 V11.5 C13 12.6 10.8 13.5 8 13.5 C5.2 13.5 3 12.6 3 11.5 Z"/><path d="M3 4.5 C3 5.6 5.2 6.5 8 6.5 C10.8 6.5 13 5.6 13 4.5"/><path d="M3 8 C3 9.1 5.2 10 8 10 C10.8 10 13 9.1 13 8"/></g>
+<g transform="translate(388 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 C3 3.4 5.2 2.5 8 2.5 C10.8 2.5 13 3.4 13 4.5 V11.5 C13 12.6 10.8 13.5 8 13.5 C5.2 13.5 3 12.6 3 11.5 Z"/><path d="M3 4.5 C3 5.6 5.2 6.5 8 6.5 C10.8 6.5 13 5.6 13 4.5"/><path d="M3 8 C3 9.1 5.2 10 8 10 C10.8 10 13 9.1 13 8"/></g>
+<rect x="438" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(442 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 C3 3.4 5.2 2.5 8 2.5 C10.8 2.5 13 3.4 13 4.5 V11.5 C13 12.6 10.8 13.5 8 13.5 C5.2 13.5 3 12.6 3 11.5 Z"/><path d="M3 4.5 C3 5.6 5.2 6.5 8 6.5 C10.8 6.5 13 5.6 13 4.5"/><path d="M3 8 C3 9.1 5.2 10 8 10 C10.8 10 13 9.1 13 8"/></g>
+<text x="403" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">database</text>
+<rect x="486.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(506 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/><line x1="6.5" y1="2" x2="6.5" y2="4.5"/><line x1="9.5" y1="2" x2="9.5" y2="4.5"/><line x1="6.5" y1="11.5" x2="6.5" y2="14"/><line x1="9.5" y1="11.5" x2="9.5" y2="14"/><line x1="2" y1="6.5" x2="4.5" y2="6.5"/><line x1="2" y1="9.5" x2="4.5" y2="9.5"/><line x1="11.5" y1="6.5" x2="14" y2="6.5"/><line x1="11.5" y1="9.5" x2="14" y2="9.5"/></g>
+<g transform="translate(542 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/><line x1="6.5" y1="2" x2="6.5" y2="4.5"/><line x1="9.5" y1="2" x2="9.5" y2="4.5"/><line x1="6.5" y1="11.5" x2="6.5" y2="14"/><line x1="9.5" y1="11.5" x2="9.5" y2="14"/><line x1="2" y1="6.5" x2="4.5" y2="6.5"/><line x1="2" y1="9.5" x2="4.5" y2="9.5"/><line x1="11.5" y1="6.5" x2="14" y2="6.5"/><line x1="11.5" y1="9.5" x2="14" y2="9.5"/></g>
+<rect x="592" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(596 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/><line x1="6.5" y1="2" x2="6.5" y2="4.5"/><line x1="9.5" y1="2" x2="9.5" y2="4.5"/><line x1="6.5" y1="11.5" x2="6.5" y2="14"/><line x1="9.5" y1="11.5" x2="9.5" y2="14"/><line x1="2" y1="6.5" x2="4.5" y2="6.5"/><line x1="2" y1="9.5" x2="4.5" y2="9.5"/><line x1="11.5" y1="6.5" x2="14" y2="6.5"/><line x1="11.5" y1="9.5" x2="14" y2="9.5"/></g>
+<text x="557" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">engine</text>
+<rect x="640.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(660 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,6.5 8,10 11.5,6.5"/></g>
+<g transform="translate(696 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,6.5 8,10 11.5,6.5"/></g>
+<rect x="746" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(750 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,6.5 8,10 11.5,6.5"/></g>
+<text x="711" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">sort-down</text>
+<rect x="794.5" y="544.5" width="141" height="79" rx="8" fill="#2A2A2A" stroke="#454545" stroke-width="1"/>
+<g transform="translate(814 562) scale(1)" fill="none" stroke="#F5F5F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,9.5 8,6 11.5,9.5"/></g>
+<g transform="translate(850 554) scale(2)" fill="none" stroke="#F5F5F5" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,9.5 8,6 11.5,9.5"/></g>
+<rect x="900" y="558" width="24" height="24" rx="4" fill="#60CDFF"/>
+<g transform="translate(904 562) scale(1)" fill="none" stroke="#00131F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,9.5 8,6 11.5,9.5"/></g>
+<text x="865" y="606" font-family="Segoe UI, sans-serif" font-size="11" font-weight="400" fill="#CECECE" dominant-baseline="central" text-anchor="middle">sort-up</text>
+<text x="24" y="652" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#F5F5F5" dominant-baseline="central">App icon</text>
+<text x="24" y="678" font-family="Segoe UI, sans-serif" font-size="13" font-weight="400" fill="#CECECE" dominant-baseline="central">Gradient version at 32 px and larger; flat version with a larger triangle at 24 px and smaller.</text>
+<g transform="translate(24 700.0) scale(0.5)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#g128)"/><polygon points="104,86 180,128 104,170" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<g transform="translate(180 732.0) scale(0.25)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#g64)"/><polygon points="104,86 180,128 104,170" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<g transform="translate(272 740.0) scale(0.1875)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#g48)"/><polygon points="104,86 180,128 104,170" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<g transform="translate(348 748.0) scale(0.125)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="url(#g32)"/><polygon points="104,86 180,128 104,170" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<g transform="translate(408 752.0) scale(0.09375)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="#2B8CEB"/><polygon points="98,80 186,128 98,176" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+<g transform="translate(460 756.0) scale(0.0625)"><path d="M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z" fill="#2B8CEB"/><polygon points="98,80 186,128 98,176" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/></g>
+</svg>

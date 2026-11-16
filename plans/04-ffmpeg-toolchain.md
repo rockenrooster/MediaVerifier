@@ -11,42 +11,36 @@ layer starts a process or parses FFmpeg text.
 Read [appendix A](appendix-a-ffmpeg-verified-behavior.md) before starting. It records what FFmpeg 8.0.1
 actually does with corrupt inputs, including several cases where the obvious command reports nothing.
 
-## Supported versions
+## The bundled build
 
-- Minimum FFmpeg 6.1. Developed and verified against 8.0.1 (gyan.dev full build).
-- At startup the locator runs `ffmpeg -version`, `ffmpeg -filters`, `ffmpeg -decoders` and
-  `ffmpeg -demuxers` once and caches the result keyed by the executable's path, size and modified
-  time (in `cache\ffmpeg-capabilities.json`).
-- Required filters: `ssim`, `scale`, `crop`, `split`, `concat`, `trim`, `setpts`, `metadata`.
-  Optional (a missing filter disables the rules that need it and is reported on the Settings page):
-  `blockdetect`, `blurdetect`, `idet`, `freezedetect`, `blackdetect`, `ebur128`, `adeclip`, `adeclick`.
-- A format whose decoder is missing from the user's build is reported as *not verifiable with this
-  FFmpeg build* (file state `Skipped`, reason `UnsupportedByFfmpeg`), never as corrupt.
+MediaVerifier uses only the FFmpeg it ships with: FFmpeg 9.0.2, built by this repository with a
+fixed set of components and no network code ([subplan 17](17-bundled-ffmpeg.md)). The user never
+installs, chooses, downloads or updates FFmpeg; it is updated with the app.
 
-## Locating FFmpeg
+- Every component the app relies on is guaranteed by the bundle's verification (subplan 17), so there
+  are no optional features and no capability-dependent rules.
+- A format with no decoder in the bundle is reported as *not supported* (file state `Skipped`, reason
+  `UnsupportedByFfmpeg`), never as corrupt. With every decoder built in this should only happen for
+  formats FFmpeg itself cannot read.
 
-Resolution order; the first directory that contains both executables and passes the version check wins:
+## Locating and checking the bundle
 
-1. Path configured in settings.
-2. App-managed copy: `%LOCALAPPDATA%\MediaVerifier\ffmpeg\<version>\bin`.
-3. `PATH` (including WinGet links and Chocolatey or Scoop shims).
-4. Well-known folders: `%ProgramFiles%\ffmpeg\bin`, `C:\ffmpeg\bin`.
+`FfmpegLocator` resolves exactly one folder:
 
-If none is found the UI shows a blocking but friendly setup card (subplan 09): *Use an existing
-FFmpeg* (browse) or *Download FFmpeg* (managed copy).
+1. If the environment variable `MEDIAVERIFIER_FFMPEG_DIR` is set (developers only, subplan 17), that
+   folder, logged as a warning at startup. Its integrity is not checked.
+2. Otherwise `<folder of MediaVerifier.exe>\ffmpeg\`.
 
-### Managed download (task FF-04)
+`BundleIntegrity` runs on a background thread after the main window is shown and again in
+`--self-check`; a scan waits for its result:
 
-`FfmpegCatalog` holds one pinned release: version, URL, byte size and SHA-256. Choose a versioned,
-immutable `.zip` asset from an upstream that publishes release builds on GitHub Releases (candidates:
-the `essentials` or `full` build from `GyanD/codexffmpeg`, or a tagged release build from
-`BtbN/FFmpeg-Builds`). Record the choice and the reason in the deviations log. The app does not
-redistribute FFmpeg; it downloads from upstream on the user's request.
+| Result | Condition | Behaviour |
+|--------|-----------|-----------|
+| OK | `bundle.json` present, every listed file present with the listed SHA-256 | Nothing shown |
+| Changed | Every file present, at least one hash differs | Scans run. Tools → Media engine shows a Medium info bar `The media engine files were changed. Results may differ from a standard installation.` and the self-check reports it |
+| Missing | `bundle.json` or any listed file missing, or `ffmpeg -version` fails | Scanning is disabled with the reason `The media engine is missing or damaged. Reinstall MediaVerifier.`; the Scan button's tooltip and a Critical info bar on the Dashboard say so, with the action `Open download page` (the GitHub releases page in the browser) |
 
-Download flow mirrors the updater: stream to `*.download`, check `Content-Length` early, hash while
-streaming, compare size and SHA-256, extract with `System.IO.Compression` into a temp folder, verify
-both executables run, then move into place. Reject archive entries that would extract outside the
-target folder. Fail closed and delete partial files on any mismatch.
+Hashing the bundle (about 50 MB) takes well under a second and runs at below-normal priority.
 
 ## Process runner
 
@@ -97,7 +91,7 @@ Why each one matters (all verified in appendix A):
 | `-loglevel repeat+level+warning` | H.264 damage is reported only as a *warning* (`corrupt decoded frame`). At `-v error` a corrupted film decodes "cleanly". `level` prefixes every line with `[warning]`/`[error]`/`[fatal]`; `repeat` stops FFmpeg collapsing repeated lines |
 | `-err_detect crccheck+bitstream+buffer` | Decoder CRC checks are off by default. A single flipped byte in a FLAC is silent without `crccheck` |
 | `-max_error_rate 1` | Without it FFmpeg aborts with *Decode error rate exceeds maximum* and stops reporting |
-| `-protocol_whitelist file,pipe` | Media containers and playlists can reference URLs and other files; never let a scanned file cause network or cross-file access |
+| `-protocol_whitelist file,pipe` | Media containers and playlists can reference URLs and other files. The bundle contains no network code at all; the whitelist keeps the same guarantee when a developer override points at a full build |
 | `-nostdin` | Prevents FFmpeg reading the console and hanging |
 
 Strict mode (Deep depth, optional setting) appends `+careful+compliant` to `-err_detect`. Do not use
@@ -106,7 +100,7 @@ Strict mode (Deep depth, optional setting) appends `+careful+compliant` to `-err
 ### Input-path rules
 
 - Pass the path as its own argument after `-i`. Paths longer than 260 characters and Unicode names
-  work with FFmpeg 6.1+ (verified with a 393-character path).
+  work (verified with a 393-character path on 8.0.1; re-verified on the bundle by task FFB-05).
 - **Still images:** the `image2` demuxer treats `%d` and `%03d` in a file name as a sequence pattern
   and fails with *Could find no file with path*. For photos, select the demuxer explicitly from the
   sniffed signature: `-f jpeg_pipe`, `png_pipe`, `webp_pipe`, `bmp_pipe`, `tiff_pipe`, `gif`,
@@ -246,21 +240,21 @@ rare; treat their effective depth as "24 or more".
 
 | ID | Task | Acceptance |
 |----|------|------------|
-| FF-01 | `FfmpegLocator` with the resolution order and version gate | Tests with fake directories; rejects a build below 6.1 with a clear message |
-| FF-02 | Capability probe and cache | Cache invalidates when the exe changes; missing optional filter disables the dependent rules (unit test with a fake capability set) |
-| FF-03 | `FfProcess` with Job Object, concurrent pipe reading, timeouts, cancellation, bounded log collection | Tests: cancel mid-run leaves no child process; a child that prints 5 million lines keeps memory flat; idle timeout fires on a child that sleeps (use a test helper exe or `ffmpeg -f lavfi -i anullsrc -t 9999` with `-readrate 1`) |
-| FF-04 | `FfmpegCatalog` and managed download with verification and safe extraction | Tests with a local HTTP listener: good archive installs; wrong hash, wrong size, truncated stream and path-traversal entries are rejected and leave nothing behind |
+| FF-01 | `FfmpegLocator`: bundle folder beside the executable, `MEDIAVERIFIER_FFMPEG_DIR` override | Tests with fake folders; the override is logged as a warning |
+| FF-02 | `BundleIntegrity` with the OK, Changed and Missing outcomes and their UI hooks | Tests with a fake bundle: a changed DLL gives Changed and scans continue; a deleted DLL gives Missing and scans are refused with the exact message |
+| FF-03 | `FfProcess` with Job Object, concurrent pipe reading, timeouts, cancellation, bounded log collection | Tests use a helper console program in the test project that sleeps, prints a set number of lines, or writes binary data (the bundle has no test-signal inputs). Cancel mid-run leaves no child process; 5 million lines keep memory flat; the idle timeout fires on the sleeping helper |
+| FF-04 | Startup check that the bundle reports version `9.0.2` and its protocols are only `file` and `pipe` | Self-check fails when run against a full FFmpeg build through the override |
 | FF-05 | `ProbeProvider` and JSON model | Golden-file tests over captured ffprobe JSON (healthy audio, video, photo; cover art; missing fields; `N/A` values; unopenable file) |
 | FF-06 | `LogClassifier` and `LogSummary` | Every corpus line in `tests/Data/logs/` maps to the expected kind; unknown error lines are counted and logged |
 | FF-07 | Progress parser | Parses a captured progress stream; tolerates a stream cut mid-block |
 | FF-08 | `WavPipeReader` | Tests: plain float header, header with `LIST` chunk, extensible header (6 channels), truncated stream, non-float format rejected |
 | FF-09 | Photo demuxer selection and `%` handling | Integration test: a file named `a%03d.jpg` probes and decodes |
-| FF-10 | Settings page hooks: show FFmpeg path, version, source, missing optional features, *Change* and *Download* | Manual check |
+| FF-10 | Tools → Media engine view (subplan 09): version, build, licence, location, integrity state, licence text, source link | Matches the subplan 09 table |
 
 ## Exit criteria
 
-- Integration tests (skipped when FFmpeg is absent) pass against the pinned build and the locally
-  installed build.
+- Integration tests pass against the bundle fetched by `scripts/Get-FfmpegBundle.ps1`. They skip
+  (never fail) when no bundle has been fetched yet and the override is not set.
 - No other namespace references `System.Diagnostics.Process`.
 
 ## Pitfalls

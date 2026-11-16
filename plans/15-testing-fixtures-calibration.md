@@ -22,8 +22,16 @@ Conventions:
 
 - xUnit. Traits: `Category=Integration`, `Category=System`, `Category=Perf`. The default `dotnet test`
   run excludes `Perf`.
+- Two FFmpeg builds are involved, never mixed up:
+  - The **bundle** (subplan 17), fetched by `scripts/Get-FfmpegBundle.ps1`: everything the app runs
+    under test uses it, exactly as it ships.
+  - The **tooling FFmpeg**: a full build with encoders (gyan.dev "full", 8.0 or newer) on the
+    developer's `PATH`, used only by `FixtureFactory` to create test media. The bundle cannot do this;
+    it has almost no encoders and no test-signal sources.
 - `FfmpegFactAttribute` (derives from `FactAttribute`) sets `Skip` with a clear message when the
-  locator finds no usable FFmpeg, so integration tests need no extra package to skip dynamically.
+  bundle (or the `MEDIAVERIFIER_FFMPEG_DIR` override) is not available, and `FixtureFactAttribute`
+  does the same when the tooling FFmpeg is not on `PATH`, so integration tests need no extra package
+  to skip dynamically.
 - Tests never touch the user's real profile: `AppPaths` is pointed at a per-test temp directory.
 - Time is injected (`IClock`); no test sleeps to wait for a schedule.
 - No media files are committed to the repository. Fixtures are generated; parsers are also tested
@@ -31,9 +39,10 @@ Conventions:
 
 ## Fixture generator
 
-`FixtureFactory` (test project) creates media with FFmpeg's built-in sources into a cache directory
-keyed by generator version and FFmpeg version, so the cost (about 20 seconds) is paid once per
-machine. All recipes below were run on FFmpeg 8.0.1. `FF` = `ffmpeg -hide_banner -nostdin -v error -y`.
+`FixtureFactory` (test project) creates media with the tooling FFmpeg's built-in sources into a cache
+directory keyed by generator version and tooling FFmpeg version, so the cost (about 20 seconds) is paid
+once per machine. All recipes below were run on FFmpeg 8.0.1 (gyan.dev full build).
+`FF` = `ffmpeg -hide_banner -nostdin -v error -y`, where `ffmpeg` is the tooling build.
 
 ### Audio
 
@@ -88,8 +97,8 @@ FF -ss 2 -i native1080.mp4 -frames:v 1 -c:v libwebp -q:v 80 img.webp
 Plus enlarged copies for `IMG-UPSCALED`, JPEGs at qualities 20–95 for the quality estimator, and files
 named `a%03d.jpg`, `100% real.jpg`, a 300-character path and a non-ASCII name for path handling.
 
-If an encoder is missing from the local FFmpeg build, the fixtures that need it are skipped along
-with their tests.
+If an encoder is missing from the tooling FFmpeg, the fixtures that need it are skipped along with
+their tests.
 
 ## Corruption mutators
 
@@ -200,16 +209,19 @@ product's providers; it contains no detection logic of its own.
 ## Continuous integration
 
 - `ci.yml`: build (warnings are errors), unit tests, self-check.
-- Integration job: obtain FFmpeg through the app's own pinned-download code once it exists (task
-  FF-04), cached with `actions/cache` keyed by the catalog hash. Until then use the runner's package
-  manager.
+- Integration job (`windows-latest`): fetch the bundle with `scripts/Get-FfmpegBundle.ps1` (cached with
+  `actions/cache`, keyed by the lock file's SHA-256), install the tooling FFmpeg with
+  `choco install ffmpeg-full --no-progress -y` pinned with `--version` (record the version in the
+  workflow), cache the generated fixtures keyed by generator and tooling versions, then run the
+  integration tests. Until the first bundle exists, set `MEDIAVERIFIER_FFMPEG_DIR` to the tooling
+  build.
 - The release workflow runs unit tests before building.
 
 ## Tasks
 
 | ID | Task | Acceptance |
 |----|------|------------|
-| T-01 | Test project conventions: traits, `FfmpegFactAttribute`, temp `AppPaths`, `IClock` | A sample integration test skips cleanly on a machine without FFmpeg |
+| T-01 | Test project conventions: traits, `FfmpegFactAttribute`, `FixtureFactAttribute`, temp `AppPaths`, `IClock` | A sample integration test skips cleanly on a machine with neither the bundle nor the tooling FFmpeg |
 | T-02 | `FixtureFactory` with the audio, video and photo recipes and a versioned cache | Second run takes under a second; missing encoders skip only dependent fixtures |
 | T-03 | `Mutate` with the five mutators | Deterministic for a given seed |
 | T-04 | Matrix tests for the single-position table | Every cell behaves as listed, including the "not detected" cells (so a future improvement is noticed and the table updated) |

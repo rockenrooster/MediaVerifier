@@ -150,10 +150,8 @@ chunk, but the reader must skip unknown chunks regardless.
 
 ## 9. ffprobe JSON
 
-Top-level format keys: `bit_rate, duration, filename, format_long_name, format_name, nb_programs,
-nb_stream_groups, nb_streams, probe_score, size, start_time, tags`. Video stream keys include
-`avg_frame_rate, bit_rate, bits_per_raw_sample, codec_name, codec_type, coded_height, coded_width,
-disposition, duration, field_order, height, nb_frames, pix_fmt, profile, r_frame_rate, width`. All
+Top-level format keys: `bit_rate, duration, filename, format_long_name, format_name, nb_programs, nb_stream_groups, nb_streams, probe_score, size, start_time, tags`. Video stream keys include
+`avg_frame_rate, bit_rate, bits_per_raw_sample, codec_name, codec_type, coded_height, coded_width, disposition, duration, field_order, height, nb_frames, pix_fmt, profile, r_frame_rate, width`. All
 numbers arrive as strings.
 
 A 24-bit FLAC reports `"sample_fmt":"s32"`, `"bits_per_sample":0`, `"bits_per_raw_sample":"24"`.
@@ -226,12 +224,8 @@ Process start-up is the floor for per-file cost. Avoid a second process where on
 
 ## 14. Capabilities of the tested build
 
-Filters present: `adeclick adeclip aspectralstats astats ebur128 loudnorm silencedetect volumedetect
-bitplanenoise blackdetect blockdetect blurdetect cropdetect entropy freezedetect idet psnr scale
-select signalstats siti ssim vmafmotion xpsnr showspectrumpic`.
+Filters present: `adeclick adeclip aspectralstats astats ebur128 loudnorm silencedetect volumedetect bitplanenoise blackdetect blockdetect blurdetect cropdetect entropy freezedetect idet psnr scale select signalstats siti ssim vmafmotion xpsnr showspectrumpic`.
 
-Decoders present include: `flac mp3float aac opus vorbis alac ape wavpack tak wmalossless truehd dca
-ac3 eac3 dsd_lsbf h264 hevc av1 libdav1d vp9 mpeg2video mpeg4 vc1 prores mjpeg png webp gif bmp tiff
-libjxl`. Hardware acceleration methods listed: `cuda vaapi dxva2 qsv d3d11va opencl vulkan d3d12va amf`.
+Decoders present include: `flac mp3float aac opus vorbis alac ape wavpack tak wmalossless truehd dca ac3 eac3 dsd_lsbf h264 hevc av1 libdav1d vp9 mpeg2video mpeg4 vc1 prores mjpeg png webp gif bmp tiff libjxl`. Hardware acceleration methods listed: `cuda vaapi dxva2 qsv d3d11va opencl vulkan d3d12va amf`.
 
 Smaller builds may lack some of these; the capability probe (subplan 04) decides at run time.

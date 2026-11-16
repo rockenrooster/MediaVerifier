@@ -44,8 +44,7 @@ Each enabled plan has one per-user scheduled task that runs
 
 - Access through the COM automation object `Schedule.Service` (late bound; no extra package). Wrap
   it behind `IScheduleBackend` so tests use a fake.
-- Register by XML: `folder.RegisterTask(name, xml, 6 /* create or update */, null, null,
-  3 /* interactive token */)`. Tasks run only while the user is logged on, with normal privileges,
+- Register by XML: `folder.RegisterTask(name, xml, 6 /* create or update */, null, null, 3 /* interactive token */)`. Tasks run only while the user is logged on, with normal privileges,
   and need no elevation or stored password.
 - Task path `\MediaVerifier\Plan <id>`. If creating the folder is refused, fall back to the root
   folder with the name `MediaVerifier Plan <id>` and remember it in `plans.task_name`.
@@ -81,8 +80,7 @@ Each enabled plan has one per-user scheduled task that runs
 ```
 
 Daily uses `<ScheduleByDay><DaysInterval>n</DaysInterval></ScheduleByDay>`; monthly uses
-`<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth><Months>` with all twelve months `</Months>
-</ScheduleByMonth>`. Escape the description and paths as XML text.
+`<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth><Months>` with all twelve months `</Months> </ScheduleByMonth>`. Escape the description and paths as XML text.
 
 Reconciliation at app start and whenever plans change: for every plan make the task exist with the
 current XML and the **current executable path** (the path changes if a portable exe is moved); delete

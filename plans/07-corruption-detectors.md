@@ -157,8 +157,8 @@ images so the MOV demuxer is used.
 Notes:
 
 - Animated GIF, APNG and WebP are decoded frame by frame by `-count_frames`.
-- HEIC with tile grids needs FFmpeg 7.1 or newer for complete verification; on older builds mark the
-  file `Skipped: UnsupportedByFfmpeg`.
+- HEIC and AVIF photos, including HEIC tile grids, are read by the bundled FFmpeg 9.0.2 (HEVC through
+  the MOV demuxer, AV1 through dav1d). JPEG XL goes through libjxl; select `-f jpegxl_pipe` for it.
 - RAW files: structural check only in M1 and M2; the embedded JPEG preview is decoded in M3.
 - A JPEG or WebP with no decoder complaint is "no errors found", not "intact" (see the table at the top).
 
@@ -210,8 +210,8 @@ Additional evaluation at Deep:
 - Optional setting *Strict decoding* appends `+careful+compliant` to `-err_detect`. Off by default
   because some healthy but non-compliant encodes trip it.
 
-Hardware decoding (`-hwaccel d3d11va`) is an opt-in Deep setting, labelled "faster, may miss some
-errors"; hardware decoders report less. Default is software.
+Decoding is always done in software. The bundle contains no hardware decoders (subplan 17), because
+hardware decoders hide or conceal errors that the software decoders report.
 
 ## Severity summary for damage
 
