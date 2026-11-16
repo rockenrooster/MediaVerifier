@@ -144,8 +144,14 @@ public sealed class RuleSettings
             return new RuleSettings();
         }
 
+        return FromOverrides(stored ?? []);
+    }
+
+    /// <summary>Builds settings from stored overrides, dropping unknown rules and parameters and clamping values.</summary>
+    public static RuleSettings FromOverrides(IReadOnlyDictionary<string, RuleOverride> stored)
+    {
         Dictionary<string, RuleOverride> clean = new(StringComparer.Ordinal);
-        foreach ((string ruleId, RuleOverride value) in stored ?? [])
+        foreach ((string ruleId, RuleOverride value) in stored)
         {
             if (!RuleCatalog.TryGet(ruleId, out _))
             {

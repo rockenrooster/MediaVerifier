@@ -9,15 +9,16 @@ operations journal; fast enough for a million files and safe against crashes mid
 
 ## Technology
 
-- Packages: `Microsoft.Data.Sqlite.Core` 10.0.9 and `SQLitePCLRaw.bundle_e_sqlite3` 2.1.11. The bundle
+- Packages: `Microsoft.Data.Sqlite.Core` 10.0.9 and `SQLitePCLRaw.bundle_e_sqlite3` 2.1.14. The bundle
   ships its own SQLite as `e_sqlite3.dll`, published beside `MediaVerifier.exe`; the app never uses
-  the copy of SQLite inside Windows. Measured: the bundle reports SQLite **3.49.1**.
+  the copy of SQLite inside Windows. Measured: the bundle reports SQLite **3.54.0**. (2.1.11, the version first planned, bundles a SQLite
+  with CVE-2025-6965 and fails the NuGet audit; see the deviations log.)
 - Call `SQLitePCL.Batteries_V2.Init()` once at startup before opening a connection.
-- **SQL feature level: SQLite 3.49.** `RETURNING`, `STRICT` tables, upsert and window functions may be
+- **SQL feature level: SQLite 3.54.** `RETURNING`, `STRICT` tables, upsert and window functions may be
   used. Do not use extensions that are not compiled into the bundle (test any you need, such as FTS5,
   before relying on it).
 - At startup run `SELECT sqlite_version()`, log it, and refuse to open the database with a clear
-  error if it is below 3.49 (that would mean the wrong `e_sqlite3.dll` was loaded).
+  error if it is below 3.54 (that would mean the wrong `e_sqlite3.dll` was loaded).
 - No ORM. Hand-written SQL in repository classes with cached prepared commands.
 
 ## Connections and concurrency
@@ -302,7 +303,7 @@ Tools page actions (subplan 09): back up the database (online backup API or chec
 
 | ID | Task | Acceptance |
 |----|------|------------|
-| S-01 | Add packages; `Database` class that initialises the bundle, opens, applies pragmas, checks SQLite version | Test logs the version (3.49.1 with the pinned packages); a version below 3.49 produces the specific error |
+| S-01 | Add packages; `Database` class that initialises the bundle, opens, applies pragmas, checks SQLite version | Test logs the version (3.54.0 with the pinned packages); a version below 3.54 produces the specific error |
 | S-02 | Schema v1 migration and migration runner with pre-migration backup | Tests: fresh create; idempotent re-open; simulated v1→v2 keeps data and writes a backup; newer-than-app refuses |
 | S-03 | Writer loop with batching and back-pressure | Test: 200,000 file upserts complete at 5,000 rows/s or more; a crash (process kill) during a batch leaves a consistent database |
 | S-04 | `IRootStore`, `IFileIndex` including directory interning and bulk upsert | Tests cover insert, update, move between directories, cascade delete of a root |
@@ -325,7 +326,7 @@ Tools page actions (subplan 09): back up the database (online backup API or chec
   small key/value tables above.
 - Partial indexes require the query's `WHERE` clause to imply the index predicate; write queries
   accordingly and check plans with `EXPLAIN QUERY PLAN` in tests for the hot queries.
-- Chunk `IN (...)` lists at 500 values so prepared statements can be cached and reused (SQLite 3.49
+- Chunk `IN (...)` lists at 500 values so prepared statements can be cached and reused (SQLite 3.54
   allows far more parameters, but a statement per list length defeats the cache).
 - Never hold a read transaction open across a user interaction; it blocks WAL checkpointing.
 - Directory interning must be case-exact; do not use `COLLATE NOCASE` (it is ASCII-only and wrong for

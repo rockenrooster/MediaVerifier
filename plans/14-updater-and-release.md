@@ -101,7 +101,7 @@ Port with these properties:
    ```
    MediaVerifier\
      MediaVerifier.exe          self-contained single file (about 125 MB)
-     e_sqlite3.dll              SQLite 3.49.1 from SQLitePCLRaw.bundle_e_sqlite3
+     e_sqlite3.dll              SQLite 3.54.0 from SQLitePCLRaw.bundle_e_sqlite3
      ffmpeg\                    the bundle exactly as verified (subplan 17)
      THIRD-PARTY-NOTICES.md     licences of everything shipped (subplan 16)
    ```

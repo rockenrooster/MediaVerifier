@@ -60,7 +60,7 @@ changes are informed.
 | D-02 | Three projects: `MediaVerifier` (WinForms exe), `MediaVerifier.Core` (engine library, no UI references), `MediaVerifier.Tests` (xUnit) | The engine must be testable and usable headless; single-file publish still yields one exe |
 | D-03 | All decoding goes through external `ffmpeg.exe` / `ffprobe.exe` processes. No FFmpeg libraries are loaded in-process | The inputs are corrupt files by definition. A decoder crash or hang must never take the app down, and a stuck decode must be killable. Also avoids unsafe code and native leaks, and keeps FFmpeg licensing separate |
 | D-04 | FFmpeg is bundled: our own LGPL 2.1+ build of FFmpeg 9.0.2 with every decoder and demuxer, no network code, no devices and only the encoders and filters the app uses ([subplan 17](17-bundled-ffmpeg.md)). The app uses no other copy | Self-contained, reproducible and identical on every machine, so results do not depend on what the user has installed. A scanned file can never trigger network access. LGPL 2.1+ keeps licence obligations to offering FFmpeg's own source |
-| D-05 | Storage is SQLite through `Microsoft.Data.Sqlite.Core` 10.0.9 with `SQLitePCLRaw.bundle_e_sqlite3` 2.1.11, which ships its own SQLite (measured: 3.49.1) as `e_sqlite3.dll` beside the executable | Self-contained and identical on every Windows build, with a modern SQL feature set |
+| D-05 | Storage is SQLite through `Microsoft.Data.Sqlite.Core` 10.0.9 with `SQLitePCLRaw.bundle_e_sqlite3` 2.1.14, which ships its own SQLite (measured: 3.54.0) as `e_sqlite3.dll` beside the executable | Self-contained and identical on every Windows build, with a modern SQL feature set |
 | D-06 | Fingerprints use XXH3-128 from `System.IO.Hashing` | Non-adversarial integrity check; SIMD accelerated and far faster than disk I/O; managed, no native dependency |
 | D-07 | Scheduling uses Windows Task Scheduler (per-user tasks) that launch `MediaVerifier.exe --run-plan <id>`. No always-running background process is required | Zero idle footprint; runs even when the app is closed |
 | D-08 | Notifications are real Windows toasts raised through a thin WinRT COM interop layer, with a tray balloon fallback and an in-app notification centre | Toasts persist in the notification centre after a headless run exits. Referencing the Windows SDK projection would add roughly 25 MB to the exe |
@@ -302,7 +302,7 @@ These apply to every task.
 Everything the app needs ships inside its folder (D-01, D-04, D-05, D-16).
 
 - NuGet packages for the product: `Microsoft.Data.Sqlite.Core` 10.0.9, `SQLitePCLRaw.bundle_e_sqlite3`
-  2.1.11, `System.IO.Hashing`, `System.Numerics.Tensors`. Pin exact versions.
+  2.1.14, `System.IO.Hashing`, `System.Numerics.Tensors`. Pin exact versions.
 - Native files beside the executable: `e_sqlite3.dll` (from the package above) and the `ffmpeg\`
   folder (subplan 17). Nothing else.
 - Adding any other dependency requires a deviations-log entry explaining why the platform cannot do it,

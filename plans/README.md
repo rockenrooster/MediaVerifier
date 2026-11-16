@@ -63,7 +63,7 @@ Update this table as phases progress (`Not started`, `In progress`, `Done`, `Blo
 | 0 | Repository and plans | Done | Public repository, plans, agent instructions. No code |
 | 1 | 01 Foundation | Done | CI workflow written; first GitHub run pending a push |
 | 2 | 02 Findings model | Done | Catalog texts written for every rule; docs/rules.md generated |
-| 3 | 03 Storage | Not started | |
+| 3 | 03 Storage | Done | Budgets met on 1,000,000 files; numbers in docs/perf.md |
 | 4 | 04 FFmpeg toolchain | Not started | |
 | 5 | 05 Scan engine | Not started | |
 | 6 | 06 Integrity and rot | Not started | |
@@ -88,3 +88,5 @@ Record every place where the implementation intentionally differs from a plan.
 | 2026-11-16 | 01 / F-10 | DPI awareness is set only by `ApplicationHighDpiMode=PerMonitorV2`, not in `app.manifest` | The .NET 10 Windows Forms build fails with WFO0003 when the manifest declares DPI awareness; the project property gives the same PerMonitorV2 mode |
 | 2026-11-16 | 01 / F-01 | The app project sets `NoWarn` for `WFO1000`; the test project sets `ValidateExecutableReferencesMatchSelfContained=false` | WFO1000 concerns designer serialisation, and no designer is used. The test host must reference the self-contained exe project to test its internals |
 | 2026-11-16 | 01 / F-08 | `Ctrl+7` also opens Settings, besides `Ctrl+,` | Subplan 01 asks for `Ctrl+1`..`Ctrl+7`, subplan 09 for `Ctrl+,`; both work |
+| 2026-11-16 | 00, 03 / S-01 | `SQLitePCLRaw.bundle_e_sqlite3` 2.1.14 (SQLite 3.54.0) instead of 2.1.11 (3.49.1); the minimum-version check is 3.54 | 2.1.11 bundles a SQLite with CVE-2025-6965 (GHSA-2m69-gcr7-jv3q) and fails the NuGet vulnerability audit, which is an error with warnings as errors. 2.1.14 is the latest 2.1 patch and works with `Microsoft.Data.Sqlite.Core` 10.0.9 |
+| 2026-11-16 | 03 / S-03 | The writer reads new row ids with `last_insert_rowid()`, never `RETURNING` | Measured: reading a `RETURNING` row inside the per-operation savepoint is about 20 times slower and degrades as a batch grows (details in `docs/perf.md`) |
