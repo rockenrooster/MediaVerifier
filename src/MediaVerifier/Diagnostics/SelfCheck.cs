@@ -17,7 +17,10 @@ internal static class SelfCheck
 {
     public static int Run() => Run(AppPaths.Default);
 
-    public static int Run(AppPaths paths)
+    public static int Run(AppPaths paths) => Run(paths, checkMediaEngine: true);
+
+    /// <summary>Tests that are about the profile switch the media-engine check off; it depends on MEDIAVERIFIER_FFMPEG_DIR.</summary>
+    internal static int Run(AppPaths paths, bool checkMediaEngine)
     {
         List<CheckResult> results = [];
         results.Add(Check("Paths writable", () => PathsWritable(paths)));
@@ -25,7 +28,10 @@ internal static class SelfCheck
         results.Add(Check("Log write", () => LogWrite(paths)));
         results.Add(Check("IPC loopback", IpcLoopback));
         results.Add(Check("App state lifecycle", () => AppStateLifecycle(paths)));
-        results.Add(Check("Media engine", () => MediaEngine(paths)));
+        if (checkMediaEngine)
+        {
+            results.Add(Check("Media engine", () => MediaEngine(paths)));
+        }
         foreach (Func<string?> extra in ExtraChecks)
         {
             results.Add(Check(extra.Method.Name, extra));

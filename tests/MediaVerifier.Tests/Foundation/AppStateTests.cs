@@ -50,7 +50,7 @@ public sealed class AppStateTests
     public void SelfCheckPassesOnACleanProfile()
     {
         using TempDirectory temp = new("selfcheck");
-        Assert.Equal(0, SelfCheck.Run(temp.CreateAppPaths()));
+        Assert.Equal(0, SelfCheck.Run(temp.CreateAppPaths(), checkMediaEngine: false));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class AppStateTests
         local.SetAccessControl(security);
         try
         {
-            Assert.Equal(1, SelfCheck.Run(paths));
+            Assert.Equal(1, SelfCheck.Run(paths, checkMediaEngine: false));
         }
         finally
         {
