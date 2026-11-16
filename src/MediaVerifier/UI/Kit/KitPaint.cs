@@ -86,7 +86,7 @@ internal static class KitPaint
         float gap = Dpi.ScaleF(1, dpi);
         float width = Dpi.ScaleF(2, dpi);
         RectangleF outer = RectangleF.Inflate(control, gap + width, gap + width);
-        StrokeRoundedRect(g, outer, radius + gap + width, Theme.Theme.Tokens.Accent, width);
+        StrokeRoundedRect(g, outer, radius + gap + width, ThemeService.Tokens.Accent, width);
     }
 
     public static void HorizontalLine(Graphics g, Color color, float x1, float x2, float y, float width = 1f) =>
@@ -95,5 +95,5 @@ internal static class KitPaint
     public static void VerticalLine(Graphics g, Color color, float x, float y1, float y2, float width = 1f) =>
         g.FillRectangle(GdiCache.Brush(color), x, y1, width, y2 - y1);
 
-    public static ThemeTokens Tokens => Theme.Theme.Tokens;
+    public static ThemeTokens Tokens => ThemeService.Tokens;
 }

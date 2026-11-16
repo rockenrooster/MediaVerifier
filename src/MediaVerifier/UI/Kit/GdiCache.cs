@@ -29,6 +29,26 @@ internal static class GdiCache
     /// <summary>A plain pen with flat caps and miter joins (borders and dividers).</summary>
     public static Pen Pen(Color color, float width) => GetPen(color, width, round: false);
 
+    /// <summary>Disposes every cached pen and brush (theme change). Painting re-creates what it needs.</summary>
+    public static void Clear()
+    {
+        foreach (SolidBrush brush in Brushes.Values)
+        {
+            brush.Dispose();
+        }
+
+        foreach (Pen pen in Pens.Values)
+        {
+            pen.Dispose();
+        }
+
+        Brushes.Clear();
+        Pens.Clear();
+    }
+
+    /// <summary>Number of cached GDI+ objects (tests check that theme switches do not grow it).</summary>
+    public static int Count => Brushes.Count + Pens.Count;
+
     private static Pen GetPen(Color color, float width, bool round)
     {
         (int, float, bool) key = (color.ToArgb(), MathF.Round(width, 3), round);

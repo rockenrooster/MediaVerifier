@@ -5,7 +5,7 @@ using MediaVerifier.Core.Ipc;
 using MediaVerifier.Core.Logging;
 using MediaVerifier.Diagnostics;
 using MediaVerifier.UI;
-using ThemeService = MediaVerifier.UI.Theme.Theme;
+using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier;
 

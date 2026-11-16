@@ -1,3 +1,4 @@
+using MediaVerifier.UI.Theme;
 using MediaVerifier.UI.Kit;
 
 namespace MediaVerifier.UI.Shell;
@@ -85,6 +86,6 @@ internal sealed class ShellLayout : Control
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
     {
-        pevent.Graphics.Clear(Theme.Theme.Tokens.Bg);
+        pevent.Graphics.Clear(ThemeService.Tokens.Bg);
     }
 }

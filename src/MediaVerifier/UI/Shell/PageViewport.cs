@@ -1,3 +1,4 @@
+using MediaVerifier.UI.Theme;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
 
@@ -102,6 +103,6 @@ internal sealed class PageViewport : ScrollableControl
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        e.Graphics.Clear(Theme.Theme.Tokens.Bg);
+        e.Graphics.Clear(ThemeService.Tokens.Bg);
     }
 }

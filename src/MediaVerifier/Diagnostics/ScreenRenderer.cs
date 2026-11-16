@@ -4,7 +4,6 @@ using MediaVerifier.Core;
 using MediaVerifier.Core.Logging;
 using MediaVerifier.UI.Pages;
 using MediaVerifier.UI.Theme;
-using ThemeService = MediaVerifier.UI.Theme.Theme;
 
 namespace MediaVerifier.Diagnostics;
 

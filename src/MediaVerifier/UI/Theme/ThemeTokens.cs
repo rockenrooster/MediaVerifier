@@ -123,6 +123,54 @@ internal sealed class ThemeTokens
         Ok = new(Hex(0x146C3E), Hex(0x1F8A52), Hex(0xE4F1EA)),
     };
 
+    /// <summary>
+    /// The contrast-theme set (subplan 08, task UK-14), built from the current system colours: surfaces
+    /// are Window, every text and line WindowText, selection and accent Highlight, severity WindowText,
+    /// pills Window (controls add a 1 px WindowText border and show hover as a 2 px Highlight border).
+    /// </summary>
+    public static ThemeTokens HighContrast()
+    {
+        Color window = SystemColors.Window;
+        Color text = SystemColors.WindowText;
+        Color highlight = SystemColors.Highlight;
+        Color onHighlight = SystemColors.HighlightText;
+        TierColors tier = new(text, text, window);
+        return new ThemeTokens
+        {
+            Name = "HighContrast",
+            IsDark = window.GetBrightness() < 0.5f,
+            IsHighContrast = true,
+            Bg = window,
+            Surface = window,
+            Raised = window,
+            Hover = window,
+            Pressed = window,
+            Selected = highlight,
+            Stroke = text,
+            StrokeStrong = text,
+            Text = text,
+            Text2 = text,
+            Text3 = text,
+            TextDisabled = SystemColors.GrayText,
+            Accent = highlight,
+            AccentHover = highlight,
+            AccentPressed = highlight,
+            OnAccent = onHighlight,
+            DangerFill = highlight,
+            DangerHover = highlight,
+            DangerPressed = highlight,
+            OnDanger = onHighlight,
+            NeutralPill = window,
+            Scrim = Color.FromArgb(128, 0, 0, 0),
+            Shadow = Color.FromArgb(0, 0, 0, 0),
+            Critical = tier,
+            High = tier,
+            Medium = tier,
+            Low = tier,
+            Ok = tier,
+        };
+    }
+
     /// <summary>Solid colour from 0xRRGGBB.</summary>
     public static Color Hex(int rgb) => Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 }

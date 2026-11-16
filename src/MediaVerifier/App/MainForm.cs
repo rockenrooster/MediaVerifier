@@ -5,7 +5,7 @@ using MediaVerifier.Core.Settings;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
 using MediaVerifier.UI.Shell;
-using ThemeService = MediaVerifier.UI.Theme.Theme;
+using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.App;
 

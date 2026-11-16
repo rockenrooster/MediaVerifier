@@ -1,9 +1,11 @@
+using MediaVerifier.Tests.TestSupport;
 using System.Drawing.Drawing2D;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Shell;
 
 namespace MediaVerifier.Tests.Foundation;
 
+[Collection(UiCollection.Name)]
 public sealed class ShellRenderingTests
 {
     [Fact]
@@ -40,6 +42,6 @@ public sealed class ShellRenderingTests
 
         // The selected Dashboard item is filled with the Selected token.
         Color selected = bitmap.GetPixel(100, 70);
-        Assert.Equal(MediaVerifier.UI.Theme.Theme.Tokens.Selected.ToArgb(), selected.ToArgb());
+        Assert.Equal(MediaVerifier.UI.Theme.ThemeService.Tokens.Selected.ToArgb(), selected.ToArgb());
     }
 }
