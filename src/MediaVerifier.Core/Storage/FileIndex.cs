@@ -36,6 +36,9 @@ public sealed record FileUpdate(long FileId)
 
     public byte[]? StreamHash { get; init; }
 
+    /// <summary>The NTFS file id, for rename detection on the next run.</summary>
+    public long? NtfsFileId { get; init; }
+
     /// <summary>The fingerprint was re-read and matched: bump the verification count.</summary>
     public long? VerifiedUtc { get; init; }
 }
@@ -161,7 +164,7 @@ public sealed class FileIndex(Database database)
             "UPDATE files SET " +
             "state = COALESCE($state, state), skip_reason = COALESCE($skip, skip_reason), scanned_depth = COALESCE($depth, scanned_depth), " +
             "detector_set = COALESCE($detectors, detector_set), last_scanned_utc = COALESCE($scanned, last_scanned_utc), " +
-            "size = COALESCE($size, size), mtime_utc = COALESCE($mtime, mtime_utc), media_kind = COALESCE($kind, media_kind), " +
+            "size = COALESCE($size, size), mtime_utc = COALESCE($mtime, mtime_utc), media_kind = COALESCE($kind, media_kind), ntfs_file_id = COALESCE($ntfs, ntfs_file_id), " +
             "hash = CASE WHEN $hasBaseline THEN $hash ELSE hash END, hash_size = CASE WHEN $hasBaseline THEN $hashSize ELSE hash_size END, " +
             "hash_mtime_utc = CASE WHEN $hasBaseline THEN $hashMtime ELSE hash_mtime_utc END, hash_utc = CASE WHEN $hasBaseline THEN $hashUtc ELSE hash_utc END, " +
             "stream_hash = COALESCE($streamHash, stream_hash), " +
@@ -181,6 +184,7 @@ public sealed class FileIndex(Database database)
         command.Add("$size", update.Size);
         command.Add("$mtime", update.MtimeUtc);
         command.Add("$kind", update.MediaKind is null ? null : (int)update.MediaKind);
+        command.Add("$ntfs", update.NtfsFileId);
         command.Add("$hasBaseline", update.Baseline is not null ? 1 : 0);
         command.Add("$hash", update.Baseline?.Hash);
         command.Add("$hashSize", update.Baseline?.Size);
@@ -250,6 +254,126 @@ public sealed class FileIndex(Database database)
         }
 
         return missing;
+    }
+
+    /// <summary>Records that the run saw these rows (missing-file detection relies on it).</summary>
+    public static void MarkSeen(WriteContext context, IReadOnlyList<long> fileIds, long runId)
+    {
+        SqliteCommand command = context.Command("UPDATE files SET last_seen_run = $run WHERE id = $id");
+        foreach (long id in fileIds)
+        {
+            command.Parameters.Clear();
+            command.Add("$run", runId);
+            command.Add("$id", id);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Sets the Skipped state and reason (subplan 05: a skipped file keeps its row; it is not a finding).</summary>
+    public static void MarkSkipped(WriteContext context, long fileId, SkipReason reason, long runId)
+    {
+        SqliteCommand command = context.Command("UPDATE files SET state = $skipped, skip_reason = $reason, last_seen_run = $run WHERE id = $id");
+        command.Add("$skipped", (int)FileState.Skipped);
+        command.Add("$reason", (int)reason);
+        command.Add("$run", runId);
+        command.Add("$id", fileId);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Marks rows inside the scope that this run did not see as Missing (subplan 05): only within
+    /// <paramref name="scopeRelDir"/> (the whole root when empty), never inside a directory that failed to
+    /// list. Directories that vanished entirely count as seen and empty. Returns the ids that went missing.
+    /// </summary>
+    public static List<long> MarkMissingInScope(WriteContext context, long rootId, long runId, string scopeRelDir, IReadOnlyCollection<string> unlistedRelDirs)
+    {
+        scopeRelDir = NormalizeRelDir(scopeRelDir);
+        SqliteCommand select = context.Command(
+            "SELECT f.id, d.rel_path FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.last_seen_run <> $run AND f.state <> $missing");
+        select.Add("$root", rootId);
+        select.Add("$run", runId);
+        select.Add("$missing", (int)FileState.Missing);
+        List<long> missing = [];
+        using (SqliteDataReader reader = select.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                string rel = reader.GetString(1);
+                if (Within(rel, scopeRelDir) && !unlistedRelDirs.Any(u => Within(rel, NormalizeRelDir(u))))
+                {
+                    missing.Add(reader.GetInt64(0));
+                }
+            }
+        }
+
+        SqliteCommand mark = context.Command("UPDATE files SET state = $missing WHERE id = $id");
+        foreach (long id in missing)
+        {
+            mark.Parameters.Clear();
+            mark.Add("$missing", (int)FileState.Missing);
+            mark.Add("$id", id);
+            mark.ExecuteNonQuery();
+        }
+
+        return missing;
+    }
+
+    /// <summary>True when <paramref name="relDir"/> is <paramref name="scope"/> or below it (case-exact).</summary>
+    public static bool Within(string relDir, string scope) =>
+        scope.Length == 0 || string.Equals(relDir, scope, StringComparison.Ordinal) || relDir.StartsWith(scope + "\\", StringComparison.Ordinal);
+
+    /// <summary>Rows of a root not seen by a run, with what move detection needs.</summary>
+    public List<FileRecord> NotSeen(long rootId, long runId) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT " + FileColumns + " FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.last_seen_run <> $run AND f.state <> $missing";
+        command.Add("$root", rootId);
+        command.Add("$run", runId);
+        command.Add("$missing", (int)FileState.Missing);
+        using SqliteDataReader reader = command.ExecuteReader();
+        List<FileRecord> rows = [];
+        while (reader.Read())
+        {
+            rows.Add(ReadFile(reader));
+        }
+
+        return rows;
+    });
+
+    /// <summary>Rows first seen at or after <paramref name="sinceUtc"/> with a given fingerprint (fingerprint move fallback).</summary>
+    public List<FileRecord> NewWithHash(long rootId, byte[] hash, long sinceUtc) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT " + FileColumns + " FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.hash = $hash AND f.first_seen_utc >= $since";
+        command.Add("$root", rootId);
+        command.Add("$hash", hash);
+        command.Add("$since", sinceUtc);
+        using SqliteDataReader reader = command.ExecuteReader();
+        List<FileRecord> rows = [];
+        while (reader.Read())
+        {
+            rows.Add(ReadFile(reader));
+        }
+
+        return rows;
+    });
+
+    /// <summary>Number of rows in a root that are not Missing (the base for RUN-MASS-MISSING).</summary>
+    public long CountPresent(long rootId) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM files WHERE root_id = $root AND state <> $missing";
+        command.Add("$root", rootId);
+        command.Add("$missing", (int)FileState.Missing);
+        return (long)command.ExecuteScalar()!;
+    });
+
+    /// <summary>Deletes a row (the duplicate left by a fingerprint-detected move).</summary>
+    public static void Delete(WriteContext context, long fileId)
+    {
+        SqliteCommand command = context.Command("DELETE FROM files WHERE id = $id");
+        command.Add("$id", fileId);
+        command.ExecuteNonQuery();
     }
 
     public FileRecord? Get(long fileId) => database.Read(connection =>

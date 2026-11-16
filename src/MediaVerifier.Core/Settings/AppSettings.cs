@@ -31,12 +31,17 @@ public sealed class AppSettings
 
     public WindowPlacement WindowPlacement { get; set; } = new();
 
+    /// <summary>Scanning, integrity and notification settings (subplan 09, Settings).</summary>
+    public ScanSettings Scanning { get; set; } = new();
+
     /// <summary>Restores invariants after loading a hand-edited or older file.</summary>
     internal AppSettings Normalize()
     {
         DatabasePath ??= "";
         WindowPlacement ??= new WindowPlacement();
         WindowPlacement.Normalize();
+        Scanning ??= new ScanSettings();
+        Scanning.Normalize();
         if (!Enum.IsDefined(Theme))
         {
             Theme = ThemeMode.System;

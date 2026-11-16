@@ -43,6 +43,7 @@ public sealed class Database : IDisposable
         Ignores = new IgnoreStore(this);
         Events = new FileEventStore(this);
         Queries = new LibraryQueries(this);
+        Meta = new MetaStore(this);
         Maintenance = new DatabaseMaintenance(this);
     }
 
@@ -89,6 +90,8 @@ public sealed class Database : IDisposable
     public FileEventStore Events { get; }
 
     public LibraryQueries Queries { get; }
+
+    public MetaStore Meta { get; }
 
     public DatabaseMaintenance Maintenance { get; }
 
@@ -167,10 +170,14 @@ public sealed class Database : IDisposable
     }
 
     /// <summary>Flushes the writer and truncates the WAL (end of each run and on shutdown).</summary>
-    public async Task CheckpointAsync()
-    {
-        await Writer.ExecuteAsync(c => c.Exec("PRAGMA wal_checkpoint(TRUNCATE)"), ChangeFlags.None).ConfigureAwait(false);
-    }
+    public Task CheckpointAsync() =>
+        Writer.ExecuteOutsideTransactionAsync(connection =>
+        {
+            // A checkpoint inside a write transaction would wait out the command timeout.
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
+            command.ExecuteNonQuery();
+        });
 
     public void Dispose()
     {

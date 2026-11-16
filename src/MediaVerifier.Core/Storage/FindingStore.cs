@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 namespace MediaVerifier.Core.Storage;
 
 /// <summary>What one <see cref="FindingStore.ReplaceForFile"/> call changed, for run counters.</summary>
-public readonly record struct FindingChange(int New, int Updated, int Resolved);
+public readonly record struct FindingChange(int New, int Updated, int Resolved, int NewCritical = 0, int NewHigh = 0, int NewMedium = 0, int NewLow = 0);
 
 /// <summary>
 /// Findings with the lifecycle of subplan 02 (task S-05): unique per (file, rule); re-detection updates
@@ -47,6 +47,7 @@ public sealed class FindingStore(Database database)
         int added = 0;
         int updated = 0;
         int resolved = 0;
+        int[] newBySeverity = new int[5];
         HashSet<string> raisedRules = new(StringComparer.Ordinal);
         foreach (Finding finding in raised)
         {
@@ -89,6 +90,7 @@ public sealed class FindingStore(Database database)
                 if (reopened && status == FindingStatus.Open)
                 {
                     added++;
+                    newBySeverity[(int)finding.Severity]++;
                 }
                 else
                 {
@@ -116,6 +118,7 @@ public sealed class FindingStore(Database database)
                 if (status == FindingStatus.Open)
                 {
                     added++;
+                    newBySeverity[(int)finding.Severity]++;
                 }
             }
         }
@@ -135,7 +138,7 @@ public sealed class FindingStore(Database database)
         }
 
         RecomputeFileSummary(context, fileId);
-        return new FindingChange(added, updated, resolved);
+        return new FindingChange(added, updated, resolved, newBySeverity[4], newBySeverity[3], newBySeverity[2], newBySeverity[1]);
     }
 
     /// <summary>Resolves one finding with a reason (an operation id after a repair).</summary>

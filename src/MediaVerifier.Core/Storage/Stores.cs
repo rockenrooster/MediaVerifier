@@ -682,6 +682,19 @@ public sealed class FileEventStore(Database database)
         command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Records a verification, replacing the file's previous "verified" event: the history shows the
+    /// latest one and the count lives in files.verify_count.
+    /// </summary>
+    public static void ReplaceVerified(WriteContext context, long fileId, long? runId)
+    {
+        SqliteCommand delete = context.Command("DELETE FROM file_events WHERE file_id = $file AND kind = $kind");
+        delete.Add("$file", fileId);
+        delete.Add("$kind", (int)FileEventKind.Verified);
+        delete.ExecuteNonQuery();
+        Add(context, fileId, runId, FileEventKind.Verified);
+    }
+
     public List<FileEventRecord> ForFile(long fileId) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
@@ -696,4 +709,28 @@ public sealed class FileEventStore(Database database)
 
         return rows;
     });
+}
+
+/// <summary>Small key/value settings kept with the library (estimate averages).</summary>
+public sealed class MetaStore(Database database)
+{
+    public string? Get(string key) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM meta WHERE key = $key";
+        command.Add("$key", key);
+        return command.ExecuteScalar() as string;
+    });
+
+    public Task SetAsync(string key, string value, CancellationToken cancellationToken = default) =>
+        database.Writer.ExecuteAsync(
+            context =>
+            {
+                SqliteCommand command = context.Command("INSERT INTO meta(key, value) VALUES ($key, $value) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+                command.Add("$key", key);
+                command.Add("$value", value);
+                command.ExecuteNonQuery();
+            },
+            ChangeFlags.None,
+            cancellationToken);
 }
