@@ -61,8 +61,8 @@ Update this table as phases progress (`Not started`, `In progress`, `Done`, `Blo
 | Phase | Subplan | Status | Notes |
 |-------|---------|--------|-------|
 | 0 | Repository and plans | Done | Public repository, plans, agent instructions. No code |
-| 1 | 01 Foundation | In progress | |
-| 2 | 02 Findings model | Not started | |
+| 1 | 01 Foundation | Done | CI workflow written; first GitHub run pending a push |
+| 2 | 02 Findings model | Done | Catalog texts written for every rule; docs/rules.md generated |
 | 3 | 03 Storage | Not started | |
 | 4 | 04 FFmpeg toolchain | Not started | |
 | 5 | 05 Scan engine | Not started | |
