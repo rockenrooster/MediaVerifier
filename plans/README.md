@@ -85,4 +85,6 @@ Record every place where the implementation intentionally differs from a plan.
 
 | Date | Subplan / task | What changed | Why |
 |------|----------------|--------------|-----|
-| | | | |
+| 2026-11-16 | 01 / F-10 | DPI awareness is set only by `ApplicationHighDpiMode=PerMonitorV2`, not in `app.manifest` | The .NET 10 Windows Forms build fails with WFO0003 when the manifest declares DPI awareness; the project property gives the same PerMonitorV2 mode |
+| 2026-11-16 | 01 / F-01 | The app project sets `NoWarn` for `WFO1000`; the test project sets `ValidateExecutableReferencesMatchSelfContained=false` | WFO1000 concerns designer serialisation, and no designer is used. The test host must reference the self-contained exe project to test its internals |
+| 2026-11-16 | 01 / F-08 | `Ctrl+7` also opens Settings, besides `Ctrl+,` | Subplan 01 asks for `Ctrl+1`..`Ctrl+7`, subplan 09 for `Ctrl+,`; both work |

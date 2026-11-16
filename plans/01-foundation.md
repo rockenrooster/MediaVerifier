@@ -106,9 +106,10 @@ them in reverse order on exit. No dependency-injection container.
 
 ### Application manifest
 
-Add `app.manifest` to the exe project with: `asInvoker` execution level, `PerMonitorV2` DPI awareness,
-`longPathAware`, `supportedOS` entries for Windows 10 and 11, and Common Controls v6. Set
-`ApplicationHighDpiMode` to `PerMonitorV2` in the project as well.
+Add `app.manifest` to the exe project with: `asInvoker` execution level, `longPathAware`, the
+`supportedOS` entry for Windows 10 and 11 (both use the same ID), and Common Controls v6. Set
+`ApplicationHighDpiMode` to `PerMonitorV2` in the project; that is where the DPI awareness lives. The
+Windows Forms build rejects DPI settings in the manifest (error WFO0003), so the manifest has none.
 
 ### Logging
 

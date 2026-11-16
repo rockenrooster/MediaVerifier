@@ -1,0 +1,165 @@
+using MediaVerifier.App;
+using MediaVerifier.UI.Kit;
+
+namespace MediaVerifier.UI.Pages;
+
+internal enum PageId
+{
+    Dashboard,
+    Issues,
+    Library,
+    Scans,
+    Schedule,
+    Tools,
+    Settings,
+}
+
+/// <summary>
+/// One page of the shell (ported from FastTaskMgr's PageBase). Pages are created lazily on first
+/// visit, told when they are shown and hidden, and must stop every timer while hidden so the idle app
+/// uses no CPU.
+/// </summary>
+internal abstract class PageBase : KitControl
+{
+    private readonly List<System.Windows.Forms.Timer> _timers = [];
+
+    protected PageBase(AppState state)
+    {
+        State = state;
+        TabStop = false;
+    }
+
+    protected AppState State { get; }
+
+    public abstract PageId Id { get; }
+
+    public string Title => PageInfo.Title(Id);
+
+    /// <summary>True while this is the page shown in the main window.</summary>
+    public bool IsActive { get; private set; }
+
+    /// <summary>True while the window is minimised or hidden in the tray.</summary>
+    public bool IsSuspended { get; private set; }
+
+    /// <summary>
+    /// Height the page needs at <paramref name="width"/> device pixels; 0 means "fill the content
+    /// area". A taller page scrolls (subplan 08, Scrolling).
+    /// </summary>
+    public virtual int MeasureContentHeight(int width) => 0;
+
+    public void Activate()
+    {
+        IsActive = true;
+        UpdateTimers();
+        OnActivated();
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        UpdateTimers();
+        OnDeactivated();
+    }
+
+    public void SetSuspended(bool suspended)
+    {
+        if (IsSuspended == suspended)
+        {
+            return;
+        }
+
+        IsSuspended = suspended;
+        UpdateTimers();
+    }
+
+    protected virtual void OnActivated()
+    {
+    }
+
+    protected virtual void OnDeactivated()
+    {
+    }
+
+    /// <summary>A timer that runs only while the page is visible and the window is not suspended.</summary>
+    protected System.Windows.Forms.Timer CreatePageTimer(int intervalMs, EventHandler tick)
+    {
+        System.Windows.Forms.Timer timer = new() { Interval = intervalMs };
+        timer.Tick += tick;
+        _timers.Add(timer);
+        UpdateTimers();
+        return timer;
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs pevent)
+    {
+        pevent.Graphics.Clear(Tokens.Bg);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (System.Windows.Forms.Timer timer in _timers)
+            {
+                timer.Dispose();
+            }
+
+            _timers.Clear();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private void UpdateTimers()
+    {
+        bool run = IsActive && !IsSuspended;
+        foreach (System.Windows.Forms.Timer timer in _timers)
+        {
+            timer.Enabled = run;
+        }
+    }
+}
+
+internal static class PageInfo
+{
+    public static IReadOnlyList<PageId> All { get; } = Enum.GetValues<PageId>();
+
+    public static string Title(PageId id) => id switch
+    {
+        PageId.Dashboard => Strings.Pages.Dashboard,
+        PageId.Issues => Strings.Pages.Issues,
+        PageId.Library => Strings.Pages.Library,
+        PageId.Scans => Strings.Pages.Scans,
+        PageId.Schedule => Strings.Pages.Schedule,
+        PageId.Tools => Strings.Pages.Tools,
+        _ => Strings.Pages.Settings,
+    };
+
+    public static IconName Icon(PageId id) => id switch
+    {
+        PageId.Dashboard => IconName.Dashboard,
+        PageId.Issues => IconName.Issues,
+        PageId.Library => IconName.Library,
+        PageId.Scans => IconName.Scans,
+        PageId.Schedule => IconName.Schedule,
+        PageId.Tools => IconName.Tools,
+        _ => IconName.Settings,
+    };
+
+    public static bool TryParse(string? text, out PageId page) =>
+        Enum.TryParse(text, ignoreCase: true, out page) && Enum.IsDefined(page);
+}
+
+/// <summary>A page with nothing on it yet (phase 1 placeholders).</summary>
+internal sealed class PlaceholderPage : PageBase
+{
+    private readonly PageId _id;
+
+    public PlaceholderPage(AppState state, PageId id)
+        : base(state)
+    {
+        _id = id;
+    }
+
+    public override PageId Id => _id;
+}
