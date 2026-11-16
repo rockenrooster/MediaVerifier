@@ -1,0 +1,1 @@
+[png @ 0000020a11223340] [error] chunk too big

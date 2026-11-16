@@ -1,0 +1,3 @@
+[png @ 0000020a11223340] [error] CRC mismatch in chunk, skipping
+[png @ 0000020a11223340] [error] inflate returned error -3
+[vist#0:0/png @ 0000020a11220000] [dec:png @ 0000020a11223340] [fatal] Decode error rate 1 exceeds maximum 0.666667

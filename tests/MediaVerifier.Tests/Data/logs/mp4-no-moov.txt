@@ -1,0 +1,5 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [error] moov atom not found
+[error] trunc_nomoov.mp4: Invalid data found when processing input
+[in#0 @ 000001aa22330000] [error] Error opening input: Invalid data found when processing input
+[error] Error opening input file trunc_nomoov.mp4.
+[fatal] Error opening input files: Invalid data found when processing input

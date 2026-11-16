@@ -1,0 +1,26 @@
+[h264 @ 000001dd55667780] [error] co located POCs unavailable
+[h264 @ 000001dd55667780] [error] reference picture missing during reorder
+[h264 @ 000001dd55667780] [error] Missing reference picture, default is 65530
+[h264 @ 000001dd55667780] [warning] Increasing reorder buffer to 1
+[h264 @ 000001dd55667780] [error] error while decoding MB 52 30, bytestream -7
+[h264 @ 000001dd55667780] [error] concealing 1234 DC, 1234 AC, 1234 MV errors in P frame
+[h264 @ 000001dd55667780] [error] no frame!
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [warning] Non-monotonic DTS; previous: 1000, current: 900; changing to 1001. This may result in incorrect timestamps in the output file.
+[matroska,webm @ 000001ee66778890] [error] Invalid timestamps stream=0
+[mpegts @ 000002dd00112230] [warning] timestamp discontinuity for stream #0 (id=256, type=video): -1, new offset= 4000
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [warning] DTS 1024 out of order
+[mp4 @ 000001aa22334450] [warning] non monotonically increasing dts to muxer in stream 0: 10 >= 9
+[matroska,webm @ 000001ee66778890] [error] EBML header parsing failed
+[mjpeg @ 000001ff77889900] [error] premature end of data segment
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [error] partial file
+[h264 @ 000001dd55667780] [error] Truncating packet of size 4096 to 1024
+[wmv3 @ 000002ee11223340] [error] Decoder (codec wmv3) not found for input stream #0:0
+[vist#0:0/rawvideo @ 000002ee11220000] [error] Unsupported codec with id 0 for input stream 0
+[swscaler @ 000002ff22334450] [warning] deprecated pixel format used, make sure you did set range correctly
+[mp3 @ 000001bb33445560] [warning] Estimating duration from bitrate, this may be inaccurate
+[aac @ 0000024c55667780] [warning] Guessed Channel Layout: stereo
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [warning] Could not find codec parameters for stream 2 (Attachment: none): unknown codec
+[vost#0:0/wrapped_avframe @ 000002aa33445560] [warning] Thread message queue blocking; consider raising the thread_queue_size option (current value: 8)
+[vp9 @ 000002bb44556670] [error] Something unexpected happened in the bitstream
+[h264 @ 000001dd55667780] [warning] Some harmless remark
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options

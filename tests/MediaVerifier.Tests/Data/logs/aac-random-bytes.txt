@@ -1,0 +1,5 @@
+[aac @ 0000024c55667780] [error] Prediction is not allowed in AAC-LC.
+[aac @ 0000024c55667780] [error] invalid band type
+[aac @ 0000024c55667780] [error] channel element 1.0 is not allocated
+[aac @ 0000024c55667780] [error] Number of bands (51) exceeds limit (49).
+[aist#0:1/aac @ 0000024c55660000] [dec:aac @ 0000024c55667780] [error] Error submitting packet to decoder: Invalid data found when processing input

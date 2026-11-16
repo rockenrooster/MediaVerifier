@@ -1,0 +1,4 @@
+[mjpeg @ 000001ff77889900] [warning] EOI missing, emulating
+[mjpeg @ 000001ff77889900] [error] overread 8
+[mjpeg @ 000001ff77889900] [error] error y=12 x=34
+[mjpeg @ 000001ff77889900] [error] error count: 64

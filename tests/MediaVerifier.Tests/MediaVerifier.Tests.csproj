@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MediaVerifier.Core\MediaVerifier.Core.csproj" />
     <ProjectReference Include="..\..\src\MediaVerifier\MediaVerifier.csproj" />
+    <ProjectReference Include="..\MediaVerifier.TestHelper\MediaVerifier.TestHelper.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,2 @@
+[mp3float @ 000001bb33446670] [error] Header missing
+[aist#0:0/mp3 @ 000001bb33440000] [dec:mp3float @ 000001bb33446670] [error] Error submitting packet to decoder: Invalid data found when processing input

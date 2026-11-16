@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using MediaVerifier.App;
 using MediaVerifier.Core;
+using MediaVerifier.Core.Ffmpeg;
 using MediaVerifier.Core.Ipc;
 using MediaVerifier.Core.Logging;
 using MediaVerifier.Core.Settings;
@@ -24,6 +25,7 @@ internal static class SelfCheck
         results.Add(Check("Log write", () => LogWrite(paths)));
         results.Add(Check("IPC loopback", IpcLoopback));
         results.Add(Check("App state lifecycle", () => AppStateLifecycle(paths)));
+        results.Add(Check("Media engine", () => MediaEngine(paths)));
         foreach (Func<string?> extra in ExtraChecks)
         {
             results.Add(Check(extra.Method.Name, extra));
@@ -138,6 +140,31 @@ internal static class SelfCheck
         _ = state.GetOrCreate(ref slot, () => new object());
         state.Dispose();
         return null;
+    }
+
+    /// <summary>
+    /// The bundled FFmpeg is intact, is version 9.0.2 and has only the file and pipe protocols (task
+    /// FF-04). A development build without a bundle skips the check; the shipped single-file build and
+    /// any developer override are checked, so a full FFmpeg build through the override fails.
+    /// </summary>
+    private static string? MediaEngine(AppPaths paths)
+    {
+        FfmpegLocation location = FfmpegLocator.Locate(paths);
+        // A development build has MediaVerifier.dll beside the exe; the single-file build embeds it.
+        bool shipped = !File.Exists(Path.Combine(AppContext.BaseDirectory, "MediaVerifier.dll"));
+        if (!location.IsOverride && !File.Exists(location.FfmpegExe) && !shipped)
+        {
+            return null;
+        }
+
+        BundleCheck check = BundleIntegrity.Check(location);
+        if (check.State == BundleState.Missing)
+        {
+            return "The media engine is missing or damaged (" + string.Join(", ", check.MissingFiles) + (check.Detail is null ? "" : "; " + check.Detail) + ")";
+        }
+
+        using FfRunner runner = new(location);
+        return BundleIntegrity.VerifyEngineAsync(runner, FfmpegVersions.Bundled).GetAwaiter().GetResult();
     }
 
     private static void Report(AppPaths paths, List<CheckResult> results, bool passed)

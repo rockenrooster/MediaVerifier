@@ -109,3 +109,20 @@ public sealed record Finding(
 
 /// <summary>A run-level alert (not a per-file finding), shown in run summaries and notifications.</summary>
 public sealed record RunAlertDefinition(string Id, string Title, Severity Severity, string Trigger);
+
+/// <summary>Media facts kept with each file row for display and sorting (from the probe).</summary>
+public sealed record MediaSummary(
+    string? Container,
+    string? VideoCodec,
+    string? AudioCodec,
+    int? Width,
+    int? Height,
+    long? DurationMs,
+    long? Bitrate,
+    int? SampleRate,
+    int? Channels,
+    int? BitDepth,
+    int? FpsMilli)
+{
+    public static MediaSummary Empty { get; } = new(null, null, null, null, null, null, null, null, null, null, null);
+}

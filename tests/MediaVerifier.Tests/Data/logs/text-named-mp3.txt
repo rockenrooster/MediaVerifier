@@ -1,0 +1,2 @@
+[mp3 @ 000002cc99001120] [warning] Format mp3 detected only with low score of 1, misdetection possible!
+[mp3 @ 000002cc99001120] [error] Failed to find two consecutive MPEG audio frames.

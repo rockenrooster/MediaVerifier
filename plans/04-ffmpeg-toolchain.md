@@ -72,7 +72,8 @@ Requirements:
 
 ### Standard arguments
 
-Prepended to every invocation:
+Prepended to every invocation (`-nostdin` for `ffmpeg` only: `ffprobe` rejects it as an unknown
+option, verified on 8.0.1):
 
 ```
 -hide_banner -nostdin -loglevel repeat+level+warning -protocol_whitelist file,pipe
@@ -92,7 +93,7 @@ Why each one matters (all verified in appendix A):
 | `-err_detect crccheck+bitstream+buffer` | Decoder CRC checks are off by default. A single flipped byte in a FLAC is silent without `crccheck` |
 | `-max_error_rate 1` | Without it FFmpeg aborts with *Decode error rate exceeds maximum* and stops reporting |
 | `-protocol_whitelist file,pipe` | Media containers and playlists can reference URLs and other files. The bundle contains no network code at all; the whitelist keeps the same guarantee when a developer override points at a full build |
-| `-nostdin` | Prevents FFmpeg reading the console and hanging |
+| `-nostdin` | Prevents `ffmpeg` reading the console and hanging (`ffprobe` has no such option and does not read the console) |
 
 Strict mode (Deep depth, optional setting) appends `+careful+compliant` to `-err_detect`. Do not use
 `explode`; it stops at the first problem.

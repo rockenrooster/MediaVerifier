@@ -1,0 +1,1 @@
+[webp_pipe @ 000002bb88990010] [warning] Could not find codec parameters for stream 0 (Video: webp, none): unspecified size

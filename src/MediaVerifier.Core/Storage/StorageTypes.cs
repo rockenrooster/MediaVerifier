@@ -181,22 +181,6 @@ public sealed record FileRecord
     public string? RelDir { get; init; }
 }
 
-public sealed record MediaSummary(
-    string? Container,
-    string? VideoCodec,
-    string? AudioCodec,
-    int? Width,
-    int? Height,
-    long? DurationMs,
-    long? Bitrate,
-    int? SampleRate,
-    int? Channels,
-    int? BitDepth,
-    int? FpsMilli)
-{
-    public static MediaSummary Empty { get; } = new(null, null, null, null, null, null, null, null, null, null, null);
-}
-
 public sealed record FindingRecord
 {
     public long Id { get; init; }
