@@ -60,13 +60,15 @@ public static class FixtureFactory
             Ensure(input);
         }
 
-        string temp = Path.Combine(Root, ".tmp-" + name);
+        // Unique per process: several test runs (worktrees) may share the cache and generate at once.
+        string tempName = $".tmp-{Environment.ProcessId}-{name}";
+        string temp = Path.Combine(Root, tempName);
         if (File.Exists(temp))
         {
             File.Delete(temp);
         }
 
-        RunTooling(recipe.Arguments(name).Replace("{out}", Quote(".tmp-" + name), StringComparison.Ordinal));
+        RunTooling(recipe.Arguments(name).Replace("{out}", Quote(tempName), StringComparison.Ordinal));
         File.Move(temp, path, overwrite: true);
         return path;
     }
