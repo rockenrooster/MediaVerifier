@@ -127,7 +127,7 @@ ffmpeg <std> <dec> -i <file> -map 0:a:0 -map_metadata -1 -fflags +bitexact -c:a 
 | `COR-CONTAINER` | Probe or decode cannot open the file, or no audio stream | Critical |
 | `COR-CHECKSUM` | Any `Checksum` signal, or FLAC MD5 mismatch | High |
 | `COR-DECODE` | `DecodeError` signals | Lossless source, or 5 or more errors, or 0.5 s or more lost: High. Otherwise Medium. Only `MinorDecode`: Low |
-| `COR-TRUNCATED` | Decoded seconds < declared − max(0.5 s, 1 %). Declared comes from FLAC STREAMINFO, else stream duration, else format duration. For MP3 without a VBR header the declared value is an estimate: use 3 % and require a `Truncation` signal or a structural finding as well | Missing half or more: Critical. Otherwise High |
+| `COR-TRUNCATED` | Decoded seconds < declared − max(0.5 s, 1 %). Declared comes from FLAC STREAMINFO, else stream duration, else format duration. For MP3 without a VBR header the declared value is an estimate: use 3 % and require a `Truncation` signal or a structural finding as well. A shortfall of at most 1.5 s per reported decode or checksum error (frames or Ogg pages dropped mid-file) is reported with that error instead, unless a `Truncation` signal or structural finding says the end is missing | Missing half or more: Critical. Otherwise High |
 | `COR-INDEX` | Decoded seconds > declared + tolerance (length header wrong) | Low |
 | `COR-HANG` | Process timed out | High |
 

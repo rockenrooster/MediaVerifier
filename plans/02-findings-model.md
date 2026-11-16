@@ -148,13 +148,13 @@ Run-level alerts (not per-file findings; shown in the run summary and notificati
 |----|-------|----------|-------|----|---------|
 | COR-CONTAINER | Container is broken | Critical | Quick | M1 | Header or index unreadable (for example MP4 without `moov`), or no streams found |
 | COR-TRUNCATED | File is cut short | High – Critical | Quick | M1 | Declared size or duration exceeds what exists or decodes. Critical when more than half is missing |
-| COR-DECODE | Decoder errors | Medium – Critical | Standard | M1 | Errors while decoding. Scaled by how much of the content is affected |
+| COR-DECODE | Decoder errors | Low – Critical | Standard | M1 | Errors while decoding. Scaled by how much of the content is affected |
 | COR-CONCEALED | Damaged video frames (hidden by error concealment) | Medium – High | Standard | M1 | Decoder flagged frames as corrupt while still producing output |
 | COR-CHECKSUM | Embedded checksum mismatch | High | Standard | M1 | FLAC frame CRC or audio MD5, PNG chunk CRC, Ogg page CRC |
 | COR-HANG | Decoder stalled | High | Standard | M1 | No decode progress within the idle timeout, or the hard timeout expired |
 | COR-PARTIAL-IMAGE | Image decodes only partly | High | Standard | M1 | Missing end marker, overread, or decoder error count above zero |
 | COR-TIMESTAMPS | Timestamp problems | Low – Medium | Standard | M2 | Non-monotonic or discontinuous timestamps during demux |
-| COR-INDEX | Seek index missing or wrong | Medium | Quick | M2 | Matroska without Cues, AVI without index, MP3 VBR header frame count wrong |
+| COR-INDEX | Seek index missing or wrong | Low – Medium | Quick | M2 | Matroska without Cues, AVI without index, MP3 VBR header frame count wrong |
 | COR-STREAM-LENGTH | Audio and video lengths differ | Low – Medium | Quick | M2 | Stream durations differ by more than max(2 s, 2 %) |
 | COR-TRAILING | Unexpected data after the end | Low | Quick | M3 | Bytes after the logical end that are not a known trailer format |
 | COR-DROPOUT | Audio dropouts | Low – High | Standard | M2 | Runs of exact digital silence inside programme material with abrupt edges; confidence rises when the gap length is a whole number of codec frames or CD sectors |

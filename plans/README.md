@@ -65,9 +65,9 @@ Update this table as phases progress (`Not started`, `In progress`, `Done`, `Blo
 | 2 | 02 Findings model | Done | Catalog texts written for every rule; docs/rules.md generated |
 | 3 | 03 Storage | Done | Budgets met on 1,000,000 files; numbers in docs/perf.md |
 | 4 | 04 FFmpeg toolchain | Done | Integration tests run against MEDIAVERIFIER_FFMPEG_DIR until the bundle exists; FF-10 lands with UI-09 |
-| 5 | 05 Scan engine | Not started | |
-| 6 | 06 Integrity and rot | Not started | |
-| 7 | 07 Corruption detectors | Not started | |
+| 5 | 05 Scan engine | Done | |
+| 6 | 06 Integrity and rot | Done | |
+| 7 | 07 Corruption detectors | Done | Corruption matrix (T-04) passes at every depth; the detection-rate benchmark (T-05) follows with phase 15 |
 | 8 | 08 UI design system | Not started | Can start after phase 1 |
 | 9 | 09 UI screens | Not started | Can start after phases 2 and 8 using fake data |
 | 10 | 10 Audio quality detectors | Not started | |
@@ -93,3 +93,12 @@ Record every place where the implementation intentionally differs from a plan.
 | 2026-11-16 | 04 / FF-03 | `-nostdin` is prepended to `ffmpeg` commands only | `ffprobe` 8.0.1 rejects `-nostdin` ("Option not found") and never reads the console |
 | 2026-11-16 | 04 / FF-04 | The self-check skips the media-engine check in a development build that has no bundle beside it; the shipped single-file build and any override are checked | The CI build and local builds have no bundle until `build.ps1` adds one (master plan, definition of done 4) |
 | 2026-11-16 | 04 / FF-10 | The Tools → Media engine view is built with the Tools page (task UI-09) | It needs the UI kit from subplan 08 |
+| 2026-11-16 | 02, 07 / C-11 | `COR-DECODE` ranges Low – Critical and `COR-INDEX` Low – Medium in the catalog | Subplan 07 gives `COR-DECODE` Low when only minor decoder complaints appear, and `COR-INDEX` Low for unfinalised RIFF sizes and wrong length headers; the catalog ranges did not allow it |
+| 2026-11-16 | 07 / C-11 | Audio lost mid-file for reported errors (up to `COR-TRUNCATED.secondsPerError`, 1.5 s each) is not `COR-TRUNCATED`; the loss is added to the decode or checksum finding | Measured: two flipped bytes in an Opus file drop two Ogg pages (2 s) and read as "cut short" although the end is there |
+| 2026-11-16 | 07 / C-14 | Finding summaries show positions and lengths inside media as `m:ss` (`h:mm:ss` from an hour) | Subplan 09's duration format (`37 min`, `1 h 48 min`) is for elapsed time and too coarse for "Stops at 2:31 of 4:05" |
+| 2026-11-16 | 07 / C-01 | The sniffer also recognises BigTIFF and the RAW formats with their own magic (ORF, RW2, RAF) | Without it those RAW files are reported as unrecognised |
+| 2026-11-16 | 07 / C-02, C-04, C-05 | `COR-TRAILING` is also checked after PNG, RIFF and Matroska ends. Zero or `FF` padding, Samsung motion-photo and SEFT trailers, ID3/APE tags after RIFF, OpenDML `AVIX` chunks and a second EBML document are not reported | The plan named only ISO-BMFF and JPEG; the exceptions are legitimate data written by common tools and cameras |
+| 2026-11-16 | 07 / C-02 | HEIF and AVIF images need a `meta` box instead of `moov`; a RIFF size one byte past the end is not truncation | Still images in ISO-BMFF have no `moov`; many writers count the final pad byte without writing it |
+| 2026-11-16 | 07 / C-13 | MP3 length tolerance is max(1 %, one frame); a CBR `Info` header whose frame count disagrees with its byte count is `COR-INDEX`. Missing Matroska Cues are not reported for a truncated file | Short clips would otherwise be flagged; a truncated file already has a more serious finding |
+| 2026-11-16 | 07 / C-06 | A file without a signature whose extension is `mp3`, `mp2`, `mpa` or `mp1` is searched for three consecutive MPEG audio frames in its first 64 KiB | MP3 files often start with junk or a damaged tag |
+| 2026-11-16 | 15 / T-04 | Matrix cells re-measured at mid-file: a truncated WebP already gives `COR-CONTAINER` at Quick; 2,000 random bytes in `av.mp4` at mid-file hit a key frame and audio, giving `COR-DECODE` at Standard and Deep without concealment | Measured with FFmpeg 8.0.1; the table in subplan 15 is updated |

@@ -48,6 +48,8 @@ public enum ArtifactKind : byte
     StreamHash = 5,
     Integrity = 6,
     Probe = 7,
+    AudioDecode = 8,
+    VideoDecode = 9,
 }
 
 public enum FileEventKind : byte

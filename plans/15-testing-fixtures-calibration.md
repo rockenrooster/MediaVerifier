@@ -117,8 +117,9 @@ hit unless a test asks for it.
 
 ## Corruption matrix
 
-The expected result for one mutation at mid-file, taken from the verified experiments in appendix A.
-"—" means that depth cannot see it. The **Fingerprint** column assumes a baseline existed and the
+The expected result for one mutation at mid-file (position 0.5; two flipped bytes at 0.45 and 0.55,
+three at 0.4, 0.5 and 0.6), taken from the verified experiments in appendix A and re-measured by the
+matrix tests. "—" means that depth cannot see it. The **Fingerprint** column assumes a baseline existed and the
 modified time was preserved.
 
 | Fixture | Mutation | Quick | Standard | Deep | Fingerprint |
@@ -132,7 +133,7 @@ modified time was preserved.
 | Opus | Flip two bytes | — | `COR-CHECKSUM` | same | `INT-ROT` |
 | MP4, index at end | Truncate 60 % | `COR-CONTAINER` | same | same | (Modified) |
 | MP4, index at front | Truncate 60 % | `COR-TRUNCATED` | `COR-TRUNCATED` (4.0 of 6.0 s) | same | (Modified) |
-| MP4 with audio | Random 2,000 bytes | — | `COR-DECODE` | + `COR-CONCEALED` | `INT-ROT` |
+| MP4 with audio | Random 2,000 bytes | — | `COR-DECODE` | same (+ `COR-CONCEALED` when non-key frames are hit) | `INT-ROT` |
 | MP4, video only | Random 2,000 bytes | — | may be missed (non-key frames) | `COR-CONCEALED` | `INT-ROT` |
 | MP4, video only | Flip one byte | — | may be missed | `COR-CONCEALED` | `INT-ROT` |
 | MKV | Truncate 60 % | `COR-TRUNCATED` when the segment size is known | `COR-TRUNCATED` | same | (Modified) |
@@ -142,7 +143,7 @@ modified time was preserved.
 | PNG | Flip one byte | — | `COR-CHECKSUM` | same | `INT-ROT` |
 | PNG | Truncate 60 % | `COR-TRUNCATED` | `COR-DECODE` | same | (Modified) |
 | WebP (lossy) | Flip three bytes | — | **not detected** | not detected | `INT-ROT` |
-| WebP | Truncate 60 % | `COR-TRUNCATED` | `COR-CONTAINER` | same | (Modified) |
+| WebP | Truncate 60 % | `COR-TRUNCATED`, `COR-CONTAINER` (the probe cannot open it) | same | same | (Modified) |
 
 ### Detection-rate benchmark
 

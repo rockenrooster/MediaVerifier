@@ -38,7 +38,8 @@ public sealed class EngineRunTests
         Assert.Equal(Severity.Medium, video.WorstSeverity);
         Assert.Equal(FileState.Ok, h.File1("a.jpg").State);
         Assert.Contains(h.Database.Events.ForFile(video.Id), e => e.Kind == FileEventKind.Baselined);
-        Assert.Equal(2, run.NewFindings.Medium);
+        Assert.Equal(1, run.NewFindings.Medium);
+        Assert.Equal(1, run.NewFindings.Low);
         Assert.Equal(Severity.Medium, Assert.Single(h.Database.Findings.ForFile(video.Id)).Severity);
     }
 

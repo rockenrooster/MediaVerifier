@@ -61,6 +61,9 @@ public sealed record FfRequest
 
     public ProcessPriorityClass Priority { get; init; } = ProcessPriorityClass.BelowNormal;
 
+    /// <summary>The log level after <c>repeat+level+</c>: warning by default, info for the Deep video pass.</summary>
+    public string LogLevel { get; init; } = "warning";
+
     /// <summary>Called for each classified stderr line (tests use it for the unknown-line gate).</summary>
     public Action<LogLine>? OnLogLine { get; init; }
 }
@@ -103,6 +106,9 @@ public sealed class FfRunner : IDisposable
     /// <summary>Overrides the executable for tests (the helper console program).</summary>
     internal Func<FfTool, string>? ExecutableOverride { get; init; }
 
+    /// <summary>Called for every classified stderr line of every run (the tests' unknown-line gate, subplan 15).</summary>
+    public Action<LogLine>? ObserveLine { get; set; }
+
     /// <summary>When false the standard arguments are not prepended (tests with the helper program).</summary>
     internal bool PrependStandardArguments { get; init; } = true;
 
@@ -132,7 +138,7 @@ public sealed class FfRunner : IDisposable
 
         if (PrependStandardArguments)
         {
-            foreach (string arg in FfmpegArgs.Standard(request.Tool))
+            foreach (string arg in FfmpegArgs.Standard(request.Tool, request.LogLevel))
             {
                 start.ArgumentList.Add(arg);
             }
@@ -144,7 +150,15 @@ public sealed class FfRunner : IDisposable
         }
 
         Stopwatch wall = Stopwatch.StartNew();
-        LogCollector log = new() { OnLine = request.OnLogLine };
+        Action<LogLine>? observe = ObserveLine;
+        Action<LogLine>? onLine = request.OnLogLine is not Action<LogLine> own ? observe
+            : observe is null ? own
+            : line =>
+            {
+                own(line);
+                observe(line);
+            };
+        LogCollector log = new() { OnLine = onLine };
         Process process;
         try
         {

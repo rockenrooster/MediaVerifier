@@ -102,6 +102,9 @@ public interface IDetector
     /// <summary>The artifact types the detector reads; the engine produces them first.</summary>
     IReadOnlyList<Type> Needs { get; }
 
+    /// <summary>Artifact types the detector reads when they exist; it still runs without them.</summary>
+    IReadOnlyList<Type> Optional => [];
+
     ScanDepth MinDepth { get; }
 
     bool Applies(DetectorInput input);

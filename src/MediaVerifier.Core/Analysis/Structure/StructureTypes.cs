@@ -182,7 +182,11 @@ public sealed record StructureArtifact(
     FlacInfo? Flac = null,
     JpegInfo? Jpeg = null,
     Mp3Info? Mp3 = null,
-    MatroskaInfo? Matroska = null);
+    MatroskaInfo? Matroska = null) : IArtifact
+{
+    /// <summary>The file could not be opened or read; nothing structural is known (the integrity read reports why).</summary>
+    public bool ReadFailed { get; init; }
+}
 
 /// <summary>How a file's extension compares with its content (<c>GEN-EXT-MISMATCH</c>, <c>GEN-UNRECOGNIZED</c>).</summary>
 public enum ExtensionVerdict

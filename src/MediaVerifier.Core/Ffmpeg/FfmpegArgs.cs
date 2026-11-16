@@ -9,9 +9,9 @@ public static class FfmpegArgs
     /// Prepended to every invocation. <c>-nostdin</c> is an ffmpeg option only: ffprobe rejects it
     /// (verified on 8.0.1; see the deviations log).
     /// </summary>
-    public static IReadOnlyList<string> Standard(FfTool tool) => tool == FfTool.Ffmpeg
-        ? ["-hide_banner", "-nostdin", "-loglevel", "repeat+level+warning", "-protocol_whitelist", "file,pipe"]
-        : ["-hide_banner", "-loglevel", "repeat+level+warning", "-protocol_whitelist", "file,pipe"];
+    public static IReadOnlyList<string> Standard(FfTool tool, string logLevel = "warning") => tool == FfTool.Ffmpeg
+        ? ["-hide_banner", "-nostdin", "-loglevel", "repeat+level+" + logLevel, "-protocol_whitelist", "file,pipe"]
+        : ["-hide_banner", "-loglevel", "repeat+level+" + logLevel, "-protocol_whitelist", "file,pipe"];
 
     /// <summary>For ffmpeg commands that decode: report every error instead of stopping at the first ones.</summary>
     public static IReadOnlyList<string> Decode(bool strict = false) =>

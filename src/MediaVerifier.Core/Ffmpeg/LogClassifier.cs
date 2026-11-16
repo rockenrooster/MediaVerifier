@@ -58,7 +58,7 @@ public static partial class LogClassifier
         (LogSignalKind.Truncation, Re(@"File ended prematurely|partial file|EOI missing|overread|chunk too big|filesize and duration do not match|Truncating packet of size|invalid new backstep|premature end")),
         (LogSignalKind.MinorDecode, Re(@"mmco: unref short failure|co located POCs unavailable|reference picture missing during reorder|Missing reference picture|Increasing reorder buffer")),
         (LogSignalKind.Timestamp, Re(@"Non-monotonic DTS|non monotonically increasing dts|Invalid timestamps|timestamp discontinuity|DTS .* out of order")),
-        (LogSignalKind.DecodeError, Re(@"decode_frame\(\) failed|invalid residual|Header missing|error while decoding MB|Invalid NAL unit size|Error splitting the input into NAL units|missing picture in access unit|invalid band type|Prediction is not allowed|Number of bands|is not allocated|inflate returned error|error y=|error count:|no frame!|damaged|concealing|Error submitting packet to decoder|Decoding error")),
+        (LogSignalKind.DecodeError, Re(@"decode_frame\(\) failed|invalid residual|Header missing|error while decoding MB|Invalid NAL unit size|Error splitting the input into NAL units|missing picture in access unit|invalid band type|Prediction is not allowed|Number of bands|is not allocated|inflate returned error|error y=|error count:|no frame!|damaged|concealing|Error submitting packet to decoder|Decoding error|error dc|cabac decode of .* failed|invalid subframe padding|Input buffer exhausted before END element|Reserved bit set|bits_left=|not supported, maybe buggy stream")),
     ];
 
     private static readonly Regex DigitRuns = new(@"\d+", RegexOptions.CultureInvariant | RegexOptions.Compiled);

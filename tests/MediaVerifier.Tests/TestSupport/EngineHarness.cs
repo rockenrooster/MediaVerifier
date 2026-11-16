@@ -15,8 +15,9 @@ namespace MediaVerifier.Tests.TestSupport;
 public sealed class EngineHarness : IDisposable
 {
     private readonly FfRunner _runner;
+    private readonly bool _ownsRunner;
 
-    public EngineHarness(IEnumerable<IArtifactProvider>? providers = null, IEnumerable<IDetector>? detectors = null, ScanSettings? settings = null, IMediaFileSystem? fileSystem = null)
+    public EngineHarness(IEnumerable<IArtifactProvider>? providers = null, IEnumerable<IDetector>? detectors = null, ScanSettings? settings = null, IMediaFileSystem? fileSystem = null, FfRunner? runner = null)
     {
         Db = new TestDatabase("engine");
         Library = Db.Folder.Combine("Library");
@@ -25,9 +26,22 @@ public sealed class EngineHarness : IDisposable
         Directory.CreateDirectory(Backup);
         Settings = settings ?? new ScanSettings();
         Rules = new RuleSettings();
-        _runner = new FfRunner(new FfmpegLocation(Db.Folder.Path, IsOverride: true));
-        Providers = new ProviderRegistry([new IntegrityArtifactStore(), .. providers ?? []]);
-        Detectors = new DetectorRegistry([new IntegrityDetector(), .. detectors ?? []], Providers);
+        _ownsRunner = runner is null;
+        _runner = runner ?? new FfRunner(new FfmpegLocation(Db.Folder.Path, IsOverride: true));
+        List<IArtifactProvider> all = [.. providers ?? []];
+        if (!all.Any(p => p is IntegrityArtifactStore))
+        {
+            all.Insert(0, new IntegrityArtifactStore());
+        }
+
+        List<IDetector> detectorList = [.. detectors ?? []];
+        if (!detectorList.Any(d => d is IntegrityDetector))
+        {
+            detectorList.Insert(0, new IntegrityDetector());
+        }
+
+        Providers = new ProviderRegistry(all);
+        Detectors = new DetectorRegistry(detectorList, Providers);
         Services = new EngineServices
         {
             Database = Db.Database,
@@ -101,7 +115,11 @@ public sealed class EngineHarness : IDisposable
     public void Dispose()
     {
         Engine.Dispose();
-        _runner.Dispose();
+        if (_ownsRunner)
+        {
+            _runner.Dispose();
+        }
+
         Db.Dispose();
     }
 
@@ -132,7 +150,7 @@ public sealed record FakeStreamHash(byte[] Hash) : IArtifact, IStreamHashSource
 internal sealed partial class FakeJsonContext : JsonSerializerContext;
 
 /// <summary>Counts calls; the artifact's value is the file size, so detectors can depend on it.</summary>
-public sealed class CountingProvider(ScanDepth minDepth = ScanDepth.Quick, int version = 1, TimeSpan? delay = null, int kindNumber = 7)
+public sealed class CountingProvider(ScanDepth minDepth = ScanDepth.Quick, int version = 1, TimeSpan? delay = null, int kindNumber = 100)
     : ArtifactProvider<FakeArtifact>(new ArtifactCodec<FakeArtifact>((ArtifactKind)kindNumber, FakeJsonContext.Default.FakeArtifact))
 {
     private int _calls;

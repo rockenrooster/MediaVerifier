@@ -1,0 +1,7 @@
+[mjpeg @ 000001e3e496d280] [error] error dc
+[h264 @ 000001e4d6ba9040] [error] cabac decode of qscale diff failed at 92 53
+[flac @ 000001cdd4c22d00] [error] invalid subframe padding
+[aac @ 00000178a8833380] [error] Input buffer exhausted before END element found
+[aac @ 00000178a8833380] [error] Reserved bit set.
+[mp3float @ 000002ce2d8647c0] [error] bits_left=4
+[flac @ 000001cdfd3dd440] [error] qlevel -9 not supported, maybe buggy stream

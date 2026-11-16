@@ -9,6 +9,7 @@ using System.Text;
 //   progress <blocks>           write -progress style blocks to stdout
 //   exit <code>                 exit with <code>
 //   spawn <pidFile> <ms>        start a child that sleeps <ms>, write its PID to <pidFile>, then sleep
+//   -<anything> ...             called like ffmpeg or ffprobe: stall until killed (a hung decoder)
 string mode = args.Length > 0 ? args[0] : "";
 long Arg(int i) => long.Parse(args[i], CultureInfo.InvariantCulture);
 switch (mode)
@@ -78,6 +79,9 @@ switch (mode)
             return 0;
         }
 
+    case not null when mode.StartsWith('-'):
+        Thread.Sleep(Timeout.Infinite);
+        return 0;
     default:
         Console.Error.WriteLine("unknown mode");
         return 2;

@@ -63,7 +63,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 | `GEN-UNRECOGNIZED` | Not a recognisable media file | Critical | Quick | all | yes | M1 |
 | `COR-CONTAINER` | Container is broken | Critical | Quick | all | yes | M1 |
 | `COR-TRUNCATED` | File is cut short | High – Critical | Quick | all | yes | M1 |
-| `COR-DECODE` | Decoder errors | Medium – Critical | Standard | all | yes | M1 |
+| `COR-DECODE` | Decoder errors | Low – Critical | Standard | all | yes | M1 |
 | `COR-CONCEALED` | Damaged video frames (hidden by error concealment) | Medium – High | Standard | video | yes | M1 |
 | `COR-CHECKSUM` | Embedded checksum mismatch | High | Standard | photo, audio | yes | M1 |
 | `COR-HANG` | Decoder stalled | High | Standard | all | yes | M1 |
@@ -93,6 +93,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** This usually comes from an interrupted copy or download. The missing part cannot be recovered from this file.
 - **What you can do:** Restore it from a healthy copy, or save a playable copy of the part that is left.
 - **Actions:** `ACT-RESTORE-COPY`, `ACT-SALVAGE`, `ACT-EXTRACT-PREVIEW`, `ACT-QUARANTINE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `criticalPercent` 50 % (5–100); `audioSeconds` 0.5 seconds (0.1–60); `audioPercent` 1 % (0.1–50); `mp3EstimatePercent` 3 % (0.5–50); `videoSeconds` 2 seconds (0.5–600); `videoPercent` 2 % (0.1–50); `keyFrameSeconds` 12 seconds (1–600); `secondsPerError` 1.5 seconds (0.1–60)
 
 ### `COR-DECODE` Decoder errors
 
@@ -100,6 +101,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Damaged parts show up as glitches, blocks, skips or noise, and every copy made from this file carries them.
 - **What you can do:** Restore it from a healthy copy. Otherwise save a playable copy that drops the damaged parts.
 - **Actions:** `ACT-RESTORE-COPY`, `ACT-SALVAGE`, `ACT-EXTRACT-PREVIEW`, `ACT-QUARANTINE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `highErrors` 5 errors (1–100000); `audioHighSeconds` 0.5 seconds (0.1–600); `videoHighSeconds` 2 seconds (0.1–600); `frameShortfall` 2 frames (1–100000); `frameShortfallPercent` 0.1 % (0.01–50)
 
 ### `COR-CONCEALED` Damaged video frames (hidden by error concealment)
 
@@ -107,6 +109,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The damage is real even where it is hard to notice, and copies made from this file carry it.
 - **What you can do:** Restore it from a healthy copy, or save a playable copy.
 - **Actions:** `ACT-RESTORE-COPY`, `ACT-SALVAGE`, `ACT-EXTRACT-PREVIEW`, `ACT-QUARANTINE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `highFrames` 10 frames (1–100000)
 
 ### `COR-CHECKSUM` Embedded checksum mismatch
 
@@ -358,7 +361,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 | `GEN-EXT-MISMATCH` | Extension does not match content | Low – Medium | Quick | all | yes | M1 |
 | `GEN-PATH` | Path may cause problems | Low | Quick | all | yes | M3 |
 | `COR-TIMESTAMPS` | Timestamp problems | Low – Medium | Standard | video, audio | yes | M2 |
-| `COR-INDEX` | Seek index missing or wrong | Medium | Quick | video, audio | yes | M2 |
+| `COR-INDEX` | Seek index missing or wrong | Low – Medium | Quick | video, audio | yes | M2 |
 | `COR-STREAM-LENGTH` | Audio and video lengths differ | Low – Medium | Quick | video | yes | M2 |
 | `COR-TRAILING` | Unexpected data after the end | Low | Quick | all | yes | M3 |
 | `VID-INTERLACE` | Interlacing mismatch | Low – Medium | Standard | video | yes | M3 |
@@ -385,6 +388,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Players may stutter, lose sync between sound and picture, or show the wrong length.
 - **What you can do:** Rebuild the container. This rewrites the timing without touching the picture or sound.
 - **Actions:** `ACT-REMUX`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `minCount` 10 errors (1–100000); `mediumCount` 100 errors (1–1000000)
 
 ### `COR-INDEX` Seek index missing or wrong
 
@@ -399,7 +403,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** This often follows an interrupted recording or a bad conversion. Sound may end early or drift out of sync.
 - **What you can do:** Rebuild the container, which can correct the declared lengths. If sound is really missing, replace the file.
 - **Actions:** `ACT-REMUX`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
-- **Limits:** `seconds` 2 seconds (0.5–600); `percent` 2 % (0.1–50)
+- **Limits:** `seconds` 2 seconds (0.5–600); `percent` 2 % (0.1–50); `mediumPercent` 10 % (1–100)
 
 ### `COR-TRAILING` Unexpected data after the end
 

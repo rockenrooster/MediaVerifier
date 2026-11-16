@@ -175,9 +175,6 @@ public sealed class FileContext : IDisposable
 
     public ScanSettings Settings => _services.Settings();
 
-    /// <summary>The image format the structure check sniffed, so FFmpeg gets an explicit demuxer.</summary>
-    public string? SniffedImageFormat { get; set; }
-
     /// <summary>Per-file scratch folder for FFmpeg filters; created on first use, deleted on dispose.</summary>
     public string TempDirectory
     {
@@ -347,7 +344,7 @@ public static class Evaluator
 
         // When analysing, every applicable provider runs, not only those today's detectors need: the stored
         // artifacts are what later re-evaluation (a rule switched on, a limit changed) works from.
-        IEnumerable<Type> wanted = candidates.SelectMany(d => d.Needs);
+        IEnumerable<Type> wanted = candidates.SelectMany(d => d.Needs.Concat(d.Optional));
         if (!file.ReevaluateOnly && onlyRules is null)
         {
             wanted = wanted.Concat(registry.Providers?.All.Where(p => p.MinDepth <= file.Depth).Select(p => p.ArtifactType) ?? []);
@@ -383,7 +380,7 @@ public static class Evaluator
         }
 
         List<Finding> findings = [];
-        foreach (Finding raw in sink.Findings.Concat(extraFindings ?? []))
+        foreach (Finding raw in Merge(sink.Findings.Concat(extraFindings ?? []), file.Kind))
         {
             if (onlyRules is not null && !onlyRules.Contains(raw.RuleId))
             {
@@ -398,6 +395,67 @@ public static class Evaluator
         }
 
         return new Evaluation(findings, evaluated);
+    }
+
+    /// <summary>
+    /// One finding per rule (a finding is unique per file and rule, subplan 02): when two detectors raise
+    /// the same rule, the more severe wins, and on a tie the later one (detectors are registered from the
+    /// shallowest depth to the deepest, so it carries the deeper evidence). The other finding's evidence
+    /// is kept under the winner's. Rules that do not apply to the file's kind are dropped. Small zero runs
+    /// (GEN-ZEROFILL at Low) are attached as evidence to the file's corruption findings.
+    /// </summary>
+    internal static IReadOnlyList<Finding> Merge(IEnumerable<Finding> raw, MediaKind kind)
+    {
+        List<Finding> merged = [];
+        Dictionary<string, int> index = new(StringComparer.Ordinal);
+        foreach (Finding finding in raw)
+        {
+            if (kind != MediaKind.Unknown && !RuleCatalog.Get(finding.RuleId).AppliesTo.Includes(kind))
+            {
+                continue;
+            }
+
+            if (index.TryGetValue(finding.RuleId, out int at))
+            {
+                Finding kept = merged[at];
+                (Finding winner, Finding other) = finding.Severity >= kept.Severity ? (finding, kept) : (kept, finding);
+                Dictionary<string, object> evidence = new(other.Evidence);
+                foreach ((string key, object value) in winner.Evidence)
+                {
+                    evidence[key] = value;
+                }
+
+                merged[at] = winner with { Evidence = evidence };
+                continue;
+            }
+
+            index[finding.RuleId] = merged.Count;
+            merged.Add(finding);
+        }
+
+        if (merged.FirstOrDefault(f => f.RuleId == "GEN-ZEROFILL" && f.Severity == Severity.Low) is Finding zeros
+            && zeros.Evidence.TryGetValue("runOffsetsBytes", out object? offsets))
+        {
+            for (int i = 0; i < merged.Count; i++)
+            {
+                Finding finding = merged[i];
+                if (finding.RuleId.StartsWith("COR-", StringComparison.Ordinal) && RuleCatalog.Get(finding.RuleId).Category == FindingCategory.Corruption)
+                {
+                    Dictionary<string, object> evidence = new(finding.Evidence)
+                    {
+                        ["zeroRunOffsetsBytes"] = offsets,
+                    };
+                    if (zeros.Evidence.TryGetValue("longestRunBytes", out object? longest))
+                    {
+                        evidence["zeroLongestRunBytes"] = longest;
+                    }
+
+                    merged[i] = finding with { Evidence = evidence };
+                }
+            }
+        }
+
+        return merged;
     }
 
     public static bool IsIntegrityRule(string ruleId) => ruleId is "GEN-UNREADABLE" or "GEN-EMPTY" or "GEN-ZEROFILL" or "INT-ROT" or "INT-META-DRIFT";
