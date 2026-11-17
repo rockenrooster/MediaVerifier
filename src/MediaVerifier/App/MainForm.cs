@@ -549,6 +549,7 @@ internal static class PageFactory
         PageId.Scans => new ScansPage(services),
         PageId.Settings => new SettingsPage(services),
         PageId.Tools => new ToolsPage(services),
+        PageId.Schedule => new SchedulePage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

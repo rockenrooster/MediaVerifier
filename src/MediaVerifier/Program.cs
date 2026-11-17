@@ -31,6 +31,7 @@ internal static class Program
             return ReportBadArguments(error);
         }
 
+        PlanHost.Install();
         return options.Mode switch
         {
             LaunchMode.SelfCheck => SelfCheck.Run(),

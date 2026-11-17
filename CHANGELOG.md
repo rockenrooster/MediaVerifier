@@ -11,6 +11,9 @@ All notable changes to MediaVerifier are documented here.
   dropouts. The drawer shows the file's spectrogram with the cutoff marked, and a waveform with the
   clipped spots and dropouts; click a mark to see the 20 ms around it.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
+- Schedules: scans run on their own through Windows Task Scheduler, even when MediaVerifier is
+  closed, with nightly, weekly and monthly templates; they wait while on battery or while a game or
+  full-screen app runs, and report new problems in the notification area and the bell.
 - Repairs from the Issues page: rebuild a damaged index, rename files with the wrong extension, store
   padded audio as 16-bit, rewrite FLAC files with a wrong checksum, restore from a verified backup
   copy, save a playable copy of damaged audio and video, and move files to quarantine. Every change

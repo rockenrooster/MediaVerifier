@@ -154,10 +154,11 @@ internal sealed class UiServices : IDisposable
             try
             {
                 await services.Operations.RecoverAsync().ConfigureAwait(false);
+                await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
             {
-                state.Log.Warning("Operation recovery failed", ex);
+                state.Log.Warning("Start-up maintenance failed", ex);
             }
         });
         services._owned.Add(scans);

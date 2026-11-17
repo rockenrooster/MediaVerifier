@@ -11,6 +11,23 @@ public static class CoreStrings
     /// <summary>{0}: where the damaged copy was moved.</summary>
     public const string DatabaseRecoveredBody = "A fresh one was started. The damaged copy is at {0}.";
 
+    /// <summary>Run notifications (subplan 13, Notification policy). No file names: toasts appear on lock screens.</summary>
+    public static class Notify
+    {
+        public const string CouldNotRun = "Scheduled scan could not run";
+        public const string NewProblem = "{0} new problem found";
+        public const string NewProblems = "{0} new problems found";
+        public const string NothingNew = "Scheduled scan finished";
+        public const string Skipped = "Scheduled scan skipped";
+        public const string OnBattery = "The computer was running on battery.";
+        public const string FullScreen = "A full-screen program was running.";
+        public const string CriticalCount = "{0} critical";
+        public const string HighCount = "{0} high";
+        public const string MediumCount = "{0} medium";
+        public const string LowCount = "{0} low";
+        public const string FinishedAt = "Scan finished {0}.";
+    }
+
     /// <summary>Why an operation did not run or failed (subplan 12, safe-operation protocol).</summary>
     public static class Remediation
     {
