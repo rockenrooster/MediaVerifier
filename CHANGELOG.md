@@ -13,6 +13,8 @@ All notable changes to MediaVerifier are documented here.
   Download and install (Install MediaVerifier on a portable copy) and Release notes; the rail shows
   Update available when a newer release exists. MediaVerifier checks about 10 seconds after it starts
   (when allowed), and a running scan is interrupted, after asking, before an update installs.
+- Narrator reads the Settings sections (and which one is selected), the Issues and scan-history
+  lists, the filter drop-downs with their current choice, and the search boxes.
 - Settings → Scanning: edit the file types and the folder names scans always skip. Settings →
   Advanced: Run self-check. Settings → About: website, release notes and licences.
 - Webhook: Settings → Notifications can post a summary of each scheduled scan (counts only, no file
@@ -53,6 +55,12 @@ All notable changes to MediaVerifier are documented here.
 - Video checks: interlacing marked wrongly (combing), a picture that stands still, long black sections
   (off by default) and a silent soundtrack.
 - Fixed: a video with black frames could fail to be analysed.
+- Fixed: a Deep scan of videos already scanned at Standard depth reused the Standard pass, so hidden
+  damage, frozen pictures and black sections were only found in videos never scanned before.
+- Fixed: when another program held the library database locked, changes waited forever; they now
+  fail after about 10 seconds with "database is locked". A full disk now ends a scan with "database or
+  disk is full" instead of an unrelated message, and a clock set back no longer gives runs that end
+  before they start.
 - Fixed: files in folders whose names end in a space or a dot (common on copies from a NAS, macOS
   or Linux) were skipped by scans.
 - Video and photo quality checks: videos and photos enlarged from a smaller source, videos with too

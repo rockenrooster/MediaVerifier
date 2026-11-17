@@ -276,7 +276,7 @@ public sealed class FileContext : IDisposable
         if (_stored.TryGetValue(provider.Kind, out (int Version, string Data) stored) && (ReevaluateOnly || stored.Version == provider.Version))
         {
             IArtifact? loaded = provider.Deserialize(stored.Data);
-            if (loaded is not null)
+            if (loaded is not null && (ReevaluateOnly || provider.CanReuse(loaded, this)))
             {
                 Remember(type, loaded, null);
                 return loaded;

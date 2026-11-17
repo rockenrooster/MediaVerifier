@@ -20,6 +20,13 @@ using MediaVerifier.Core.Storage;
 //                               kill tests (task T-08): a Standard scan of <library> with the real engine, its
 //                               database and data under <base>; prints "started" once the run exists
 //   -<anything> ...             called like ffmpeg or ffprobe: stall until killed (a hung decoder)
+// A copy named crash-*.exe exits at once with an access violation's code, like an FFmpeg that crashes on a file.
+if (Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty).StartsWith("crash", StringComparison.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine("Segmentation fault");
+    return unchecked((int)0xC0000005);
+}
+
 string mode = args.Length > 0 ? args[0] : "";
 long Arg(int i) => long.Parse(args[i], CultureInfo.InvariantCulture);
 switch (mode)

@@ -171,7 +171,7 @@ public sealed class RunStore(Database database)
             {
                 Checkpoint(context, runId, counters);
                 SqliteCommand command = context.Command(
-                    "UPDATE runs SET status = $status, ended_utc = $now, alerts_json = $alerts, summary_json = $summary WHERE id = $id");
+                    "UPDATE runs SET status = $status, ended_utc = MAX($now, started_utc), alerts_json = $alerts, summary_json = $summary WHERE id = $id");
                 command.Add("$status", (int)status);
                 command.Add("$now", context.NowTicks);
                 command.Add("$alerts", alertsJson);

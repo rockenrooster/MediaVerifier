@@ -158,7 +158,9 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
     [FfmpegFact]
     public async Task A_stalled_decoder_is_a_hang_and_leaves_no_process_behind()
     {
-        string helper = Path.Combine(AppContext.BaseDirectory, "MediaVerifier.TestHelper.exe");
+        // Its own copy of the helper, so helper processes of other tests (kill tests) are not counted.
+        string helper = Path.Combine(AppContext.BaseDirectory, "stall-ffmpeg.exe");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "MediaVerifier.TestHelper.exe"), helper, overwrite: true);
         using FfRunner runner = new(new FfmpegLocation(AppContext.BaseDirectory, IsOverride: true)) { ExecutableOverride = _ => helper };
         using EngineHarness harness = new(EngineFactory.CreateProviders(), EngineFactory.CreateDetectors(), new ScanSettings { StallSeconds = 1 }, runner: runner);
         harness.Write("song.flac", EngineHarness.Bytes(64 * 1024, 3));
@@ -169,7 +171,7 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
         FileRecord file = harness.AllFiles().Single();
         FindingRecord hang = Assert.Single(harness.Database.Findings.ForFile(file.Id), f => f.RuleId == "COR-HANG");
         Assert.Equal(Severity.High, hang.Severity);
-        Assert.DoesNotContain(Process.GetProcessesByName("MediaVerifier.TestHelper"), p => !p.HasExited && p.StartTime > DateTime.Now.AddMinutes(-2));
+        Assert.DoesNotContain(Process.GetProcessesByName("stall-ffmpeg"), p => !p.HasExited);
     }
 
     private static IEnumerable<string> Words(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries);

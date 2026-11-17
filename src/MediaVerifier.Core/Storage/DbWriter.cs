@@ -139,9 +139,12 @@ public sealed class DbWriter : IDisposable
             ChangeFlags changes = ChangeFlags.None;
             long started = Stopwatch.GetTimestamp();
             SqliteTransaction? transaction = null;
+            bool began = false;
             try
             {
+                // BEGIN IMMEDIATE: waits for the write lock up to the connection's timeout (another program may hold it).
                 transaction = _connection.BeginTransaction();
+                began = true;
                 context.Begin(transaction);
                 while (batch.Count < MaxOpsPerBatch
                     && Stopwatch.GetElapsedTime(started) < MaxBatchTime
@@ -166,8 +169,19 @@ public sealed class DbWriter : IDisposable
                 {
                     transaction?.Rollback();
                 }
-                catch (SqliteException)
+                catch (Exception rollback) when (rollback is SqliteException or InvalidOperationException)
                 {
+                    // SQLite already rolled the transaction back itself (disk full, I/O error).
+                }
+
+                if (!began)
+                {
+                    // The write lock could not be had within the timeout (a backup tool or another program holds the
+                    // database): fail what is waiting with that error instead of retrying it forever (subplan 16).
+                    while (reader.TryRead(out WriteOp? waiting))
+                    {
+                        batch.Add(waiting);
+                    }
                 }
 
                 foreach (WriteOp op in batch)
@@ -254,8 +268,16 @@ public sealed class DbWriter : IDisposable
             }
             catch (Exception ex)
             {
-                context.Exec("ROLLBACK TO op");
-                context.Exec("RELEASE op");
+                try
+                {
+                    context.Exec("ROLLBACK TO op");
+                    context.Exec("RELEASE op");
+                }
+                catch (Exception rollback) when (rollback is SqliteException or InvalidOperationException)
+                {
+                    // SQLite rolled back the whole transaction (disk full, I/O error): the batch fails with the reason.
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(ex);
+                }
 
                 // Rows the operation added are gone; so must be any cached ids pointing at them.
                 context.Caches.Clear();

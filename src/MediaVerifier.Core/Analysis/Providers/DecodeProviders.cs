@@ -163,6 +163,10 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
 
     public override bool Applies(FileContext file) => file.Kind == MediaKind.Video;
 
+    /// <summary>A Standard pass (key frames only) does not answer a Deep scan, which decodes every frame.</summary>
+    public override bool CanReuse(IArtifact stored, FileContext file) =>
+        file.Depth < ScanDepth.Deep || stored is VideoDecodeArtifact { Pass: VideoPass.Deep };
+
     protected override async Task<VideoDecodeArtifact> ProduceTypedAsync(FileContext file)
     {
         ProbeArtifact? probe = await file.GetAsync<ProbeArtifact>().ConfigureAwait(false);

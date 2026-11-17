@@ -56,6 +56,12 @@ public interface IArtifactProvider
 
     Task<IArtifact> ProduceAsync(FileContext file);
 
+    /// <summary>
+    /// Whether a stored artifact of the current version answers <paramref name="file"/> at its depth. A provider whose
+    /// output depends on the depth refuses one made at a lower depth, so a Deep scan after a Standard one re-runs it.
+    /// </summary>
+    bool CanReuse(IArtifact stored, FileContext file) => true;
+
     string Serialize(IArtifact artifact);
 
     IArtifact? Deserialize(string json);
@@ -83,6 +89,9 @@ public abstract class ArtifactProvider<T> : IArtifactProvider
     public abstract bool Applies(FileContext file);
 
     public async Task<IArtifact> ProduceAsync(FileContext file) => await ProduceTypedAsync(file).ConfigureAwait(false);
+
+    /// <inheritdoc cref="IArtifactProvider.CanReuse"/>
+    public virtual bool CanReuse(IArtifact stored, FileContext file) => true;
 
     public string Serialize(IArtifact artifact) => Codec.Serialize((T)artifact);
 

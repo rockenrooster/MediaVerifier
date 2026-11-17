@@ -211,12 +211,16 @@ public sealed class Database : IDisposable
         }
     }
 
+    /// <summary>Seconds a write waits for a lock held by another program before it fails (on top of busy_timeout).</summary>
+    internal const int WriteLockWaitSeconds = 10;
+
     internal static string WriterConnectionString(string file) => new SqliteConnectionStringBuilder
     {
         DataSource = file,
         Mode = SqliteOpenMode.ReadWriteCreate,
         Cache = SqliteCacheMode.Private,
         Pooling = false,
+        DefaultTimeout = WriteLockWaitSeconds,
     }.ToString();
 
     internal static string ReaderConnectionString(string file) => new SqliteConnectionStringBuilder
@@ -303,7 +307,7 @@ public sealed class Database : IDisposable
     private static int MarkInterruptedRuns(SqliteConnection connection, IClock clock)
     {
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "UPDATE runs SET status = $interrupted, ended_utc = COALESCE(ended_utc, $now) WHERE status = $running";
+        command.CommandText = "UPDATE runs SET status = $interrupted, ended_utc = COALESCE(ended_utc, MAX($now, started_utc)) WHERE status = $running";
         command.Parameters.AddWithValue("$interrupted", (int)RunStatus.Interrupted);
         command.Parameters.AddWithValue("$running", (int)RunStatus.Running);
         command.Parameters.AddWithValue("$now", clock.UtcNow.UtcTicks);
