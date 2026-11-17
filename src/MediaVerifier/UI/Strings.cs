@@ -10,7 +10,7 @@ internal static class Strings
     public const string ProductName = "MediaVerifier";
 
     /// <summary>Space, middle dot, space between facts on one line.</summary>
-    public const string Separator = "  ·  ";
+    public const string Separator = " · ";
     public const string And = " and ";
     public const string Dash = "—";
 
@@ -103,13 +103,13 @@ internal static class Strings
         public const string ScheduledRunning = "A scheduled scan is running in the background";
         public const string EngineMissing = "The media engine is missing or damaged";
         public const string Scanning = "Scanning {0} of {1} files";
-        public const string ScanningDetails = "·  {0}  ·  about {1} left";
-        public const string ScanningEstimating = "·  {0}  ·  estimating time left";
-        public const string ShortScanning = "{0} of {1} files  ·  about {2} left";
+        public const string ScanningDetails = "· {0} · about {1} left";
+        public const string ScanningEstimating = "· {0} · estimating time left";
+        public const string ShortScanning = "{0} of {1} files · about {2} left";
         public const string ShortEstimating = "{0} of {1} files";
         public const string Finding = "Finding files… {0} so far";
         public const string Pausing = "Pausing, finishing {0} files";
-        public const string Paused = "Paused  ·  {0} of {1} files";
+        public const string Paused = "Paused · {0} of {1} files";
         public const string Finishing = "Finishing…";
         public const string StopTitle = "Stop this scan?";
         public const string StopText = "Finished files keep their results. You can continue later.";
@@ -146,7 +146,7 @@ internal static class Strings
         public const string SinceLastScanUp = "+{0} since last scan";
         public const string SinceLastScanDown = "−{0} since last scan";
         public const string NoChange = "No change";
-        public const string FilesAndSize = "{0} files  ·  {1}";
+        public const string FilesAndSize = "{0} files · {1}";
         public const string Problems = "{0} problems";
         public const string OneProblem = "1 problem";
         public const string NoProblems = "No problems";
@@ -248,7 +248,7 @@ internal static class Strings
         public const string ScanAgain = "Scan again";
         public const string Quarantine = "Quarantine";
         public const string NeedDifferentFixes = "These problems need different fixes";
-        public const string NewResults = "{0} new problems  ·  Show";
+        public const string NewResults = "{0} new problems · Show";
         public const string Showing = "Showing {0} of {1}";
         public const string ClearFilters = "Clear filters";
         public const string NoneHeadline = "No problems found";
@@ -265,6 +265,25 @@ internal static class Strings
         public const string Likely = "Likely";
         public const string Possibly = "Possibly";
         public const string Suspicious = "Suspicious";
+    }
+
+    /// <summary>Action names (subplan 12, action catalog).</summary>
+    public static class Actions
+    {
+        public const string RestoreCopy = "Restore from healthy copy";
+        public const string Remux = "Rebuild container and index";
+        public const string FixExtension = "Rename to the correct extension";
+        public const string ShrinkBitDepth = "Store as 16-bit (lossless)";
+        public const string ReencodeFlac = "Rewrite FLAC";
+        public const string Salvage = "Save a playable copy";
+        public const string ExtractPreview = "Extract embedded preview";
+        public const string DeclipCopy = "Make a de-clipped copy (experimental)";
+        public const string Quarantine = "Move to quarantine";
+        public const string Recycle = "Move to Recycle Bin";
+        public const string AcceptBaseline = "Accept current content";
+        public const string ExportList = "Export replacement list";
+        public const string CheckDrive = "Check the drive";
+        public const string RecoverIndexHelp = "How to recover a recording without an index";
     }
 
     public static class Menu
@@ -304,9 +323,9 @@ internal static class Strings
         public const string History = "History";
         public const string TechnicalDetails = "Technical details";
         public const string CopyDetails = "Copy details";
-        public const string Unchanged = "Unchanged since {0}  ·  verified {1} times, last {2}";
-        public const string UnchangedOnce = "Unchanged since {0}  ·  verified once, last {1}";
-        public const string NeverVerified = "Fingerprint recorded {0}  ·  not verified since";
+        public const string Unchanged = "Unchanged since {0} · verified {1} times, last {2}";
+        public const string UnchangedOnce = "Unchanged since {0} · verified once, last {1}";
+        public const string NeverVerified = "Fingerprint recorded {0} · not verified since";
         public const string NoFingerprint = "No fingerprint yet";
         public const string ChangedSince = "Changed since {0}";
         public const string Message = "Message";
@@ -319,6 +338,10 @@ internal static class Strings
         public const string Progressive = "{0}p";
         public const string Fps = "{0} fps";
         public const string Dimensions = "{0} × {1}";
+        public const string ZeroHz = "0 Hz";
+        public const string TopOfScale = "Top of scale: {0} kHz";
+        public const string FileFingerprint = "File fingerprint (XXH3-128)  ";
+        public const string StreamFingerprint = "Stream fingerprint (MD5)  ";
     }
 
     public static class Events
@@ -344,15 +367,15 @@ internal static class Strings
         public const string LibraryPill = "Library";
         public const string BackupPill = "Backup";
         public const string Scan = "Scan";
-        public const string FilesAndSize = "{0} files  ·  {1}";
+        public const string FilesAndSize = "{0} files · {1}";
         public const string Problems = "{0} problems";
         public const string OneProblem = "1 problem";
         public const string NoProblems = "No problems";
-        public const string Scanned = "Scanned {0}  ·  {1}";
-        public const string NotScanned = "Not scanned yet  ·  {0}";
+        public const string Scanned = "Scanned {0} · {1}";
+        public const string NotScanned = "Not scanned yet · {0}";
         public const string NotConnected = "Not connected. Its files are left untouched.";
-        public const string LastSeen = "Last seen {0}  ·  {1}";
-        public const string FingerprintsRecorded = "Fingerprints recorded {0}  ·  {1}";
+        public const string LastSeen = "Last seen {0} · {1}";
+        public const string FingerprintsRecorded = "Fingerprints recorded {0} · {1}";
         public const string Ssd = "SSD";
         public const string HardDrive = "Hard drive";
         public const string Network = "Network";
@@ -374,7 +397,7 @@ internal static class Strings
         public const string Skip = "Skip";
         public const string SkipHelper = "Folder or file patterns, separated by semicolons";
         public const string Counting = "Counting files…";
-        public const string Found = "{0} media files found  ·  {1}";
+        public const string Found = "{0} media files found · {1}";
         public const string NoneFound = "No media files found here";
         public const string ErrorMissing = "This folder does not exist";
         public const string ErrorWatched = "This folder is already being watched";
@@ -403,12 +426,12 @@ internal static class Strings
     public static class Scans
     {
         public const string Scanning = "Scanning {0}";
-        public const string PausedScope = "Paused  ·  {0}";
+        public const string PausedScope = "Paused · {0}";
         public const string FindingIn = "Finding files in {0}";
         public const string AllFolders = "all folders";
         public const string FilesScope = "{0} files";
-        public const string SubLineYou = "{0} depth  ·  started {1}  ·  started by you";
-        public const string SubLineSchedule = "{0} depth  ·  started {1}  ·  started by schedule \"{2}\"";
+        public const string SubLineYou = "{0} depth · started {1} · started by you";
+        public const string SubLineSchedule = "{0} depth · started {1} · started by schedule \"{2}\"";
         public const string Files = "Files";
         public const string DataRead = "Data read";
         public const string Speed = "Speed";
@@ -713,7 +736,7 @@ internal static class Strings
         public const string ChipAuthenticity = "Authenticity";
         public const string ChipQuality = "Quality";
         public const string ChipStructure = "Structure";
-        public const string RuleMeta = "{0}  ·  {1}  ·  {2} depth";
+        public const string RuleMeta = "{0} · {1} · {2} depth";
         public const string UpToCritical = "Up to Critical";
         public const string UpToHigh = "Up to High";
         public const string UpToMedium = "Up to Medium";

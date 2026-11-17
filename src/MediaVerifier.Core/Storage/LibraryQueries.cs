@@ -14,6 +14,17 @@ public enum FindingSort
     Size,
 }
 
+/// <summary>How the Issues list groups its rows (subplan 09, Issues).</summary>
+public enum FindingGroup
+{
+    Severity,
+    Folder,
+    Rule,
+}
+
+/// <summary>One group of the Issues list, in list order: its key, label and number of findings.</summary>
+public sealed record FindingGroupCount(string Key, string Label, Severity? Tier, int Count);
+
 public enum FileSort
 {
     Name,
@@ -161,20 +172,108 @@ public sealed class FolderNode
 /// </summary>
 public sealed class LibraryQueries(Database database)
 {
-    public long[] FindingIds(FindingFilter filter, FindingSort sort = FindingSort.Severity, bool descending = false) => database.Read(connection =>
+    public long[] FindingIds(FindingFilter filter, FindingSort sort = FindingSort.Severity, bool descending = false) =>
+        FindingIds(filter, sort, descending, null);
+
+    /// <summary>
+    /// Finding ids in list order: grouped (severity, folder or rule) first, then the chosen sort. The groups
+    /// come out in the order of <see cref="FindingGroupCounts"/>.
+    /// </summary>
+    public long[] FindingIds(FindingFilter filter, FindingSort sort, bool descending, FindingGroup? group) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
-        bool needsDirs = filter.DirId is not null || !string.IsNullOrWhiteSpace(filter.Text) || sort == FindingSort.Folder;
-        StringBuilder sql = new("SELECT fi.id FROM findings fi JOIN files f ON f.id = fi.file_id");
-        if (needsDirs)
+        BuildFindingIds(command, "fi.id", filter, sort, descending, group);
+        return ReadIds(command);
+    });
+
+    private static void BuildFindingIds(SqliteCommand command, string columns, FindingFilter filter, FindingSort sort, bool descending, FindingGroup? group)
+    {
+        bool needsDirs = NeedsDirs(filter) || sort == FindingSort.Folder || group == FindingGroup.Folder;
+        bool needsFiles = needsDirs || filter.RootId is not null || sort == FindingSort.Size;
+        // The default order is ix_findings_list's own; name it so a filter on an indexed column of the
+        // other index cannot turn the plan into a million-row sort.
+        bool listOrder = sort == FindingSort.Severity && group is null or FindingGroup.Severity && !needsFiles;
+        StringBuilder sql = new("SELECT " + columns + " FROM findings fi" + (listOrder ? " INDEXED BY ix_findings_list" : ""));
+        AppendFindingJoins(sql, needsFiles, needsDirs);
+        AppendFindingWhere(sql, command, filter);
+        sql.Append(" ORDER BY ");
+
+        // The default order (tier, confidence, name) reads ix_findings_list in order; grouping by
+        // tier keeps it, so the tier is not repeated in front.
+        string order = FindingOrder(sort, descending);
+        switch (group)
         {
-            sql.Append(" JOIN dirs d ON d.id = f.dir_id");
+            case FindingGroup.Severity when sort != FindingSort.Severity:
+                sql.Append("fi.severity DESC, ");
+                break;
+            case FindingGroup.Severity when descending:
+                order = "fi.severity DESC, fi.confidence ASC, fi.file_name DESC, fi.id DESC";
+                break;
+            case FindingGroup.Folder:
+                sql.Append("f.root_id, d.rel_path, ");
+                break;
+            case FindingGroup.Rule:
+                sql.Append("fi.rule_id, ");
+                break;
+        }
+
+        sql.Append(order);
+        command.CommandText = sql.ToString();
+    }
+
+    /// <summary>The groups of a filtered Issues list, in list order, with their counts.</summary>
+    public List<FindingGroupCount> FindingGroupCounts(FindingFilter filter, FindingGroup group) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        StringBuilder sql = new();
+        switch (group)
+        {
+            case FindingGroup.Folder:
+                sql.Append("SELECT r.path, d.rel_path, COUNT(*) FROM findings fi JOIN files f ON f.id = fi.file_id JOIN dirs d ON d.id = f.dir_id JOIN roots r ON r.id = f.root_id");
+                break;
+            case FindingGroup.Rule:
+                sql.Append("SELECT fi.rule_id, '', COUNT(*) FROM findings fi");
+                AppendFindingJoins(sql, NeedsDirs(filter) || filter.RootId is not null, NeedsDirs(filter));
+                break;
+            default:
+                sql.Append("SELECT fi.severity, '', COUNT(*) FROM findings fi");
+                AppendFindingJoins(sql, NeedsDirs(filter) || filter.RootId is not null, NeedsDirs(filter));
+                break;
         }
 
         AppendFindingWhere(sql, command, filter);
-        sql.Append(" ORDER BY ").Append(FindingOrder(sort, descending));
+        sql.Append(group switch
+        {
+            FindingGroup.Folder => " GROUP BY f.root_id, d.rel_path ORDER BY f.root_id, d.rel_path",
+            FindingGroup.Rule => " GROUP BY fi.rule_id ORDER BY fi.rule_id",
+            _ => " GROUP BY fi.severity ORDER BY fi.severity DESC",
+        });
         command.CommandText = sql.ToString();
-        return ReadIds(command);
+        List<FindingGroupCount> groups = [];
+        using SqliteDataReader r = command.ExecuteReader();
+        while (r.Read())
+        {
+            int count = r.GetInt32(2);
+            switch (group)
+            {
+                case FindingGroup.Folder:
+                    string root = r.GetString(0);
+                    string rel = r.GetString(1);
+                    string path = rel.Length == 0 ? root : Path.Combine(root, rel);
+                    groups.Add(new FindingGroupCount(path, path, null, count));
+                    break;
+                case FindingGroup.Rule:
+                    string rule = r.GetString(0);
+                    groups.Add(new FindingGroupCount(rule, Rules.RuleCatalog.TryGet(rule, out Rules.RuleDefinition definition) ? definition.Title : rule, null, count));
+                    break;
+                default:
+                    Severity tier = (Severity)r.GetInt32(0);
+                    groups.Add(new FindingGroupCount(tier.ToString(), tier.ToString(), tier, count));
+                    break;
+            }
+        }
+
+        return groups;
     });
 
     public List<FindingRow> FindingRows(IReadOnlyList<long> ids) => database.Read(connection =>
@@ -219,16 +318,7 @@ public sealed class LibraryQueries(Database database)
         filter ??= FindingFilter.OpenAll;
         using SqliteCommand command = connection.CreateCommand();
         StringBuilder sql = new("SELECT fi.severity, COUNT(*) FROM findings fi");
-        if (NeedsFileJoin(filter))
-        {
-            sql.Append(" JOIN files f ON f.id = fi.file_id");
-        }
-
-        if (filter.DirId is not null || !string.IsNullOrWhiteSpace(filter.Text))
-        {
-            sql.Append(" JOIN dirs d ON d.id = f.dir_id");
-        }
-
+        AppendFindingJoins(sql, NeedsDirs(filter) || filter.RootId is not null, NeedsDirs(filter));
         AppendFindingWhere(sql, command, filter with { Severities = null });
         sql.Append(" GROUP BY fi.severity");
         command.CommandText = sql.ToString();
@@ -251,20 +341,18 @@ public sealed class LibraryQueries(Database database)
     {
         filter ??= FindingFilter.OpenAll;
         using SqliteCommand command = connection.CreateCommand();
-        StringBuilder sql = new("SELECT fi.rule_id, COUNT(*) FROM findings fi JOIN files f ON f.id = fi.file_id");
-        if (filter.DirId is not null || !string.IsNullOrWhiteSpace(filter.Text))
-        {
-            sql.Append(" JOIN dirs d ON d.id = f.dir_id");
-        }
-
+        // Grouping by (tier, rule) follows ix_findings_open, so no sort is needed; the tiers are summed here.
+        StringBuilder sql = new("SELECT fi.rule_id, COUNT(*) FROM findings fi");
+        AppendFindingJoins(sql, NeedsDirs(filter) || filter.RootId is not null, NeedsDirs(filter));
         AppendFindingWhere(sql, command, filter with { RuleIds = null });
-        sql.Append(" GROUP BY fi.rule_id");
+        sql.Append(" GROUP BY fi.severity, fi.rule_id");
         command.CommandText = sql.ToString();
         Dictionary<string, int> counts = new(StringComparer.Ordinal);
         using SqliteDataReader r = command.ExecuteReader();
         while (r.Read())
         {
-            counts[r.GetString(0)] = r.GetInt32(1);
+            string rule = r.GetString(0);
+            counts[rule] = counts.GetValueOrDefault(rule) + r.GetInt32(1);
         }
 
         return counts;
@@ -508,9 +596,6 @@ public sealed class LibraryQueries(Database database)
         return new SeverityCounts(counts[4], counts[3], counts[2], counts[1]);
     }
 
-    private static bool NeedsFileJoin(FindingFilter filter) =>
-        filter.Kinds is not null || filter.RootId is not null || filter.DirId is not null || !string.IsNullOrEmpty(filter.Text);
-
     private static void AppendFindingWhere(StringBuilder sql, SqliteCommand command, FindingFilter filter)
     {
         sql.Append(" WHERE fi.status = $status");
@@ -538,7 +623,7 @@ public sealed class LibraryQueries(Database database)
             command.Add("$firstRun", run);
         }
 
-        AppendIn(sql, command, "f.media_kind", "$kind", filter.Kinds?.Select(k => (long)k));
+        AppendIn(sql, command, "fi.media_kind", "$kind", filter.Kinds?.Select(k => (long)k));
         if (filter.RootId is long root)
         {
             sql.Append(" AND f.root_id = $root");
@@ -551,6 +636,22 @@ public sealed class LibraryQueries(Database database)
         }
 
         AppendText(sql, command, filter.Text);
+    }
+
+    /// <summary>Folder and text filters read the directory table (and so the file table).</summary>
+    private static bool NeedsDirs(FindingFilter filter) => filter.DirId is not null || !string.IsNullOrWhiteSpace(filter.Text);
+
+    private static void AppendFindingJoins(StringBuilder sql, bool files, bool dirs)
+    {
+        if (files || dirs)
+        {
+            sql.Append(" JOIN files f ON f.id = fi.file_id");
+        }
+
+        if (dirs)
+        {
+            sql.Append(" JOIN dirs d ON d.id = f.dir_id");
+        }
     }
 
     private static void AppendFileWhere(StringBuilder sql, SqliteCommand command, FileFilter filter)
@@ -634,12 +735,14 @@ public sealed class LibraryQueries(Database database)
         string direction = descending ? "DESC" : "ASC";
         return sort switch
         {
-            FindingSort.Name => $"f.name {direction}, fi.severity DESC",
-            FindingSort.Folder => $"d.rel_path {direction}, f.name",
+            FindingSort.Name => $"fi.file_name {direction}, fi.severity DESC",
+            FindingSort.Folder => $"d.rel_path {direction}, fi.file_name",
             FindingSort.Found => $"fi.first_utc {(descending ? "ASC" : "DESC")}, fi.id DESC",
-            FindingSort.Rule => $"fi.rule_id {direction}, f.name",
-            FindingSort.Size => $"f.size {(descending ? "ASC" : "DESC")}, f.name",
-            _ => $"fi.severity {(descending ? "ASC" : "DESC")}, fi.first_utc DESC, fi.id DESC",
+            FindingSort.Rule => $"fi.rule_id {direction}, fi.file_name",
+            FindingSort.Size => $"f.size {(descending ? "ASC" : "DESC")}, fi.file_name",
+            // By tier, then confidence, then file name (subplan 09, Issues: Sorting), in the order of
+            // ix_findings_list; reversed as a whole.
+            _ => descending ? "fi.severity ASC, fi.confidence ASC, fi.file_name DESC, fi.id DESC" : "fi.severity DESC, fi.confidence DESC, fi.file_name, fi.id",
         };
     }
 

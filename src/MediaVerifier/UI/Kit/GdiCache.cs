@@ -46,6 +46,13 @@ internal static class GdiCache
         Pens.Clear();
     }
 
+    /// <summary>
+    /// The pen width to ask GDI+ for so a stroke keeps its weight: antialiased pens of 1.5 device pixels
+    /// or less are drawn with only 1 px of coverage, so widths from 1.25 to 1.5 are nudged past that
+    /// threshold (1.5 px strokes otherwise look half as heavy as in the references).
+    /// </summary>
+    public static float StrokeWidth(float deviceWidth) => deviceWidth is > 1.25f and <= 1.5f ? 1.501f : deviceWidth;
+
     /// <summary>Number of cached GDI+ objects (tests check that theme switches do not grow it).</summary>
     public static int Count => Brushes.Count + Pens.Count;
 
@@ -54,7 +61,7 @@ internal static class GdiCache
         (int, float, bool) key = (color.ToArgb(), MathF.Round(width, 3), round);
         if (!Pens.TryGetValue(key, out Pen? pen))
         {
-            pen = new Pen(color, width);
+            pen = new Pen(color, StrokeWidth(width));
             if (round)
             {
                 pen.StartCap = LineCap.Round;

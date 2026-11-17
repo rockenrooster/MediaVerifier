@@ -99,6 +99,9 @@ internal sealed class UiServices : IDisposable
     /// <summary>Opens a page, optionally with a request for it (a filter, a dialog to open); set by the main window.</summary>
     public Action<UI.Pages.PageId, object?>? Navigate { get; set; }
 
+    /// <summary>Shows content in the detail drawer (null closes it); set by the main window.</summary>
+    public Action<Control?>? ShowDrawer { get; set; }
+
     /// <summary>True for the render harness: no timers start work, nothing is written.</summary>
     public bool IsDemo { get; init; }
 

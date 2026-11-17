@@ -221,7 +221,7 @@ Reference: `dashboard-dark`, `dashboard-narrow-dark`.
 | Bottom items | *Settings* 8 px above the bottom edge; *Update available* 44 px above it, only when an update exists, with its icon in `Accent` |
 | Issues badge | Pill 20 px high, radius 10, 10 px from the item's right edge, count in `CaptionStrong`, coloured with the worst open tier's `Pill` and `Text`. Collapsed: a dot r 4.5 in the tier's `Fill` with a 1.5 px `Bg` outline at the icon's top right |
 | Header | Height 56. Page title in `Title` at rail + 24, centred on y 28. From the right edge inward: 24 px margin, Scan split button, 8, bell icon button, 8, search box 280 px. All 32 px high at y 12 |
-| Content area | From rail + 24 to window width − 24; top at y 72; bottom 24 px above the window bottom, or 16 px above the status strip when it is visible |
+| Content area | From rail + 24 to window width − 24 (to 16 px left of the detail drawer while it is open); top at y 72; bottom 24 px above the window bottom, or 16 px above the status strip when it is visible |
 | Status strip | Height 36, from the rail to the right edge, `Surface` fill, 1 px `Stroke` top line. A 2 px `Accent` line along its top edge shows progress. Ring r 8 at rail + 32; text from rail + 48; *Pause* and *Stop* compact subtle buttons 16 px from the right. Below 1100 px width the text shortens to files and time left |
 | Scrolling | When a page is taller than the content area, the content scrolls vertically; rail, header and status strip do not move |
 

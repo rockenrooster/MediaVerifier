@@ -33,7 +33,7 @@ the engine is finished and wired to the real engine as phases 5–7 land.
 | File size | Binary units, one decimal, no decimal for bytes and KB | `412 KB`, `31.2 MB`, `3.2 TB` |
 | Percent | One decimal for health, none elsewhere | `98.7%`, `82%`, `21%` |
 | Time of day | Current culture short time | `03:12` |
-| Recent date | `Today 03:12`, `Yesterday 03:00`, weekday for the last 6 days (`Mon 21:40`), then `8 Nov 03:00`, with the year when not the current year (`14 Mar 2026`). In sentences the first word is lower case (`Scanned today 03:12`) | |
+| Recent date | `Today 03:12`, `Yesterday 03:00`, weekday for the last 6 days (`Mon 21:40`), then `8 Nov 03:00`, with the year when not the current year or more than six months away (`14 Mar 2026`). In sentences the first word is lower case (`Scanned today 03:12`) | |
 | Duration | `45 s`, `37 min`, `1 h 48 min`; estimates prefixed `About` | `About 1 h 12 min` |
 | Rate | `142 MB/s` | |
 | Separator | Space, middle dot, space (` · `) between facts on one line | `FLAC · 44.1 kHz · 16-bit` |

@@ -160,6 +160,10 @@ internal class KitControl : Control
         _keyboardFocus = MouseButtons == MouseButtons.None;
         base.OnGotFocus(e);
         Invalidate();
+        if (_keyboardFocus)
+        {
+            KitScrolling.RevealFocused(this);
+        }
     }
 
     protected override void OnLostFocus(EventArgs e)

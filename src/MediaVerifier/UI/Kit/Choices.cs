@@ -59,16 +59,36 @@ internal sealed class DropDown : KitControl
 
     public bool IsOpen => _open is { IsDisposed: false, Visible: true };
 
+    /// <summary>A choice other than the default is set: an Accent border (subplan 09, Issues drop-downs).</summary>
+    public bool Highlighted
+    {
+        get => _highlighted;
+        set
+        {
+            if (_highlighted != value)
+            {
+                _highlighted = value;
+                Invalidate();
+            }
+        }
+    }
+
+    private bool _highlighted;
+
     protected override bool Interactive => true;
 
     protected override AccessibleStates ExtraAccessibleStates => IsOpen ? AccessibleStates.Expanded : AccessibleStates.Collapsed;
 
     public string ShownText => SelectedItem is string item ? (DisplayFormat is null ? item : string.Format(System.Globalization.CultureInfo.CurrentCulture, DisplayFormat, item)) : string.Empty;
 
-    public static void Draw(Graphics g, Rectangle bounds, string text, VisualState state, int dpi)
+    public static void Draw(Graphics g, Rectangle bounds, string text, VisualState state, int dpi, bool highlighted = false)
     {
         ThemeTokens t = ThemeService.Tokens;
         (Color fill, Color border, Color content, _) = ButtonPainter.Colors(ButtonKind.Secondary, state, t);
+        if (highlighted && !state.HasFlag(VisualState.Disabled))
+        {
+            border = t.Accent;
+        }
         float radius = Dpi.ScaleF(4, dpi);
         ButtonPainter.PaintSurface(g, bounds, ButtonKind.Secondary, state, fill, border, false, content, radius, dpi);
         int centreY = bounds.Y + (bounds.Height / 2);
@@ -110,7 +130,7 @@ internal sealed class DropDown : KitControl
             state |= VisualState.Pressed;
         }
 
-        Draw(e.Graphics, ClientRectangle, ShownText, state, DeviceDpi);
+        Draw(e.Graphics, ClientRectangle, ShownText, state, DeviceDpi, _highlighted);
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);

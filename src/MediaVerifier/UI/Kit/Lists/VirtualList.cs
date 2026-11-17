@@ -23,6 +23,12 @@ internal sealed record ListColumn(string Header, int Width, bool RightAligned = 
 internal sealed class ListRow
 {
     public bool IsGroup;
+
+    /// <summary>The filter summary row ("Showing {n} of {total}" and a link); positioned like a group header.</summary>
+    public bool IsSummary;
+
+    /// <summary>The link text of a summary row.</summary>
+    public string? Link;
     public bool Collapsed;
     public bool Loaded = true;
     public Severity? Severity;
@@ -39,6 +45,8 @@ internal sealed class ListRow
     public void Clear()
     {
         IsGroup = false;
+        IsSummary = false;
+        Link = null;
         Collapsed = false;
         Loaded = true;
         Severity = null;
@@ -392,6 +400,26 @@ internal sealed class VirtualList : KitControl
         }
     }
 
+    /// <summary>The filter summary row: text in Body Text2 at +16, then the link in Accent, underlined.</summary>
+    public static void DrawSummaryRow(Graphics g, Rectangle row, ListRow data, int dpi)
+    {
+        ThemeTokens t = ThemeService.Tokens;
+        TypeRamp type = TypeRamp.For(dpi);
+        int centreY = row.Y + (row.Height / 2);
+        int x = row.X + Dpi.Scale(16, dpi);
+        int width = KitPaint.MeasureWidth(data.Line1, type.Body);
+        KitPaint.DrawText(g, data.Line1, type.Body, t.Text2, x, centreY, width + 1);
+        if (data.Link is not null)
+        {
+            int linkX = x + width + Dpi.Scale(12, dpi);
+            int linkWidth = KitPaint.MeasureWidth(data.Link, type.Body);
+            KitPaint.DrawText(g, data.Link, type.Body, t.Accent, linkX, centreY, linkWidth + 1);
+            KitPaint.HorizontalLine(g, t.Accent, linkX, linkX + linkWidth, centreY + Dpi.ScaleF(8.5f, dpi), Dpi.ScaleF(1, dpi));
+        }
+
+        KitPaint.HorizontalLine(g, Color.FromArgb(153, t.Stroke), row.X, row.Right, row.Bottom - Dpi.ScaleF(1, dpi), Dpi.ScaleF(1, dpi));
+    }
+
     /// <summary>Skeleton while a row loads: a 16 px circle and two bars (10 px, then 8 px at 60 % opacity).</summary>
     public static void DrawSkeleton(Graphics g, Rectangle row, int dpi, ThemeTokens t)
     {
@@ -549,7 +577,11 @@ internal sealed class VirtualList : KitControl
                 int height = S(_row.IsGroup ? GroupHeight : RowHeight);
                 Rectangle rowBounds = new(0, y, Width, height);
                 bool focused = i == _focus && KeyboardFocused;
-                if (_row.IsGroup)
+                if (_row.IsSummary)
+                {
+                    DrawSummaryRow(g, rowBounds, _row, dpi);
+                }
+                else if (_row.IsGroup)
                 {
                     DrawGroupHeader(g, rowBounds, _row, focused, dpi);
                 }
@@ -609,6 +641,7 @@ internal sealed class VirtualList : KitControl
         int lines = Math.Max(1, SystemInformation.MouseWheelScrollLines);
         _scroll -= e.Delta * lines * S(RowHeight) / 120;
         ClampScroll();
+        KitScrolling.MarkHandled(e);
         UpdateHover(e.Location);
         Invalidate();
     }

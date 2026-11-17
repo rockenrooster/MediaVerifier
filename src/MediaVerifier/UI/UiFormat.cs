@@ -34,8 +34,7 @@ internal static class UiFormat
             unit++;
         }
 
-        // One decimal, without a trailing ".0" (the references show 212 GB and 31.2 MB).
-        return string.Format(Culture, units[unit], value.ToString("0.#", Culture));
+        return string.Format(Culture, units[unit], value.ToString("0.0", Culture));
     }
 
     /// <summary>Health percent with one decimal: <c>98.7%</c>.</summary>
@@ -75,7 +74,7 @@ internal static class UiFormat
         {
             text = local.ToString("ddd", Culture) + time;
         }
-        else if (local.Year == today.Year)
+        else if (local.Year == today.Year && Math.Abs(days) <= 183)
         {
             text = local.ToString("d MMM", Culture) + time;
         }

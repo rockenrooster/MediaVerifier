@@ -33,7 +33,7 @@ internal static class IconRenderer
     {
         IconShape shape = IconGeometry.Get(icon);
         float scale = logicalSize * dpi / 96f / 16f;
-        float strokeGrid = StrokeForSize(logicalSize) * 16f / logicalSize;
+        float strokeGrid = GdiCache.StrokeWidth(StrokeForSize(logicalSize) * dpi / 96f) / scale;
         SmoothingMode smoothing = g.SmoothingMode;
         PixelOffsetMode offset = g.PixelOffsetMode;
         try

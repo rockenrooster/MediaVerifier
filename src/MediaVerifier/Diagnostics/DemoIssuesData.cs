@@ -1,0 +1,94 @@
+using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
+using MediaVerifier.Core.Storage;
+using MediaVerifier.UI.Data;
+
+namespace MediaVerifier.Diagnostics;
+
+/// <summary>The Issues rows and the drawer of the mockups (docs/design/issues-*.svg).</summary>
+internal sealed partial class DemoUiData
+{
+    private static readonly IssueRow[] Rows =
+    [
+        Row(1, Severity.Critical, "INT-ROT", 1f, "IMG_2041.jpg", "Changed without being modified · intact on 14 Mar 2026", @"D:\Photos\2019\Rome", 4.2, MediaKind.Photo),
+        Row(2, Severity.Critical, "INT-ROT", 1f, "Harbor Lights - 03 - Low Tide.flac", "Changed without being modified · intact on 2 Mar 2026", @"D:\Music\Harbor Lights\Low Tide", 28.7, MediaKind.Audio),
+        Row(3, Severity.Critical, "COR-CONTAINER", 1f, "Birthday 2021.mp4", "Container is broken · index missing, recording was interrupted", @"D:\Videos\Family", 1.9 * 1024, MediaKind.Video),
+        Row(4, Severity.High, "AUD-FAKE-LOSSLESS", 0.85f, "Night Drive - 07 - Overpass.flac", "Likely made from a lossy source · hard cutoff at 16.6 kHz", @"D:\Music\Night Drive\Overpass", 31.2, MediaKind.Audio),
+        Row(5, Severity.High, "VID-UPSCALED", 0.85f, "Coastline 4K.mkv", "Likely upscaled · 2160p file with detail equivalent to 1080p", @"D:\Videos\Travel", 14.6 * 1024, MediaKind.Video),
+        Row(6, Severity.High, "COR-CHECKSUM", 1f, "Sunday Session - 02.flac", "Embedded checksum mismatch · audio differs from the stored MD5", @"D:\Music\Sunday Session", 41.0, MediaKind.Audio),
+        Row(7, Severity.High, "COR-DECODE", 1f, "Wedding - Speeches.mov", "Decoder errors · 14 errors, about 3 s affected", @"D:\Videos\Family", 6.3 * 1024, MediaKind.Video),
+        Row(8, Severity.High, "COR-PARTIAL-IMAGE", 1f, "DSC_0412.jpg", "Image decodes only partly · data ends before the image does", @"D:\Photos\2016\Lisbon", 2.1, MediaKind.Photo),
+        Row(9, Severity.Medium, "AUD-PADDED-BITS", 1f, "Glasshouse - 01 - Morning.flac", "Bit depth is padded · 24-bit file with 16 significant bits", @"D:\Music\Glasshouse", 88.4, MediaKind.Audio),
+        Row(10, Severity.Medium, "COR-INDEX", 1f, "Road Trip Day 3.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 3.8 * 1024, MediaKind.Video),
+        Row(11, Severity.Medium, "AUD-CLIPPING", 1f, "Static Bloom - 05.flac", "Clipping · 212 clipped peaks per minute", @"D:\Music\Static Bloom", 36.9, MediaKind.Audio),
+        Row(12, Severity.Medium, "AUD-CLIPPING", 1f, "Static Bloom - 06.flac", "Clipping · 148 clipped peaks per minute", @"D:\Music\Static Bloom", 34.2, MediaKind.Audio),
+        Row(13, Severity.Medium, "COR-INDEX", 1f, "Road Trip Day 4.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 4.1 * 1024, MediaKind.Video),
+    ];
+
+    public IssuesData LoadIssues(IssuesQuery query)
+    {
+        IEnumerable<IssueRow> rows = Rows;
+        if (query.Filter.Severities is { Count: > 0 } tiers)
+        {
+            rows = rows.Where(r => tiers.Contains(r.Severity));
+        }
+
+        if (query.Filter.Kinds is { Count: > 0 } kinds)
+        {
+            rows = rows.Where(r => kinds.Contains(r.Kind));
+        }
+
+        IssueRow[] shown = [.. rows];
+        IssueGroup[] groups =
+        [
+            .. new[] { Severity.Critical, Severity.High, Severity.Medium, Severity.Low }
+                .Where(t => query.Filter.Severities is not { Count: > 0 } s || s.Contains(t))
+                .Select(t => new IssueGroup(t.ToString(), UI.UiFormat.TierName(t), t, t switch { Severity.Critical => 3, Severity.High => 14, Severity.Medium => 96, _ => 212 }, shown.Count(r => r.Severity == t))),
+        ];
+        return new IssuesData(
+            query,
+            [.. shown.Select(r => r.Id)],
+            groups,
+            new SeverityCounts(3, 14, 96, 212),
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            [(1, "Music"), (2, "Photos"), (3, "Videos"), (4, "Backup (E:)")],
+            325,
+            true,
+            true,
+            12_507,
+            At(16, 3, 12));
+    }
+
+    public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids) => [.. ids.Select(id => Rows.First(r => r.Id == id))];
+
+    public FileDetail? LoadFileDetail(long fileId)
+    {
+        IssueRow row = Rows.FirstOrDefault(r => r.FileId == fileId) ?? Rows[3];
+        RuleDefinition fake = RuleCatalog.Get("AUD-FAKE-LOSSLESS");
+        RuleDefinition dc = RuleCatalog.Get("AUD-DC");
+        Dictionary<string, object> evidence = new() { ["cutoffHz"] = 16600, ["dropDb"] = 67, ["sampleRateHz"] = 44100 };
+        return new FileDetail(
+            row.FileId,
+            row.Name,
+            row.FullPath,
+            ["D:", "Music", "Night Drive", "Overpass"],
+            MediaKind.Audio,
+            "FLAC · 44.1 kHz · 16-bit · stereo · 4:12 · 31.2 MB",
+            FingerprintState.Unchanged,
+            At(2, 10, 0).AddMonths(-8),
+            3,
+            DemoUiData.At(12, 3, 0).AddMonths(-1),
+            [
+                new FindingDetail(4, fake.Id, Severity.High, 0.85f, fake.Title, "hard cutoff at 16.6 kHz", RuleText.Render(fake.WhatItMeans, evidence), RuleText.Render(fake.WhyItMatters, evidence), RuleText.Render(fake.WhatYouCanDo, evidence), EvidenceView.Spectrogram, evidence, "Cutoff 16.6 kHz · drop 67 dB · only rounding noise above"),
+                new FindingDetail(14, dc.Id, Severity.Low, 1f, dc.Title, "offset of 0.4 %", RuleText.Render(dc.WhatItMeans, null), RuleText.Render(dc.WhyItMatters, null), RuleText.Render(dc.WhatYouCanDo, null), EvidenceView.None, new Dictionary<string, object>(), string.Empty),
+            ],
+            [("Verified unchanged", DemoUiData.At(12, 3, 0).AddMonths(-1)), ("Fingerprint recorded", At(2, 10, 0).AddMonths(-8)), ("First seen", At(2, 10, 0).AddMonths(-8))],
+            "File fingerprint (XXH3-128)  9f2c1e07b4d3a8c56e0f1d2b3a4c5d6e\nStream fingerprint (MD5)  218d8bdbaa101df51f07a726ac401ee5\n",
+            (long)(31.2 * 1024 * 1024),
+            [],
+            UI.Strings.Actions.ExportList);
+    }
+
+    private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind) =>
+        new(id, id, rule, severity, confidence, name, line2, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name));
+}

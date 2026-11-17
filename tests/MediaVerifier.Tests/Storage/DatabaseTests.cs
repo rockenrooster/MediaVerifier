@@ -29,11 +29,12 @@ public sealed class DatabaseTests
     }
 
     [Fact]
-    public void FreshCreateHasSchemaV1AndReopenIsIdempotent()
+    public void FreshCreateHasTheLatestSchemaAndReopenIsIdempotent()
     {
+        int latest = MigrationRunner.LatestVersion(MigrationRunner.Default);
         using TestDatabase db = new();
         Assert.Equal(0, db.Database.OpenedFromVersion);
-        Assert.Equal(1, UserVersion(db.FilePath));
+        Assert.Equal(latest, UserVersion(db.FilePath));
         string[] tables = Tables(db.FilePath);
         foreach (string table in new[] { "meta", "roots", "dirs", "files", "findings", "artifacts", "file_events", "runs", "plans", "rule_settings", "ignores", "operations", "notifications" })
         {
@@ -41,8 +42,8 @@ public sealed class DatabaseTests
         }
 
         db.Reopen();
-        Assert.Equal(1, db.Database.OpenedFromVersion);
-        Assert.Equal(1, UserVersion(db.FilePath));
+        Assert.Equal(latest, db.Database.OpenedFromVersion);
+        Assert.Equal(latest, UserVersion(db.FilePath));
     }
 
     [Fact]
@@ -51,7 +52,7 @@ public sealed class DatabaseTests
         using TempDirectory temp = new("migrate");
         string file = temp.Combine("library.db");
         FakeClock clock = new(DateTimeOffset.UtcNow);
-        using (Database v1 = Database.Open(file, clock))
+        using (Database v1 = Database.Open(file, clock, [new InitialSchema()]))
         {
             await v1.Roots.AddAsync(new RootRecord { Path = @"D:\Music" });
         }
@@ -88,7 +89,7 @@ public sealed class DatabaseTests
 
         StorageException error = Assert.Throws<StorageException>(() => Database.Open(file, clock));
         Assert.Contains("7", error.Message, StringComparison.Ordinal);
-        Assert.Contains("1", error.Message, StringComparison.Ordinal);
+        Assert.Contains(MigrationRunner.LatestVersion(MigrationRunner.Default).ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -246,6 +247,58 @@ public sealed class DatabaseTests
 
         return [.. names];
     }
+
+    [Fact]
+    public async Task FindingsCarryTheirFilesNameAndKindAcrossTheV2Migration()
+    {
+        using TempDirectory temp = new("findings-v2");
+        string file = temp.Combine("library.db");
+        FakeClock clock = new(DateTimeOffset.UtcNow);
+        long fileId;
+        using (Database v1 = Database.Open(file, clock, [new InitialSchema()]))
+        {
+            long root = await v1.Roots.AddAsync(new RootRecord { Path = @"D:\Music" });
+            fileId = (await v1.Files.UpsertAsync([new(root, "Album", "track.flac", "flac", MediaKind.Audio, 100, 1, null, 1)]))[0].FileId;
+            await v1.Writer.ExecuteAsync(
+                context =>
+                {
+                    SqliteCommand insert = context.Command(
+                        "INSERT INTO findings(file_id, rule_id, category, severity, confidence, summary, status, first_run, last_run, first_utc, last_utc) " +
+                        "VALUES ($file, 'AUD-CLIPPING', 4, 2, 1.0, 'clipping', 0, 1, 1, 0, 0)");
+                    insert.Parameters.AddWithValue("$file", fileId);
+                    insert.ExecuteNonQuery();
+                },
+                ChangeFlags.Findings);
+        }
+
+        using Database v2 = Database.Open(file, clock);
+        Assert.Equal(1, v2.OpenedFromVersion);
+        Assert.Equal(("track.flac", (long)MediaKind.Audio), ListColumns(v2, fileId));
+
+        // A rename or move detected later updates the copy the Issues list sorts by.
+        await v2.Writer.ExecuteAsync(context => FileIndex.Move(context, fileId, 1, "Album", "renamed.flac"), ChangeFlags.Files);
+        Assert.Equal(("renamed.flac", (long)MediaKind.Audio), ListColumns(v2, fileId));
+
+        // New findings take the values from their file when inserted.
+        await v2.Findings.ReplaceForFileAsync(fileId, 2, ["AUD-CLIPPING", "AUD-DC"], [new Finding("AUD-CLIPPING", Severity.Medium, 1f, "clipping", Finding.NoEvidence), new Finding("AUD-DC", Severity.Low, 1f, "dc", Finding.NoEvidence)], false);
+        long named = v2.Read(connection =>
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM findings WHERE file_name = 'renamed.flac' AND media_kind = 3";
+            return (long)command.ExecuteScalar()!;
+        });
+        Assert.Equal(2, named);
+    }
+
+    private static (string Name, long Kind) ListColumns(Database database, long fileId) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT file_name, media_kind FROM findings WHERE file_id = $file";
+        command.Parameters.AddWithValue("$file", fileId);
+        using SqliteDataReader r = command.ExecuteReader();
+        Assert.True(r.Read());
+        return (r.GetString(0), r.GetInt64(1));
+    });
 
     private sealed class AddColumnMigration : Migration
     {

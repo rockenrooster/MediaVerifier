@@ -218,12 +218,39 @@ internal sealed class InitialSchema : Migration
 }
 
 /// <summary>
+/// Schema v2: each finding carries a copy of its file's name and media kind so the Issues list's
+/// default order and its chip filters read one covering index (subplan 03, UI query patterns:
+/// 1,000,000 findings in under 300 ms). The writers keep the copies current (finding insert, file
+/// move, media-kind change); triggers were measured at five times the insert cost.
+/// </summary>
+internal sealed class FindingListIndex : Migration
+{
+    public override int Version => 2;
+
+    public override void Apply(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        Exec(connection, transaction, """
+            ALTER TABLE findings ADD COLUMN media_kind INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE findings ADD COLUMN file_name  TEXT    NOT NULL DEFAULT '';
+            UPDATE findings SET media_kind = (SELECT media_kind FROM files WHERE files.id = findings.file_id),
+                                file_name  = (SELECT name FROM files WHERE files.id = findings.file_id);
+            CREATE INDEX ix_findings_list ON findings(status, severity DESC, confidence DESC, file_name, id, media_kind, category, rule_id);
+
+            -- Tier and rule counts group in this index's order and filter by kind and category without
+            -- reading the table.
+            DROP INDEX ix_findings_open;
+            CREATE INDEX ix_findings_open ON findings(status, severity, rule_id, media_kind, category);
+            """);
+    }
+}
+
+/// <summary>
 /// Applies pending migrations (subplan 03, Migrations): forward only, one transaction each, with a copy
 /// of the database taken first (two most recent kept). A database newer than the app is refused.
 /// </summary>
 internal static class MigrationRunner
 {
-    public static IReadOnlyList<Migration> Default { get; } = [new InitialSchema()];
+    public static IReadOnlyList<Migration> Default { get; } = [new InitialSchema(), new FindingListIndex()];
 
     public static int LatestVersion(IReadOnlyList<Migration> migrations) => migrations.Count == 0 ? 0 : migrations.Max(m => m.Version);
 

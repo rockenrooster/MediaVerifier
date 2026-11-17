@@ -70,12 +70,27 @@ public sealed class FileIndex(Database database)
         {
             FileUpsert file = files[i];
             long dirId = InternDir(context, file.RootId, file.RelDir);
-            SqliteCommand find = context.Command("SELECT id FROM files WHERE dir_id = $dir AND name = $name");
+            SqliteCommand find = context.Command("SELECT id, media_kind FROM files WHERE dir_id = $dir AND name = $name");
             find.Add("$dir", dirId);
             find.Add("$name", file.Name);
-            object? existing = find.ExecuteScalar();
-            if (existing is long id)
+            long id = 0;
+            long oldKind = 0;
+            using (SqliteDataReader row = find.ExecuteReader())
             {
+                if (row.Read())
+                {
+                    id = row.GetInt64(0);
+                    oldKind = row.GetInt64(1);
+                }
+            }
+
+            if (id != 0)
+            {
+                if (oldKind != (long)file.MediaKind)
+                {
+                    SetFindingsKind(context, id, file.MediaKind);
+                }
+
                 SqliteCommand update = context.Command(
                     "UPDATE files SET size = $size, mtime_utc = $mtime, ntfs_file_id = COALESCE($ntfs, ntfs_file_id), last_seen_run = $run, " +
                     "media_kind = $kind, ext = $ext WHERE id = $id");
@@ -207,6 +222,10 @@ public sealed class FileIndex(Database database)
         command.Add("$fps", media?.FpsMilli);
         command.Add("$id", update.FileId);
         command.ExecuteNonQuery();
+        if (update.MediaKind is MediaKind kind)
+        {
+            SetFindingsKind(context, update.FileId, kind);
+        }
     }
 
     /// <summary>Moves a row to a new directory and name (rename or move detection); baseline and findings stay.</summary>
@@ -217,6 +236,21 @@ public sealed class FileIndex(Database database)
         command.Add("$dir", dirId);
         command.Add("$name", newName);
         command.Add("$root", rootId);
+        command.Add("$id", fileId);
+        command.ExecuteNonQuery();
+
+        // The findings' copy of the name orders the Issues list (schema v2).
+        SqliteCommand findings = context.Command("UPDATE findings SET file_name = $name WHERE file_id = $id AND file_name <> $name");
+        findings.Add("$name", newName);
+        findings.Add("$id", fileId);
+        findings.ExecuteNonQuery();
+    }
+
+    /// <summary>Keeps the findings' copy of the media kind (schema v2) equal to the file's.</summary>
+    private static void SetFindingsKind(WriteContext context, long fileId, MediaKind kind)
+    {
+        SqliteCommand command = context.Command("UPDATE findings SET media_kind = $kind WHERE file_id = $id AND media_kind <> $kind");
+        command.Add("$kind", (int)kind);
         command.Add("$id", fileId);
         command.ExecuteNonQuery();
     }

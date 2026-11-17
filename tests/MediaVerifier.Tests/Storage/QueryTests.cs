@@ -57,6 +57,19 @@ public sealed class QueryTests
         Assert.Equal(Severity.Critical, counts.Worst);
         Assert.Equal(2, q.CountsByRule()["AUD-CLIPPING"]);
 
+        // Issues grouping: rows come out group by group, in the order of the group counts.
+        List<FindingGroupCount> byRule = q.FindingGroupCounts(FindingFilter.OpenAll, FindingGroup.Rule);
+        Assert.Equal(["AUD-CLIPPING", "COR-DECODE", "COR-INDEX"], byRule.Select(g => g.Key));
+        Assert.Equal([2, 1, 1], byRule.Select(g => g.Count));
+        long[] ruleOrder = q.FindingIds(FindingFilter.OpenAll, FindingSort.Severity, false, FindingGroup.Rule);
+        Assert.Equal(["AUD-CLIPPING", "AUD-CLIPPING", "COR-DECODE", "COR-INDEX"], q.FindingRows(ruleOrder).Select(r => r.RuleId));
+        List<FindingGroupCount> byFolder = q.FindingGroupCounts(FindingFilter.OpenAll, FindingGroup.Folder);
+        Assert.Equal([@"D:\Media\Music\Album", @"D:\Media\Musical", @"D:\Media\Video"], byFolder.Select(g => g.Key));
+        long[] folderOrder = q.FindingIds(FindingFilter.OpenAll, FindingSort.Severity, false, FindingGroup.Folder);
+        Assert.Equal(["b song.flac", "a song.flac", "other.mp3", "film.mkv"], q.FindingRows(folderOrder).Select(r => r.FileName));
+        List<FindingGroupCount> byTier = q.FindingGroupCounts(new FindingFilter { Kinds = [MediaKind.Audio] }, FindingGroup.Severity);
+        Assert.Equal([Severity.Critical, Severity.Medium, Severity.Low], byTier.Select(g => g.Tier!.Value));
+
         List<FindingRow> fetched = q.FindingRows([bySeverity[3], bySeverity[0]]);
         Assert.Equal([bySeverity[3], bySeverity[0]], fetched.Select(r => r.Id));
         Assert.Equal(@"D:\Media", fetched[0].RootPath);
@@ -110,7 +123,8 @@ public sealed class QueryTests
         using TestDatabase db = new();
         await SyntheticLibrary.GenerateAsync(db.Database, new SyntheticLibraryOptions { Files = 500 });
         string plan = db.Database.Queries.ExplainFindingIds(new FindingFilter { Severities = [Severity.High] });
-        Assert.Contains("ix_findings_open", plan, StringComparison.Ordinal);
+        Assert.Contains("INDEX ix_findings_", plan, StringComparison.Ordinal);
+        Assert.DoesNotContain("SCAN fi", plan, StringComparison.Ordinal);
     }
 
     private static Finding Raise(string rule, Severity severity) => new(rule, severity, 1f, rule, Finding.NoEvidence);
@@ -158,6 +172,16 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         SeverityCounts tiers = q.SeverityCounts();
         counts.Stop();
 
+        // Issues page (UI-04): a filtered, grouped list and its group headers.
+        FindingFilter audioHigh = new() { Kinds = [MediaKind.Audio], Severities = [Severity.High, Severity.Medium] };
+        Stopwatch grouped = Stopwatch.StartNew();
+        long[] groupedIds = q.FindingIds(audioHigh, FindingSort.Severity, false, FindingGroup.Severity);
+        List<FindingGroupCount> groupCounts = q.FindingGroupCounts(audioHigh, FindingGroup.Severity);
+        grouped.Stop();
+        output.WriteLine($"grouped finding filter ({groupedIds.Length:N0} ids, {groupCounts.Count} groups): {grouped.ElapsedMilliseconds} ms");
+        Assert.Equal(groupedIds.Length, groupCounts.Sum(g => g.Count));
+        Assert.True(grouped.ElapsedMilliseconds < 300, $"grouped finding filter {grouped.ElapsedMilliseconds} ms");
+
         output.WriteLine($"finding snapshot ({findingIds.Length:N0} ids): {snapshot.ElapsedMilliseconds} ms");
         output.WriteLine($"folder subtree snapshot ({folderIds.Length:N0} ids, by name): {folderSnapshot.ElapsedMilliseconds} ms");
         output.WriteLine($"search snapshot ({searchIds.Length:N0} ids): {searchSnapshot.ElapsedMilliseconds} ms");
@@ -171,5 +195,37 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         Assert.True(snapshot.ElapsedMilliseconds < 300, $"finding snapshot {snapshot.ElapsedMilliseconds} ms");
         Assert.True(fetch.ElapsedMilliseconds < 20, $"fetch {fetch.ElapsedMilliseconds} ms");
         Assert.True(counts.ElapsedMilliseconds < 100, $"counts {counts.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
+    public async Task MillionFindingsFilterAndGroupWithinTheIssuesBudget()
+    {
+        using TestDatabase db = new("perf-findings");
+        await SyntheticLibrary.GenerateAsync(db.Database, new SyntheticLibraryOptions { Files = 1_000_000, Roots = 4, FindingRate = 1.0 });
+        MediaVerifier.UI.Data.LiveUiData data = new(db.Database, () => new MediaVerifier.Core.Settings.ScanSettings(), db.Clock);
+        _ = data.LoadIssues(new MediaVerifier.UI.Data.IssuesQuery(FindingFilter.OpenAll));
+
+        // UI-04: the Issues page filters 1,000,000 findings in under 300 ms: the list in order, its group
+        // headers, and the chip and drop-down counts, as the page loads them.
+        foreach ((string name, FindingFilter filter, FindingGroup group) in new[]
+        {
+            ("all, by severity", FindingFilter.OpenAll, FindingGroup.Severity),
+            ("audio, high and medium", new FindingFilter { Kinds = [MediaKind.Audio], Severities = [Severity.High, Severity.Medium] }, FindingGroup.Severity),
+            ("quality", new FindingFilter { Categories = [FindingCategory.Quality] }, FindingGroup.Severity),
+            ("all, by rule", FindingFilter.OpenAll, FindingGroup.Rule),
+        })
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            MediaVerifier.UI.Data.IssuesData issues = data.LoadIssues(new MediaVerifier.UI.Data.IssuesQuery(filter, Group: group));
+            watch.Stop();
+            output.WriteLine($"{name}: {issues.Ids.Length:N0} ids, {issues.Groups.Count} groups, {watch.ElapsedMilliseconds} ms");
+            Assert.Equal(issues.Ids.Length, issues.Groups.Sum(g => g.Count));
+
+            // Grouping by rule or folder sorts the whole list again; only the tier grouping has the budget.
+            if (group == FindingGroup.Severity)
+            {
+                Assert.True(watch.ElapsedMilliseconds < 300, $"{name}: {watch.ElapsedMilliseconds} ms");
+            }
+        }
     }
 }

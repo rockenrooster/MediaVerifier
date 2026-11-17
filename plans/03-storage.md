@@ -138,6 +138,15 @@ CREATE TABLE findings (
 CREATE INDEX ix_findings_open ON findings(status, severity, rule_id);
 CREATE INDEX ix_findings_run  ON findings(first_run);
 
+-- Schema v2 (migration 2): the Issues list reads one covering index. Each finding keeps a copy of
+-- its file's name and media kind; the writers update the copies on finding insert, file move or
+-- rename, and media-kind change.
+ALTER TABLE findings ADD COLUMN media_kind INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE findings ADD COLUMN file_name  TEXT    NOT NULL DEFAULT '';
+CREATE INDEX ix_findings_list ON findings(status, severity DESC, confidence DESC, file_name, id, media_kind, category, rule_id);
+DROP INDEX ix_findings_open;
+CREATE INDEX ix_findings_open ON findings(status, severity, rule_id, media_kind, category);
+
 CREATE TABLE artifacts (                         -- compact analysis summaries (subplan 05)
   file_id          INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   kind             INTEGER NOT NULL,             -- 1 Structure, 2 Decode, 3 PcmStats, 4 FrameSamples, ...

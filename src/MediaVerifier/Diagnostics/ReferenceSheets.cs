@@ -177,9 +177,9 @@ internal static class ReferenceSheets
         VirtualList.DrawGroupHeader(g, Rect(24, 1010, 1232, 32, dpi), row, false, dpi);
         (string Name, string Summary, string Folder, string Size)[] files =
         [
-            ("Night Drive - 07 - Overpass.flac", "Likely made from a lossy source  ·  hard cutoff at 16.6 kHz", @"D:\Music\Night Drive\Overpass", "31.2 MB"),
-            ("Coastline 4K.mkv", "Likely upscaled  ·  2160p file with detail equivalent to 1080p", @"D:\Videos\Travel", "8.1 GB"),
-            ("Sunday Session - 02.flac", "Embedded checksum mismatch  ·  audio differs from the stored MD5", @"D:\Music\Sunday Session", "41.0 MB"),
+            ("Night Drive - 07 - Overpass.flac", "Likely made from a lossy source · hard cutoff at 16.6 kHz", @"D:\Music\Night Drive\Overpass", "31.2 MB"),
+            ("Coastline 4K.mkv", "Likely upscaled · 2160p file with detail equivalent to 1080p", @"D:\Videos\Travel", "8.1 GB"),
+            ("Sunday Session - 02.flac", "Embedded checksum mismatch · audio differs from the stored MD5", @"D:\Music\Sunday Session", "41.0 MB"),
         ];
         for (int i = 0; i < files.Length; i++)
         {
@@ -264,7 +264,7 @@ internal static class ReferenceSheets
         // D: toast; E: tooltip.
         CaptionMixed(g, "D  Toast", 536, 316, dpi);
         Floating(g, Rect(536, 332, 360, 64, dpi), 8, dpi);
-        ToastHost.Draw(g, Rect(536, 332, 360, 64, dpi), new ToastContent(Severity.None, "Index rebuilt for 36 videos", "2 skipped  ·  originals are in quarantine", "Undo"), false, false, dpi);
+        ToastHost.Draw(g, Rect(536, 332, 360, 64, dpi), new ToastContent(Severity.None, "Index rebuilt for 36 videos", "2 skipped · originals are in quarantine", "Undo"), false, false, dpi);
         CaptionMixed(g, "E  Tooltip", 536, 424, dpi);
         string tip = @"D:\Music\Night Drive\Overpass\Night Drive - 07 - Overpass.flac";
         Rectangle tipRect = Rect(536, 440, KitToolTip.MeasureWidth(tip, dpi), 26, dpi);
@@ -274,7 +274,7 @@ internal static class ReferenceSheets
         // F: before a large scan.
         CaptionMixed(g, "F  Before a large scan", 24, 516, dpi);
         Dialog(g, Rect(24, 532, 480, 420, dpi), "Scan 58,210 files?", dpi);
-        Text(g, "Music, Photos and Videos  ·  3.5 TB", type.Body, t.Text2, 48, 598, dpi);
+        Text(g, "Music, Photos and Videos · 3.5 TB", type.Body, t.Text2, 48, 598, dpi);
         OptionRow.Draw(g, Rect(48, 620, 432, 56, dpi), "Quick", "Checks structure and fingerprints new files", "About 25 min", false, VisualState.Rest, dpi);
         OptionRow.Draw(g, Rect(48, 684, 432, 56, dpi), "Standard", "Decodes audio and photos fully, samples video", "About 3 h 20 min", true, VisualState.Rest, dpi);
         OptionRow.Draw(g, Rect(48, 748, 432, 56, dpi), "Deep", "Also decodes every video frame", "About 19 h", false, VisualState.Rest, dpi);
@@ -301,7 +301,7 @@ internal static class ReferenceSheets
         Text(g, "Skip", type.Body, t.Text2, 560, 860, dpi);
         InputPainter.PaintTextBox(g, Rect(664, 844, 408, 32, dpi), @"*\Samples\*; *.part", null, VisualState.Rest, false, true, dpi);
         Text(g, "Folder or file patterns, separated by semicolons", type.Caption, t.Text3, 664, 888, dpi);
-        InfoBar.Draw(g, Rect(560, 908, 512, 36, dpi), Severity.Low, "3,201 media files found  ·  96 GB", null, false, VisualState.Rest, dpi);
+        InfoBar.Draw(g, Rect(560, 908, 512, 36, dpi), Severity.Low, "3,201 media files found · 96 GB", null, false, VisualState.Rest, dpi);
         ButtonRow(g, 1096, 968, [("Cancel", ButtonKind.Secondary, false), ("Add folder", ButtonKind.Primary, true)], dpi);
 
         // H: notifications flyout.

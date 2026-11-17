@@ -211,6 +211,8 @@ internal static class IconGeometry
         {
             Filled.StartFigure();
             Filled.AddEllipse(cx - r, cy - r, r * 2, r * 2);
+            Stroked.StartFigure();
+            Stroked.AddEllipse(cx - r, cy - r, r * 2, r * 2);
             return this;
         }
 

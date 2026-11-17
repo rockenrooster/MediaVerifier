@@ -49,6 +49,7 @@ internal sealed class MainForm : Form
                 _current?.HandleRequest(request);
             }
         };
+        services.ShowDrawer = content => SetDrawerContent(content);
         AppState state = services.State;
         _state = state;
         _options = options ?? new LaunchOptions();
@@ -78,6 +79,44 @@ internal sealed class MainForm : Form
         _binder = new ShellBinder(this, services);
     }
 
+    /// <summary>Puts <paramref name="content"/> into the drawer and opens it; null closes the drawer.</summary>
+    internal void SetDrawerContent(Control? content)
+    {
+        UI.Kit.Drawer drawer = _shell.Drawer;
+        if (content is null)
+        {
+            drawer.Close();
+            return;
+        }
+
+        if (!drawer.Controls.Contains(content))
+        {
+            foreach (Control old in drawer.Controls.Cast<Control>().ToArray())
+            {
+                drawer.Controls.Remove(old);
+            }
+
+            drawer.Controls.Add(content);
+        }
+
+        content.Bounds = new Rectangle(1, 1, drawer.Width - 1, drawer.Height - 1);
+        content.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right | AnchorStyles.Bottom;
+        if (!drawer.IsOpen)
+        {
+            drawer.Visible = true;
+            if (_services.IsDemo)
+            {
+                drawer.OpenInstantly();
+            }
+            else
+            {
+                drawer.Open();
+            }
+        }
+
+        _shell.PerformLayout();
+    }
+
     /// <summary>Reloads the shell's badges and the current page (after scans and repairs).</summary>
     internal void RefreshAll()
     {
@@ -86,6 +125,9 @@ internal sealed class MainForm : Form
     }
 
     public PageId CurrentPage => _current?.Id ?? PageId.Dashboard;
+
+    /// <summary>The page shown now (the render harness drives demo states through it).</summary>
+    internal PageBase? CurrentPageControl => _current;
 
     /// <summary>The current page's data load (the render harness waits for it).</summary>
     internal Task CurrentPageLoading => _current?.Loading ?? Task.CompletedTask;
@@ -459,6 +501,7 @@ internal static class PageFactory
     public static PageBase Create(UiServices services, PageId id) => id switch
     {
         PageId.Dashboard => new DashboardPage(services),
+        PageId.Issues => new IssuesPage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

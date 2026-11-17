@@ -166,7 +166,8 @@ internal sealed class DashboardPage : PageBase
             Write(g, Strings.Dashboard.Healthy, Type.Body, t.Text2, S(124) + KitPaint.MeasureWidth(metric, Type.Metric) + S(8), S(68));
             if (d is { AnyScanned: true })
             {
-                int max = Width - S(140);
+                // GDI text runs about 2 % wider than the references' browser text: let these lines use 4 px of the padding.
+                int max = Width - S(136);
                 Write(g, string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Dashboard.HealthyLine, UiFormat.Count(d.FilesHealthy), UiFormat.Count(d.FilesScanned)), Type.Caption, t.Text3, S(124), S(92), max);
                 if (d.FilesNeedingAttention > 0 && Width >= S(320))
                 {
@@ -197,7 +198,8 @@ internal sealed class DashboardPage : PageBase
             Write(g, Strings.Dashboard.Verified, Type.Body, t.Text2, S(124) + KitPaint.MeasureWidth(metric, Type.Metric) + S(8), S(68));
             if (d is { FilesWithBaseline: > 0 })
             {
-                int max = Width - S(140);
+                // GDI text runs about 2 % wider than the references' browser text: let these lines use 4 px of the padding.
+                int max = Width - S(136);
                 Write(g, string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Dashboard.VerifiedLine, d.ScrubDays), Type.Caption, t.Text3, S(124), S(92), max);
                 if (d.Overdue > 0 && Width >= S(320))
                 {

@@ -70,8 +70,8 @@ public static class SyntheticLibrary
             "hash, hash_size, hash_mtime_utc, hash_utc, last_verified_utc, verify_count) " +
             "VALUES ($root, $dir, $name, $ext, $kind, $size, $mtime, $state, $worst, $open, 2, $now, 1, $hash, $size, $mtime, $now, $verified, 1)");
         SqliteCommand insertFinding = context.Command(
-            "INSERT INTO findings(file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc) " +
-            "VALUES ($file, $rule, $category, $severity, 1.0, $summary, '{}', 0, 1, 1, $now, $now)");
+            "INSERT INTO findings(file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc, media_kind, file_name) " +
+            "VALUES ($file, $rule, $category, $severity, 1.0, $summary, '{}', 0, 1, 1, $now, $now, $kind, $name)");
         byte[] hash = new byte[16];
         for (int i = 0; i < count; i++)
         {
@@ -92,7 +92,8 @@ public static class SyntheticLibrary
             insertFile.Parameters.Clear();
             insertFile.Add("$root", root);
             insertFile.Add("$dir", dirId);
-            insertFile.Add("$name", string.Create(CultureInfo.InvariantCulture, $"file {index:D7}.{ext}"));
+            string name = string.Create(CultureInfo.InvariantCulture, $"file {index:D7}.{ext}");
+            insertFile.Add("$name", name);
             insertFile.Add("$ext", ext);
             insertFile.Add("$kind", (int)kind);
             insertFile.Add("$size", 100_000L + random.Next(50_000_000));
@@ -114,6 +115,8 @@ public static class SyntheticLibrary
                 insertFinding.Add("$severity", (int)severity);
                 insertFinding.Add("$summary", rule.Title);
                 insertFinding.Add("$now", now);
+                insertFinding.Add("$kind", (int)kind);
+                insertFinding.Add("$name", name);
                 insertFinding.ExecuteNonQuery();
             }
         }

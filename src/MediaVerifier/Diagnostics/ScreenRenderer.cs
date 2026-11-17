@@ -34,6 +34,11 @@ internal static class ScreenRenderer
             Directory.CreateDirectory(directory);
             ApplicationConfiguration.Initialize();
 
+            // Outside Application.Run each DoEvents call swaps the WinForms synchronization context for a
+            // thread-pool one, which would send the pages' await continuations to pool threads.
+            WindowsFormsSynchronizationContext.AutoInstall = false;
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+
             // The references were drawn with British formats (03:12, 8 Nov).
             System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
             System.Globalization.CultureInfo.CurrentUICulture = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
@@ -68,6 +73,22 @@ internal static class ScreenRenderer
                         string name = $"{page.ToString().ToLowerInvariant()}-{theme}.png";
                         Save(form.Shell, Path.Combine(directory, name));
                         renders.Add(("Screens", $"{page} {theme}", name, ReferenceFor(page, theme)));
+                        if (form.CurrentPageControl is IssuesPage issues)
+                        {
+                            issues.ShowDemoSelection();
+                            Application.DoEvents();
+                            string selection = $"issues-selection-{theme}.png";
+                            Save(form.Shell, Path.Combine(directory, selection));
+                            renders.Add(("Screens", $"Issues selection {theme}", selection, theme == "dark" ? "issues-selection-dark.png" : null));
+                            WaitFor(issues.ShowDemoDetailAsync());
+                            form.Shell.PerformLayout();
+                            Application.DoEvents();
+                            string detail = $"issues-detail-{theme}.png";
+                            Save(form.Shell, Path.Combine(directory, detail));
+                            renders.Add(("Screens", $"Issues detail {theme}", detail, theme is "dark" or "light" ? $"issues-detail-{theme}.png" : null));
+                            form.SetDrawerContent(null);
+                            Application.DoEvents();
+                        }
                     }
 
                     form.Close();
@@ -131,9 +152,59 @@ internal static class ScreenRenderer
     {
         // GDI text clears the alpha of the pixels it touches: render opaque so ClearType text stays intact.
         using Bitmap bitmap = new(control.ClientSize.Width, control.ClientSize.Height, PixelFormat.Format32bppRgb);
-        control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, control.ClientSize));
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            Print(control, g, Point.Empty, new Rectangle(Point.Empty, control.ClientSize));
+        }
+
         bitmap.Save(file, ImageFormat.Png);
     }
+
+    /// <summary>
+    /// Prints a control and then its visible children, bottom of the z-order first and each clipped to its
+    /// parent. (DrawToBitmap lets Windows print children top first, so overlapping children such as
+    /// scrollbar thumbs would vanish under the content they float over.)
+    /// </summary>
+    private static void Print(Control control, Graphics target, Point origin, Rectangle clip)
+    {
+        Rectangle area = Rectangle.Intersect(clip, new Rectangle(origin, control.Size));
+        if (area.Width <= 0 || area.Height <= 0)
+        {
+            return;
+        }
+
+        using (Bitmap own = new(control.Width, control.Height, PixelFormat.Format32bppRgb))
+        {
+            using (Graphics g = Graphics.FromImage(own))
+            {
+                nint hdc = g.GetHdc();
+                try
+                {
+                    SendMessageW(control.Handle, 0x0317, hdc, 0x04 | 0x08 | 0x02);
+                }
+                finally
+                {
+                    g.ReleaseHdc(hdc);
+                }
+            }
+
+            target.SetClip(area);
+            target.DrawImage(own, new Rectangle(origin, own.Size), new Rectangle(Point.Empty, own.Size), GraphicsUnit.Pixel);
+            target.ResetClip();
+        }
+
+        for (int i = control.Controls.Count - 1; i >= 0; i--)
+        {
+            Control child = control.Controls[i];
+            if (child.Visible && child.Width > 0 && child.Height > 0)
+            {
+                Print(child, target, new Point(origin.X + child.Left, origin.Y + child.Top), area);
+            }
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint SendMessageW(nint hwnd, int message, nint wParam, nint lParam);
 
     /// <summary>Renders one sheet at a DPI into a PNG and returns its file name.</summary>
     internal static string SaveSheet(string directory, string name, Size logical, int dpi, Action<Graphics, int> paint)
@@ -211,3 +282,4 @@ internal static class ScreenRenderer
         File.WriteAllText(Path.Combine(directory, "index.html"), html.ToString(), new UTF8Encoding(false));
     }
 }
+

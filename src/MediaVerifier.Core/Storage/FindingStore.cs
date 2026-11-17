@@ -101,8 +101,8 @@ public sealed class FindingStore(Database database)
             {
                 FindingStatus status = scoped.Ignored ? FindingStatus.Ignored : FindingStatus.Open;
                 SqliteCommand insert = context.Command(
-                    "INSERT INTO findings(file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc, resolution) " +
-                    "VALUES ($file, $rule, $category, $severity, $confidence, $summary, $evidence, $status, $run, $run, $now, $now, $resolution)");
+                    "INSERT INTO findings(file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc, resolution, media_kind, file_name) " +
+                    "SELECT $file, $rule, $category, $severity, $confidence, $summary, $evidence, $status, $run, $run, $now, $now, $resolution, f.media_kind, f.name FROM files f WHERE f.id = $file");
                 insert.Add("$file", fileId);
                 insert.Add("$rule", finding.RuleId);
                 insert.Add("$category", (int)rule.Category);

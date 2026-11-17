@@ -240,6 +240,7 @@ internal sealed class TreeList : KitControl
         base.OnMouseWheel(e);
         _scroll -= e.Delta * Math.Max(1, SystemInformation.MouseWheelScrollLines) * S(RowHeight) / 120;
         ClampScroll();
+        KitScrolling.MarkHandled(e);
         Invalidate();
     }
 

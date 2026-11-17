@@ -29,6 +29,15 @@ internal sealed class ShellLayout : Control
         rail.TabIndex = 0;
         header.TabIndex = 1;
         viewport.TabIndex = 2;
+        Drawer = new Drawer { Visible = false, TabIndex = 3 };
+        Drawer.ProgressChanged += (_, _) =>
+        {
+            Drawer.Visible = Drawer.Progress > 0;
+            PerformLayout();
+        };
+        Drawer.WidthChanged += (_, _) => PerformLayout();
+        Controls.Add(Drawer);
+        Drawer.BringToFront();
     }
 
     public NavigationRail Rail { get; }
@@ -38,6 +47,9 @@ internal sealed class ShellLayout : Control
     public PageViewport Viewport { get; }
 
     public Control? StatusStrip { get; }
+
+    /// <summary>The detail drawer, right of the content, below the header and above the status strip.</summary>
+    public Drawer Drawer { get; }
 
     public bool StatusStripVisible
     {
@@ -74,7 +86,14 @@ internal sealed class ShellLayout : Control
         int stripHeight = StatusStripVisible ? Dpi.Scale(36, dpi) : 0;
         Rail.Bounds = new Rectangle(0, 0, railWidth, client.Height);
         Header.Bounds = new Rectangle(railWidth, 0, client.Width - railWidth, headerHeight);
-        Viewport.Bounds = new Rectangle(railWidth, headerHeight, client.Width - railWidth, client.Height - headerHeight - stripHeight);
+        int drawerWidth = Drawer.Progress > 0 ? (int)Math.Round(Dpi.Scale(Drawer.LogicalWidth, dpi) * Drawer.Progress) : 0;
+        Viewport.DrawerOpen = drawerWidth > 0;
+        Viewport.Bounds = new Rectangle(railWidth, headerHeight, client.Width - railWidth - drawerWidth, client.Height - headerHeight - stripHeight);
+        if (drawerWidth > 0)
+        {
+            Drawer.Bounds = new Rectangle(client.Width - drawerWidth, headerHeight, Dpi.Scale(Drawer.LogicalWidth, dpi), client.Height - headerHeight - stripHeight);
+        }
+
         if (StatusStrip is not null)
         {
             StatusStrip.Bounds = new Rectangle(railWidth, client.Height - stripHeight, client.Width - railWidth, stripHeight);
