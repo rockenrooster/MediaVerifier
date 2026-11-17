@@ -1,0 +1,25 @@
+{
+  "comment": "Licence sources for every pkg-config package linked into the FFmpeg bundle (subplan 17, task FFB-07). Keys are pkg-config package names; {version} is the version pkg-config reports. URLs are tried in order. A package missing from this table fails the bundle workflow.",
+  "packages": {
+    "dav1d": { "name": "dav1d", "licence": "BSD-2-Clause", "urls": ["https://code.videolan.org/videolan/dav1d/-/raw/{version}/COPYING", "https://code.videolan.org/videolan/dav1d/-/raw/master/COPYING"] },
+    "libjxl": { "name": "libjxl", "licence": "BSD-3-Clause", "urls": ["https://raw.githubusercontent.com/libjxl/libjxl/v{version}/LICENSE", "https://raw.githubusercontent.com/libjxl/libjxl/main/LICENSE"] },
+    "libjxl_cms": { "same": "libjxl" },
+    "libjxl_threads": { "same": "libjxl" },
+    "libhwy": { "name": "Highway", "licence": "Apache-2.0 OR BSD-3-Clause", "urls": ["https://raw.githubusercontent.com/google/highway/{version}/LICENSE", "https://raw.githubusercontent.com/google/highway/master/LICENSE"] },
+    "libhwy-contrib": { "same": "libhwy" },
+    "libbrotlicommon": { "name": "Brotli", "licence": "MIT", "urls": ["https://raw.githubusercontent.com/google/brotli/v{version}/LICENSE", "https://raw.githubusercontent.com/google/brotli/master/LICENSE"] },
+    "libbrotlidec": { "same": "libbrotlicommon" },
+    "libbrotlienc": { "same": "libbrotlicommon" },
+    "lcms2": { "name": "Little CMS", "licence": "MIT", "urls": ["https://raw.githubusercontent.com/mm2/Little-CMS/lcms{version}/LICENSE", "https://raw.githubusercontent.com/mm2/Little-CMS/master/LICENSE"] },
+    "zlib": { "name": "zlib", "licence": "Zlib", "urls": ["https://raw.githubusercontent.com/madler/zlib/v{version}/LICENSE", "https://raw.githubusercontent.com/madler/zlib/master/LICENSE"] }
+  },
+  "bundledWhenMissing": {
+    "comment": "libjxl compiles skcms into libjxl_cms when it is not built against lcms2: added when libjxl_cms is linked and lcms2 is not.",
+    "skcms": { "name": "skcms", "licence": "BSD-3-Clause", "urls": ["https://raw.githubusercontent.com/google/skcms/main/LICENSE"] }
+  },
+  "toolchain": {
+    "comment": "The mingw-w64 runtime and winpthreads may be linked statically into the DLLs; their notices are always included. libgcc and libstdc++ are covered by the GCC Runtime Library Exception.",
+    "mingw-w64 runtime": { "name": "mingw-w64 runtime", "licence": "Various permissive licences (see text)", "urls": ["https://raw.githubusercontent.com/mingw-w64/mingw-w64/master/COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt"] },
+    "winpthreads": { "name": "winpthreads", "licence": "MIT and BSD-3-Clause", "urls": ["https://raw.githubusercontent.com/mingw-w64/mingw-w64/master/mingw-w64-libraries/winpthreads/COPYING"] }
+  }
+}

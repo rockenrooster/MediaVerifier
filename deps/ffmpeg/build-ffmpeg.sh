@@ -26,3 +26,21 @@ cd /ffbuild/ffmpeg
 
 make -j"$(nproc)"
 make install
+
+# Task FFB-07: the external packages linked into the DLLs and their versions, as pkg-config resolves them in this
+# image (the same pkg-config configure used). deps/ffmpeg/third_party.py turns the list into THIRD-PARTY.txt.
+pc=$(command -v "${FFBUILD_CROSS_PREFIX:-x86_64-w64-mingw32-}pkg-config" || command -v pkg-config)
+declare -A seen=()
+queue=(dav1d libjxl zlib)
+: > /ffbuild/linked-packages.txt
+while ((${#queue[@]})); do
+  p=${queue[0]}
+  queue=("${queue[@]:1}")
+  [[ -n ${seen[$p]:-} ]] && continue
+  seen[$p]=1
+  echo "$p $("$pc" --modversion "$p")" >> /ffbuild/linked-packages.txt
+  while read -r name _; do
+    [[ -n $name ]] && queue+=("$name")
+  done < <("$pc" --print-requires "$p"; "$pc" --print-requires-private "$p")
+done
+cat /ffbuild/linked-packages.txt

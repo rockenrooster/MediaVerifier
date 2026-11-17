@@ -48,7 +48,8 @@ jobs:
           mkdir -p bundle
           cp work/prefix/bin/ffmpeg.exe work/prefix/bin/ffprobe.exe work/prefix/bin/*.dll bundle/
           cp work/ffmpeg/COPYING.LGPLv2.1 bundle/LICENSE.txt
-          echo "See the bundle release for the source of every library linked into these DLLs." > bundle/THIRD-PARTY.txt
+          # Task FFB-07: a licence text for every package linked into the DLLs; fails on any package without one.
+          python3 deps/ffmpeg/third_party.py work/linked-packages.txt --out bundle/THIRD-PARTY.txt
           python3 - <<'PY'
           import hashlib, json, os, datetime
           files = {f: hashlib.sha256(open(os.path.join('bundle', f), 'rb').read()).hexdigest() for f in sorted(os.listdir('bundle'))}
@@ -135,4 +136,4 @@ jobs:
           git add deps/ffmpeg/bundle.lock.json
           git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -m "FFB-04: use FFmpeg bundle $TAG"
           git push origin "bundle/$TAG"
-          gh pr create --title "Use FFmpeg bundle $TAG" --body "Updates deps/ffmpeg/bundle.lock.json to the verified bundle $TAG."
+          gh pr create --base "${{ github.ref_name }}" --title "Use FFmpeg bundle $TAG" --body "Updates deps/ffmpeg/bundle.lock.json to the verified bundle $TAG."
