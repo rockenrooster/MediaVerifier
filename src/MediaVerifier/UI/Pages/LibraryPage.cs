@@ -986,13 +986,13 @@ internal sealed class LibraryPage : PageBase
         protected override void OnDragEnter(DragEventArgs drgevent)
         {
             base.OnDragEnter(drgevent);
-            drgevent.Effect = FirstFolder(drgevent.Data) is null ? DragDropEffects.None : DragDropEffects.Link;
+            drgevent.Effect = FirstPath(drgevent.Data) is null ? DragDropEffects.None : DragDropEffects.Link;
         }
 
         protected override void OnDragDrop(DragEventArgs drgevent)
         {
             base.OnDragDrop(drgevent);
-            if (FirstFolder(drgevent.Data) is string folder)
+            if (FirstPath(drgevent.Data) is string folder)
             {
                 FolderDropped?.Invoke(this, folder);
             }
@@ -1021,7 +1021,12 @@ internal sealed class LibraryPage : PageBase
             base.Dispose(disposing);
         }
 
-        private static string? FirstFolder(IDataObject? data) =>
-            data?.GetData(DataFormats.FileDrop) is string[] paths ? paths.FirstOrDefault(Directory.Exists) : null;
+        /// <summary>
+        /// The first dropped path, without touching the disk: checking it here held the window (and the drag) for minutes
+        /// when it was a network folder that had gone offline. The Add folder dialog checks it off the UI thread and says
+        /// when it is not a folder.
+        /// </summary>
+        private static string? FirstPath(IDataObject? data) =>
+            data?.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths ? paths[0] : null;
     }
 }

@@ -308,7 +308,9 @@ internal sealed class SchedulePage : PageBase
         PopupItem[] items = [new(Strings.Schedule.DeleteSchedule, IconName.Trash, Enabled: !Services.IsDemo, Tag: "delete")];
         KitMenu.ShowBelow(anchor, items, item =>
         {
-            if (item.Tag is "delete")
+            // Deleting cannot be undone: it asks first, like Stop watching a folder (it went at the first click).
+            if (item.Tag is "delete" && FindForm() is Form owner
+                && MessageDialog.Confirm(owner, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.DeleteTitle, plan.Name), Strings.Schedule.DeleteText, Strings.Kit.Cancel, Strings.Schedule.DeleteSchedule, destructive: true))
             {
                 UiTask.Run(ChangePlansAsync(db => db.Plans.RemoveAsync(plan.Id)));
             }
@@ -356,8 +358,10 @@ internal sealed class SchedulePage : PageBase
     private Task SaveDefinitionAsync(long planId, PlanDefinition definition) =>
         ChangePlansAsync(db => db.Plans.Get(planId) is PlanRecord plan ? db.Plans.UpdateAsync(plan with { DefinitionJson = definition.ToJson(), UpdatedUtc = Services.Clock.UtcNow.UtcTicks }) : Task.CompletedTask);
 
-    /// <summary>Writes off the UI thread, makes the scheduled tasks match, then reloads.</summary>
-    /// <summary>Deletes a plan; a task Windows would not remove is retried at the next start (and never runs a scan).</summary>
+    /// <summary>
+    /// Writes off the UI thread, makes the scheduled tasks match, then reloads. A task Windows would not remove (a
+    /// deleted plan's) is retried at the next start and never runs a scan.
+    /// </summary>
     private async Task ChangePlansAsync(Func<Database, Task> change)
     {
         if (Services.IsDemo)

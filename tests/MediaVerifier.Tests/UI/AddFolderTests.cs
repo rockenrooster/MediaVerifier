@@ -58,6 +58,56 @@ public sealed class AddFolderTests
         Assert.Equal(Strings.Library.AddTitle, opened);
     }
 
+    /// <summary>
+    /// A network folder that is offline: Directory.Exists on it took 136 s on the owner's PC. Typing it into Add folder
+    /// must not wait for that on the UI thread (it did, at every key), and the picker gives up on it within 2 seconds.
+    /// 192.0.2.1 is reserved for documentation, so nothing answers there.
+    /// </summary>
+    [Fact]
+    public async Task An_offline_network_folder_never_holds_the_window()
+    {
+        const string Offline = @"\\192.0.2.1\share\Music";
+        long typing = -1;
+        bool addEnabled = true;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("add-folder");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            using System.Windows.Forms.Timer timer = new() { Interval = 50 };
+            timer.Tick += (_, _) =>
+            {
+                if (Application.OpenForms.OfType<AddFolderDialog>().FirstOrDefault() is AddFolderDialog dialog && typing < 0)
+                {
+                    PathBox box = Find<PathBox>(dialog, _ => true);
+                    Stopwatch watch = Stopwatch.StartNew();
+                    box.Text = Offline;
+                    typing = watch.ElapsedMilliseconds;
+                    addEnabled = Find<KitButton>(dialog, b => b.Text == Strings.Library.AddFolder).Enabled;
+                    dialog.Close();
+                }
+            };
+            timer.Start();
+            Task shown = AddFolderDialog.ShowAsync(form, services, null, null);
+            Settle(shown);
+            timer.Stop();
+            form.Close();
+        });
+
+        Assert.InRange(typing, 0, 500);
+        Assert.False(addEnabled);
+
+        Stopwatch picker = Stopwatch.StartNew();
+        string start = await PathBox.StartFolderAsync(Offline, TimeSpan.FromSeconds(2));
+        Assert.Equal(string.Empty, start);
+        Assert.InRange(picker.ElapsedMilliseconds, 0, 5000);
+
+        using TempDirectory folder = new("picker");
+        Assert.Equal(folder.Path, await PathBox.StartFolderAsync(folder.Path, TimeSpan.FromSeconds(2)));
+    }
+
     private static string? ClickAndCatchDialog(Action click)
     {
         string? title = null;

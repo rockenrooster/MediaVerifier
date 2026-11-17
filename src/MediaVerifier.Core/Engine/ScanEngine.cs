@@ -525,10 +525,25 @@ public sealed class ScanEngine : IDisposable
                         break;
                     }
 
-                    await ProduceRootAsync(root, scope, token).ConfigureAwait(false);
+                    try
+                    {
+                        await ProduceRootAsync(root, scope, token).ConfigureAwait(false);
+                    }
+                    catch (Microsoft.Data.Sqlite.SqliteException ex) when (RootRemoved(ex, root.Id))
+                    {
+                        // Stop watching during the scan: the folder's rows are gone, and its part of the run with them.
+                        AppLog.Shared?.Info(string.Create(CultureInfo.InvariantCulture, $"Run {RunId}: folder {root.Id} was removed while it was listed; its files are skipped"));
+                    }
                 }
             }, token))).ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// A foreign-key failure because the folder stopped being watched while it was scanned (Library → Stop watching):
+        /// its directory, file and finding rows went with it.
+        /// </summary>
+        private bool RootRemoved(Microsoft.Data.Sqlite.SqliteException ex, long rootId) =>
+            ex.SqliteErrorCode == 19 && _s.Database.Roots.List().All(r => r.Id != rootId);
 
         private async Task ProduceRootAsync(RootRecord root, ScanScope scope, CancellationToken token)
         {
@@ -862,6 +877,12 @@ public sealed class ScanEngine : IDisposable
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException ex) when (RootRemoved(ex, item.Root.Id))
+            {
+                // Its folder stopped being watched during the scan: the file's row went with it, so it is skipped. It
+                // was counted as an error, with a stack trace in error.log for each remaining file.
+                Interlocked.Increment(ref _skipped);
             }
             catch (Exception ex)
             {

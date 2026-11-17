@@ -5,6 +5,13 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: Browse… in Add folder and Create report froze the window for minutes when the box held a
+  network folder that was offline; so did dragging such a folder onto the Library drop area.
+- Fixed: Stop watching a folder while it was being scanned counted each of its remaining files as an
+  error; they are now skipped.
+- Fixed: Continue on the Dashboard's "scan was interrupted" step only opened Scans; it now continues
+  the scan.
+- Deleting a schedule asks first.
 
 ## 0.1.0.9 - 2026-11-17
 

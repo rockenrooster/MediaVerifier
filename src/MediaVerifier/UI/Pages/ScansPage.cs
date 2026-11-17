@@ -147,11 +147,17 @@ internal sealed class ScansPage : PageBase
         }
     }
 
-    /// <summary>Continue: the library folders are read off the UI thread, then the scan starts.</summary>
-    private async Task ContinueAsync(RunInfo run)
+    private Task ContinueAsync(RunInfo run) => ContinueAsync(Services, run);
+
+    /// <summary>
+    /// Continue an interrupted scan (the Scans bar and the Dashboard's recommendation): the library folders are read
+    /// off the UI thread, then a scan at the same depth starts; files it finished before are skipped. False when none
+    /// started (the reason is shown).
+    /// </summary>
+    internal static async Task<bool> ContinueAsync(UiServices services, RunInfo run)
     {
-        List<ScanScope> scopes = await Task.Run(() => Services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id)).ToList()).ConfigureAwait(true);
-        await Services.StartScanAsync(scopes, run.Depth, run.Folders).ConfigureAwait(true);
+        List<ScanScope> scopes = await Task.Run(() => services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id)).ToList()).ConfigureAwait(true);
+        return await services.StartScanAsync(scopes, run.Depth, run.Folders).ConfigureAwait(true);
     }
 
     private async void OpenRun(int index)

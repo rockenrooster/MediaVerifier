@@ -482,7 +482,7 @@ internal sealed class PathBox : Control
         _box.TabIndex = 0;
         _browse.TabIndex = 1;
         _box.TextChanged += (_, _) => OnTextChanged(EventArgs.Empty);
-        _browse.Click += (_, _) => Browse();
+        _browse.Click += (_, _) => UiTask.Run(BrowseAsync());
         Controls.Add(_box);
         Controls.Add(_browse);
     }
@@ -514,18 +514,46 @@ internal sealed class PathBox : Control
         _box.Bounds = new Rectangle(0, 0, Math.Max(0, Width - buttonWidth - gap), Height);
     }
 
-    private void Browse()
+    /// <summary>
+    /// The picker starts in the typed folder only when the folder answers within 2 seconds. Checked on the UI thread, a
+    /// network folder that is offline held the window for over two minutes (measured: 136 s), and the picker itself checks
+    /// the folder it is given; otherwise it opens where Windows chooses.
+    /// </summary>
+    private async Task BrowseAsync()
     {
+        string start;
+        _browse.Enabled = false;
+        try
+        {
+            start = await StartFolderAsync(_box.Text.Trim(), TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+        }
+        finally
+        {
+            _browse.Enabled = true;
+        }
+
         using FolderBrowserDialog dialog = new()
         {
             Description = DialogTitle,
             UseDescriptionForTitle = DialogTitle.Length > 0,
-            SelectedPath = Directory.Exists(_box.Text) ? _box.Text : string.Empty,
+            SelectedPath = start,
             ShowNewFolderButton = false,
         };
         if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
         {
             _box.Text = dialog.SelectedPath;
         }
+    }
+
+    /// <summary><paramref name="typed"/> when it is a folder that answers within <paramref name="wait"/>; otherwise empty.</summary>
+    internal static async Task<string> StartFolderAsync(string typed, TimeSpan wait)
+    {
+        if (typed.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        Task<bool> exists = Task.Run(() => Directory.Exists(typed));
+        return await Task.WhenAny(exists, Task.Delay(wait)).ConfigureAwait(false) == exists && exists.Result ? typed : string.Empty;
     }
 }

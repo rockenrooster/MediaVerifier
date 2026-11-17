@@ -200,6 +200,105 @@ public sealed class AppFlowTests
     }
 
     /// <summary>
+    /// Stop watching a folder while it is scanned: the scan ends cleanly, the folder's rows are gone, and its unfinished
+    /// files are skipped. Each used to count as an error with a stack trace in error.log ('FOREIGN KEY constraint
+    /// failed'): 22 errors for a 30-file folder removed after 8.
+    /// </summary>
+    [FixtureFact]
+    public void Removing_a_folder_during_its_scan_skips_its_remaining_files()
+    {
+        RunRecord? run = null;
+        int roots = -1;
+        int files = -1;
+        string errorLog = string.Empty;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("remove-flow");
+            string library = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+            for (int i = 0; i < 30; i++)
+            {
+                File.SetLastWriteTimeUtc(FixtureFactory.CopyTo("src16.flac", library, $"track{i:00}.flac"), DateTime.UtcNow.AddHours(-1));
+            }
+
+            MediaVerifier.Core.AppPaths paths = temp.CreateAppPaths();
+            using AppState state = AppState.Load(paths, installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            Task<long> add = services.Database.Roots.AddAsync(new RootRecord { Path = library, Label = "My Music", Role = RootRole.Library, MediaMask = MediaKindMask.All });
+            Settle(() => add.IsCompleted);
+            Task<bool> scan = services.StartScanAsync([new MediaVerifier.Core.Engine.ScanScope(add.Result)], ScanDepth.Standard, "My Music");
+            Settle(() => scan.IsCompleted);
+            Assert.True(scan.Result, "The scan did not start.");
+            Settle(() => services.Scans.Status.FilesDone >= 3, TimeSpan.FromSeconds(60));
+            Assert.True(services.Scans.Status.IsActive, "The scan ended before the folder was removed.");
+
+            Task remove = services.Database.Roots.RemoveAsync(add.Result);
+            Settle(() => remove.IsCompleted && !services.Scans.Status.IsActive, TimeSpan.FromMinutes(2));
+            run = Db(() => services.Database.Runs.List(5))[0];
+            roots = Db(services.Database.Roots.List).Count;
+            files = Db(() => services.Database.Queries.FileIds(new FileFilter())).Length;
+            string log = Path.Combine(paths.LogsDirectory, "error.log");
+            errorLog = File.Exists(log) ? File.ReadAllText(log) : string.Empty;
+            form.Close();
+        });
+
+        Assert.Equal(RunStatus.Completed, run!.Status);
+        Assert.Equal(0, run.Errors);
+        Assert.Equal(0, roots);
+        Assert.Equal(0, files);
+        Assert.DoesNotContain("FOREIGN KEY", errorLog, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The Dashboard's Continue on an interrupted scan starts the scan again and shows Scans. It used to open Scans
+    /// only, where Continue had to be pressed a second time.
+    /// </summary>
+    [FixtureFact]
+    public void Continue_on_the_dashboard_starts_the_interrupted_scan()
+    {
+        int runsBefore = 0;
+        int runsAfter = 0;
+        PageId? shown = null;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("continue-flow");
+            string library = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+            FixtureFactory.CopyTo("src16.flac", library, "healthy.flac");
+            MediaVerifier.Core.AppPaths paths = temp.CreateAppPaths();
+            paths.EnsureCreated();
+
+            // A scan that was running when MediaVerifier closed: opening the database marks it interrupted.
+            using (Database before = Database.Open(paths.DefaultDatabaseFile))
+            {
+                long root = Db(() => before.Roots.AddAsync(new RootRecord { Path = library, Label = "My Music", Role = RootRole.Library, MediaMask = MediaKindMask.All }).GetAwaiter().GetResult());
+                _ = Db(() => before.Runs.BeginAsync(RunTrigger.Manual, ScanDepth.Standard, "[]", null).GetAwaiter().GetResult());
+            }
+
+            using AppState state = AppState.Load(paths, installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            runsBefore = Db(() => services.Database.Runs.List(10)).Count;
+            Assert.Equal(RunStatus.Interrupted, Db(() => services.Database.Runs.List(10))[0].Status);
+
+            form.Navigate(PageId.Dashboard);
+            Settle(() => form.CurrentPageLoading.IsCompleted);
+            ((DashboardPage)form.CurrentPageControl!).RunRecommendation(new MediaVerifier.UI.Data.RecommendationItem(Severity.Medium, "Interrupted", string.Empty, Strings.Recommendations.Continue, "continue"));
+            Settle(() => Db(() => services.Database.Runs.List(10)).Count > runsBefore && form.CurrentPageControl is ScansPage);
+            runsAfter = Db(() => services.Database.Runs.List(10)).Count;
+            shown = (form.CurrentPageControl as PageBase)?.Id;
+            Settle(() => !services.Scans.Status.IsActive, TimeSpan.FromMinutes(1));
+            form.Close();
+        });
+
+        Assert.Equal(runsBefore + 1, runsAfter);
+        Assert.Equal(PageId.Scans, shown);
+    }
+
+    /// <summary>
     /// Switching a rule off in Settings → Rules re-judges the library off the UI thread. It used to read every file of
     /// the rule's kinds on the UI thread (a pause at each change, and an exception in a debug build): with the
     /// database guard on, the change goes through and the effect bar has its answer.

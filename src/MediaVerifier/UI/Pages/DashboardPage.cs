@@ -86,7 +86,8 @@ internal sealed class DashboardPage : PageBase
                 ShellActions.OpenUrl(ShellActions.HelpUrl("GEN-UNREADABLE"));
                 break;
             case "continue":
-                Services.Navigate?.Invoke(PageId.Scans, null);
+                // Continue means continue: it only opened Scans, where Continue had to be pressed again.
+                UiTask.Run(ContinueInterruptedAsync());
                 break;
             case not null when command.StartsWith("review:", StringComparison.Ordinal):
                 // Review the files the recommendation counts: Issues filtered to its rule, not every problem.
@@ -102,6 +103,18 @@ internal sealed class DashboardPage : PageBase
     {
         await Remediator.RunAsync(Services, this, files, actionId).ConfigureAwait(true);
         Reload();
+    }
+
+    /// <summary>The interrupted scan starts again at its depth, then Scans shows it.</summary>
+    private async Task ContinueInterruptedAsync()
+    {
+        ScansData scans = await Task.Run(Services.Data.LoadScans).ConfigureAwait(true);
+        if (scans.Interrupted is RunInfo run)
+        {
+            _ = await ScansPage.ContinueAsync(Services, run).ConfigureAwait(true);
+        }
+
+        Services.Navigate?.Invoke(PageId.Scans, null);
     }
 
     private async Task VerifyAllAsync()

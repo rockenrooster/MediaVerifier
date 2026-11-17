@@ -522,6 +522,8 @@ internal static class Strings
         public const string Nightly = "Nightly verification";
         public const string MonthlyDeep = "Monthly deep scan";
         public const string DeleteSchedule = "Delete schedule";
+        public const string DeleteTitle = "Delete {0}?";
+        public const string DeleteText = "It stops running on its own. The scans it ran and what they found stay.";
         public const string AllFoldersLower = "all folders";
         public const string TodayAt = "Today {0}";
         public const string TomorrowAt = "Tomorrow {0}";
