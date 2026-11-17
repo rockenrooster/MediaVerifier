@@ -114,6 +114,32 @@ public sealed class TaskSchedulerBackend : IScheduleBackend
 
     public static string TaskName(long planId) => "Plan " + planId.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Deletes the <c>\MediaVerifier</c> folder once it holds no task or subfolder, so that uninstalling (which runs
+    /// <c>--cleanup</c>) leaves nothing behind in the Task Scheduler.
+    /// </summary>
+    public static void RemoveFolderIfEmpty()
+    {
+        dynamic service = Connect();
+        try
+        {
+            dynamic folder = service.GetFolder("\\" + FolderName);
+            if ((int)folder.GetTasks(1).Count == 0 && (int)folder.GetFolders(0).Count == 0)
+            {
+                dynamic root = service.GetFolder("\\");
+                root.DeleteFolder(FolderName, 0);
+            }
+        }
+        catch (Exception ex) when (ex is COMException or FileNotFoundException or UnauthorizedAccessException)
+        {
+            // No folder, or it cannot be deleted: nothing more to clean up.
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(service);
+        }
+    }
+
     private static dynamic Connect()
     {
         Type type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)!;

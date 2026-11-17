@@ -73,6 +73,9 @@ the whole 2304 × 1296 crop about 1,070 ms. The measures now run on the centre q
 (its corner on the frame's 16-pixel grid, so block edges keep their phase), and photos measure only
 spatial information (blockiness and blur are video rules).
 
+Re-measured with the bundle the app ships (`ffmpeg-bundle-9.0.2-mv2`), 2026-11-17: 24 samples of the
+2160p film in about 3.2 s (10 in 1,344 ms) and the 4K photo in 207 ms.
+
 ## Engine budgets (subplan 16, task H-01)
 
 `EnginePerfTests` (in the suite above), 2026-11-17, on 100,000 empty photo files in a synthetic tree.
@@ -88,3 +91,14 @@ spatial information (blockiness and blur are video rules).
 Scan memory does not grow with the number of files (the engine streams directories and writes in
 batches), so the 1,000,000-file budget is met by a wide margin without creating a million files.
 
+
+## Release build (subplan 16, procedure P-7)
+
+`.\build.ps1 -NoIncrement`, 2026-11-17: version 0.1.0.0 with `ffmpeg-bundle-9.0.2-mv2`, installer from Inno
+Setup 6.7.3. Cold start, idle CPU and memory are measured on the release candidate (procedure P-7).
+
+| Measurement | Result | Budget |
+|-------------|--------|--------|
+| App folder `artifacts\MediaVerifier\` | 36.9 MB, of which the FFmpeg bundle 27.0 MB | at most 200 MB |
+| Installer `MediaVerifier-Setup.exe` | 13.9 MB | at most 90 MB |
+| Portable zip | 16.5 MB | — |

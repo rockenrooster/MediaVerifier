@@ -67,7 +67,11 @@ internal static class PlanHost
     public static Task ReconcileAsync(Database database) =>
         PlanReconciler.ReconcileAsync(database, new TaskSchedulerBackend(), Environment.ProcessPath ?? Application.ExecutablePath, DateOnly.FromDateTime(DateTime.Now));
 
-    private static void RemoveScheduledTasks() => PlanReconciler.RemoveAll(new TaskSchedulerBackend());
+    private static void RemoveScheduledTasks()
+    {
+        PlanReconciler.RemoveAll(new TaskSchedulerBackend());
+        TaskSchedulerBackend.RemoveFolderIfEmpty();
+    }
 
     private static void RemoveToastRegistration() => ToastRegistration.Remove(new CurrentUserRegistry());
 

@@ -22,9 +22,13 @@ function Get-InnoCompiler {
         return $command.Source
     }
 
-    $candidate = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
-    if (Test-Path $candidate) {
-        return $candidate
+    # A machine-wide install, then a per-user one (Inno Setup's own setup offers both).
+    foreach ($candidate in @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"))) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
     }
 
     return $null
@@ -142,6 +146,8 @@ $bundleDir = Join-Path $PSScriptRoot "deps\ffmpeg\bin"
 & (Join-Path $PSScriptRoot "scripts\Get-FfmpegBundle.ps1") -ErrorAction Continue
 if (Test-Path (Join-Path $bundleDir "ffmpeg.exe")) {
     Copy-Item $bundleDir (Join-Path $appDir "ffmpeg") -Recurse
+    # Get-FfmpegBundle.ps1's note of which lock it extracted is not part of the bundle (subplan 17 layout).
+    Remove-Item (Join-Path $appDir "ffmpeg\.lock-sha256") -Force -ErrorAction SilentlyContinue
 }
 elseif ($env:GITHUB_ACTIONS -eq "true") {
     throw "The FFmpeg bundle is required for a release build."
