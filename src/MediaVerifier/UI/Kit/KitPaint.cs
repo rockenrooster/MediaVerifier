@@ -18,25 +18,31 @@ internal static class KitPaint
     /// </summary>
     public static void DrawText(Graphics g, string text, Font font, Color color, int x, int centreY, int maxWidth, TextFormatFlags extra = TextFormatFlags.Default)
     {
-        int lineHeight = font.Height;
-        Rectangle bounds = new(x, centreY - (lineHeight / 2), Math.Max(0, maxWidth), lineHeight);
-        TextRenderer.DrawText(g, text, font, bounds, color, BaseFlags | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | extra);
+        if (string.IsNullOrEmpty(text) || maxWidth <= 0)
+        {
+            return;
+        }
+
+        int lineHeight = NativeText.LineHeight(font);
+        NativeText.Draw(g, text, font, color, new Rectangle(x, centreY - (lineHeight / 2), maxWidth, lineHeight), BaseFlags | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | extra);
     }
 
     /// <summary>Text centred horizontally on <paramref name="centreX"/>.</summary>
     public static void DrawTextCentred(Graphics g, string text, Font font, Color color, int centreX, int centreY)
     {
-        Size size = TextRenderer.MeasureText(g, text, font, Size.Empty, BaseFlags);
-        int lineHeight = font.Height;
-        Rectangle bounds = new(centreX - (size.Width / 2) - 1, centreY - (lineHeight / 2), size.Width + 2, lineHeight);
-        TextRenderer.DrawText(g, text, font, bounds, color, BaseFlags | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        int width = NativeText.Measure(text, font);
+        int lineHeight = NativeText.LineHeight(font);
+        NativeText.Draw(g, text, font, color, new Rectangle(centreX - (width / 2) - 1, centreY - (lineHeight / 2), width + 2, lineHeight), BaseFlags | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
     }
 
-    public static int MeasureWidth(Graphics g, string text, Font font) =>
-        TextRenderer.MeasureText(g, text, font, Size.Empty, BaseFlags).Width;
+    public static int MeasureWidth(Graphics g, string text, Font font) => NativeText.Measure(text, font);
 
-    public static int MeasureWidth(string text, Font font) =>
-        TextRenderer.MeasureText(text, font, Size.Empty, BaseFlags).Width;
+    public static int MeasureWidth(string text, Font font) => NativeText.Measure(text, font);
 
     public static void FillRoundedRect(Graphics g, RectangleF rect, float radius, Color color)
     {

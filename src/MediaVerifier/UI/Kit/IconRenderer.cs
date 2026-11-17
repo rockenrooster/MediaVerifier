@@ -11,6 +11,7 @@ internal static class IconRenderer
     private static readonly GraphicsPath HighShape = Polygon(8, 2.25f, 14.5f, 13.5f, 1.5f, 13.5f);
     private static readonly GraphicsPath MediumShape = Polygon(8, 1.5f, 14.5f, 8, 8, 14.5f, 1.5f, 8);
     private static readonly GraphicsPath CircleShape = Ellipse(8, 8, 6.75f);
+    private static readonly GraphicsPath OkCheck = Lines(4.9f, 8.2f, 7.2f, 10.4f, 11.1f, 5.9f);
     private static readonly GraphicsPath AppShield = SvgPath("M128 18 L226 54 V124 C226 182 185 224 128 242 C71 224 30 182 30 124 V54 Z");
     private static readonly GraphicsPath AppTriangleStandard = Polygon(104, 86, 180, 128, 104, 170);
     private static readonly GraphicsPath AppTriangleSmall = Polygon(98, 80, 186, 128, 98, 176);
@@ -33,7 +34,8 @@ internal static class IconRenderer
         IconShape shape = IconGeometry.Get(icon);
         float scale = logicalSize * dpi / 96f / 16f;
         float strokeGrid = StrokeForSize(logicalSize) * 16f / logicalSize;
-        GraphicsState state = g.Save();
+        SmoothingMode smoothing = g.SmoothingMode;
+        PixelOffsetMode offset = g.PixelOffsetMode;
         try
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -63,15 +65,25 @@ internal static class IconRenderer
         }
         finally
         {
-            g.Restore(state);
+            Undo(g, x, y, scale, smoothing, offset);
         }
+    }
+
+    /// <summary>Reverses a translate-then-scale without allocating a GraphicsState (painting allocates nothing).</summary>
+    private static void Undo(Graphics g, float x, float y, float scale, SmoothingMode smoothing, PixelOffsetMode offset)
+    {
+        g.ScaleTransform(1f / scale, 1f / scale);
+        g.TranslateTransform(-x, -y);
+        g.SmoothingMode = smoothing;
+        g.PixelOffsetMode = offset;
     }
 
     /// <summary>Draws the tier's shape at (x, y) with its glyph knocked out in <paramref name="knockout"/>.</summary>
     public static void DrawSeverity(Graphics g, Severity severity, float x, float y, float logicalSize, int dpi, Color shapeColor, Color knockout)
     {
         float scale = logicalSize * dpi / 96f / 16f;
-        GraphicsState state = g.Save();
+        SmoothingMode smoothing = g.SmoothingMode;
+        PixelOffsetMode offset = g.PixelOffsetMode;
         try
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -107,14 +119,27 @@ internal static class IconRenderer
                     break;
                 default:
                     g.FillPath(fill, CircleShape);
-                    g.DrawLines(glyph, [new PointF(4.9f, 8.2f), new PointF(7.2f, 10.4f), new PointF(11.1f, 5.9f)]);
+                    g.DrawPath(glyph, OkCheck);
                     break;
             }
         }
         finally
         {
-            g.Restore(state);
+            Undo(g, x, y, scale, smoothing, offset);
         }
+    }
+
+    private static GraphicsPath Lines(params float[] xy)
+    {
+        GraphicsPath path = new();
+        PointF[] points = new PointF[xy.Length / 2];
+        for (int i = 0; i < points.Length; i++)
+        {
+            points[i] = new PointF(xy[2 * i], xy[(2 * i) + 1]);
+        }
+
+        path.AddLines(points);
+        return path;
     }
 
     /// <summary>

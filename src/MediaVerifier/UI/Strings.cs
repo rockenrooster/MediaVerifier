@@ -18,6 +18,7 @@ internal static class Strings
     public static class Kit
     {
         public const string Browse = "Browse…";
+        public const string Details = "Details";
     }
 
     public static class Pages

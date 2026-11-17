@@ -178,10 +178,7 @@ internal sealed class InfoBar : KitControl
             KitPaint.StrokeRoundedRect(g, bounds, radius, t.Text, Dpi.ScaleF(1, dpi));
         }
 
-        GraphicsState saved = g.Save();
-        g.SetClip(new Rectangle(bounds.X, bounds.Y, Dpi.Scale(3, dpi), bounds.Height), CombineMode.Intersect);
-        KitPaint.FillRoundedRect(g, bounds, radius, colors.Fill);
-        g.Restore(saved);
+        KitPaint.FillRoundedRect(g, new RectangleF(bounds.X, bounds.Y, Dpi.ScaleF(3, dpi), bounds.Height), Dpi.ScaleF(1.5f, dpi), colors.Fill);
 
         int centreY = bounds.Y + (bounds.Height / 2);
         IconRenderer.DrawSeverity(g, tier, bounds.X + Dpi.ScaleF(14, dpi), centreY - Dpi.ScaleF(8, dpi), 16, dpi, colors.Text, colors.Pill);
@@ -194,7 +191,7 @@ internal sealed class InfoBar : KitControl
             int ax = right - actionWidth;
             Color link = actionHover ? t.AccentHover : t.Accent;
             KitPaint.DrawText(g, action, type.BodyStrong, link, ax, centreY, actionWidth + 2);
-            KitPaint.HorizontalLine(g, link, ax, ax + actionWidth, centreY + Dpi.ScaleF(8, dpi), Dpi.ScaleF(1, dpi));
+            KitPaint.HorizontalLine(g, link, ax, ax + actionWidth, centreY + Dpi.ScaleF(8.5f, dpi), Dpi.ScaleF(1, dpi));
             if (state.HasFlag(VisualState.Focused))
             {
                 KitPaint.DrawFocusRing(g, new Rectangle(ax - Dpi.Scale(2, dpi), centreY - Dpi.Scale(10, dpi), actionWidth + Dpi.Scale(4, dpi), Dpi.Scale(20, dpi)), Dpi.ScaleF(2, dpi), dpi);
