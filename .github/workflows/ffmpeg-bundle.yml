@@ -206,6 +206,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: bundle
@@ -239,6 +241,10 @@ jobs:
           }
           EOF
           # The owner's repository takes the verified lock straight onto the branch the workflow ran from.
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
           git add deps/ffmpeg/bundle.lock.json
-          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -m "FFB-04: use FFmpeg bundle $TAG"
+          git commit -m "FFB-04: use FFmpeg bundle $TAG"
+          # Commits may have landed on the branch during the build; put the lock on top of them.
+          git pull --rebase origin "${{ github.ref_name }}"
           git push origin "HEAD:${{ github.ref_name }}"
