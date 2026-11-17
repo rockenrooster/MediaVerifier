@@ -212,6 +212,10 @@ public static class FixtureFactory
         Add("img.png", "-ss 2 -i native1080.mp4 -frames:v 1 -c:v png -f image2 -update 1 {out}", "native1080.mp4");
         Add("img2x.jpg", "-i img.png -vf scale=iw*2:ih*2:flags=bicubic -frames:v 1 -q:v 2 -f image2 -update 1 {out}", "img.png");
         Add("shot.png", "-f lavfi -i \"color=c=0xF0F0F0:s=1920x1080,drawbox=x=100:y=100:w=600:h=400:color=0x3366CC:t=fill,drawbox=x=800:y=120:w=900:h=40:color=0x202020:t=fill\" -frames:v 1 -c:v png -f image2 -update 1 {out}");
+        Add("interlaced.mp4", "-f lavfi -i \"testsrc2=s=720x576:r=50\" -t 6 -vf \"tinterlace=mode=interleave_top,format=yuv420p\" -c:v libx264 -crf 18 -preset veryfast -g 25 -f mp4 {out}");
+        Add("frozen.mp4", "-f lavfi -i \"testsrc2=s=320x240:r=10\" -t 150 -filter_complex \"[0:v]split[a][b];[a][b]freezeframes=first=700:last=850:replace=699,format=yuv420p[v]\" -map \"[v]\" -c:v libx264 -preset veryfast -g 50 -f mp4 {out}");
+        Add("black.mp4", "-f lavfi -i \"testsrc2=s=320x240:r=10\" -t 150 -vf \"drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,60,100)',format=yuv420p\" -c:v libx264 -preset veryfast -g 50 -f mp4 {out}");
+        Add("silent.mp4", "-f lavfi -i \"testsrc2=s=320x240:r=24\" -f lavfi -i \"anullsrc=r=48000:cl=stereo\" -t 4 -c:v libx264 -preset veryfast -c:a aac -shortest -f mp4 {out}");
         Add("hdr8.mp4", "-f lavfi -i \"testsrc2=s=640x360:r=24\" -t 2 -c:v libx264 -pix_fmt yuv420p -bsf:v h264_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9 -f mp4 {out}");
         Add("img.webp", "-ss 2 -i native1080.mp4 -frames:v 1 -c:v libwebp -q:v 80 -f webp {out}", "native1080.mp4");
         return r;

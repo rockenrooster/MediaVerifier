@@ -146,11 +146,12 @@ public sealed class VideoQualityDetector : IDetector
 {
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
-    public IReadOnlyList<string> RuleIds { get; } = ["VID-STARVED", "VID-HDR", "VID-UPSCALED", "VID-BLOCKY", "VID-INFLATED"];
+    public IReadOnlyList<string> RuleIds { get; } =
+        ["VID-STARVED", "VID-HDR", "VID-UPSCALED", "VID-BLOCKY", "VID-INFLATED", "VID-INTERLACE", "VID-FROZEN", "VID-BLACK", "VID-AUDIO-SILENT"];
 
     public IReadOnlyList<Type> Needs { get; } = [typeof(ProbeArtifact)];
 
-    public IReadOnlyList<Type> Optional { get; } = [typeof(FrameSamplesArtifact)];
+    public IReadOnlyList<Type> Optional { get; } = [typeof(FrameSamplesArtifact), typeof(InterlaceArtifact), typeof(VideoDecodeArtifact)];
 
     public ScanDepth MinDepth => ScanDepth.Quick;
 
@@ -193,6 +194,133 @@ public sealed class VideoQualityDetector : IDetector
         }
 
         Inflated(equivalent, bitRate, upscale, blocky, rules, sink);
+        if (input.Get<InterlaceArtifact>() is { Skipped: null } interlace)
+        {
+            Interlace(interlace, rules, sink);
+        }
+
+        if (input.Get<VideoDecodeArtifact>() is { Outcome: RunOutcome.Completed } decode)
+        {
+            Soundtrack(decode, rules, sink);
+            if (decode.Pass == VideoPass.Deep)
+            {
+                Frozen(decode, rules, sink);
+                Black(decode, sink);
+            }
+        }
+    }
+
+    /// <summary>VID-INTERLACE: idet against the stream's field-order flag.</summary>
+    private static void Interlace(InterlaceArtifact idet, RuleSettings rules, FindingSink sink)
+    {
+        if (idet.Determined < rules.Value("VID-INTERLACE", "minFrames"))
+        {
+            return;
+        }
+
+        double interlaced = (double)idet.Interlaced / idet.Determined;
+        Dictionary<string, object> evidence = new(StringComparer.Ordinal)
+        {
+            ["topFieldFirst"] = idet.TopFirst,
+            ["bottomFieldFirst"] = idet.BottomFirst,
+            ["progressive"] = idet.Progressive,
+            ["undetermined"] = idet.Undetermined,
+        };
+        if (!idet.FlaggedInterlaced && interlaced * 100 >= rules.Value("VID-INTERLACE", "combedPercent"))
+        {
+            sink.Raise("VID-INTERLACE", Severity.Medium, 0.8f, $"combing artifacts: {Math.Round(interlaced * 100).ToString("0", Invariant)} % of sampled frames are interlaced, but the video is marked progressive", evidence);
+        }
+        else if (idet.FlaggedInterlaced && (1 - interlaced) * 100 >= rules.Value("VID-INTERLACE", "progressivePercent"))
+        {
+            sink.Raise("VID-INTERLACE", Severity.Low, 0.8f, $"marked interlaced, but {Math.Round((1 - interlaced) * 100).ToString("0", Invariant)} % of sampled frames are progressive", evidence);
+        }
+    }
+
+    /// <summary>VID-AUDIO-SILENT: the default soundtrack's peak stays below the limit for the whole file.</summary>
+    private static void Soundtrack(VideoDecodeArtifact decode, RuleSettings rules, FindingSink sink)
+    {
+        if (decode.HasAudio && decode.AudioMaxVolumeDb is double peak && peak < rules.Value("VID-AUDIO-SILENT", "peakDb"))
+        {
+            string level = peak <= -150 ? "digital silence" : $"peak {peak.ToString("0.0", Invariant)} dBFS";
+            sink.Raise("VID-AUDIO-SILENT", Severity.Medium, 1f, "the main soundtrack is silent from start to end (" + level + ")", new Dictionary<string, object>(StringComparer.Ordinal) { ["maxVolumeDb"] = Math.Round(Math.Max(peak, -200), 1) });
+        }
+    }
+
+    /// <summary>VID-FROZEN: freezes of 10 s or more away from the first and last minute and not on black.</summary>
+    private static void Frozen(VideoDecodeArtifact decode, RuleSettings rules, FindingSink sink)
+    {
+        double duration = decode.DecodedSeconds ?? decode.DeclaredSeconds ?? 0;
+        double margin = rules.Value("VID-FROZEN", "edgeSeconds");
+        double minimum = rules.Value("VID-FROZEN", "seconds");
+        double[] starts = decode.FreezeStarts ?? [];
+        double[] lengths = decode.FreezeDurations ?? [];
+        List<(double Start, double Length)> freezes = [];
+        for (int i = 0; i < Math.Min(starts.Length, lengths.Length); i++)
+        {
+            (double start, double length) = (starts[i], lengths[i]);
+            bool edge = start < margin || start + length > duration - margin;
+            if (length >= minimum && !edge && !OnBlack(decode, start, length))
+            {
+                freezes.Add((start, length));
+            }
+        }
+
+        if (freezes.Count == 0 || duration <= 0)
+        {
+            return;
+        }
+
+        double total = freezes.Sum(f => f.Length);
+        Severity severity = total / duration * 100 >= rules.Value("VID-FROZEN", "mediumPercent") ? Severity.Medium : Severity.Low;
+        string first = EvidenceText.MediaTime(freezes[0].Start);
+        sink.Raise(
+            "VID-FROZEN",
+            severity,
+            0.8f,
+            $"the picture stands still for {Math.Round(total).ToString("0", Invariant)} s, first at {first}",
+            new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["positionsSeconds"] = freezes.Select(f => Math.Round(f.Start, 1)).ToArray(),
+                ["lengthsSeconds"] = freezes.Select(f => Math.Round(f.Length, 1)).ToArray(),
+            });
+    }
+
+    private static bool OnBlack(VideoDecodeArtifact decode, double start, double length)
+    {
+        double[] blackStarts = decode.BlackStarts ?? [];
+        double[] blackLengths = decode.BlackDurations ?? [];
+        for (int i = 0; i < Math.Min(blackStarts.Length, blackLengths.Length); i++)
+        {
+            double overlap = Math.Min(start + length, blackStarts[i] + blackLengths[i]) - Math.Max(start, blackStarts[i]);
+            if (overlap >= length / 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>VID-BLACK (disabled by default): black sections of 30 s or more.</summary>
+    private static void Black(VideoDecodeArtifact decode, FindingSink sink)
+    {
+        double[] starts = decode.BlackStarts ?? [];
+        double[] lengths = decode.BlackDurations ?? [];
+        if (starts.Length == 0 || lengths.Length == 0)
+        {
+            return;
+        }
+
+        sink.Raise(
+            "VID-BLACK",
+            Severity.Low,
+            1f,
+            $"{Math.Round(lengths.Sum()).ToString("0", Invariant)} s of black picture, first at {EvidenceText.MediaTime(starts[0])}",
+            new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["positionsSeconds"] = starts.Select(s => Math.Round(s, 1)).ToArray(),
+                ["lengthsSeconds"] = lengths.Select(l => Math.Round(l, 1)).ToArray(),
+            });
     }
 
     private static void Hdr(StreamInfo video, FindingSink sink)

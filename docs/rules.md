@@ -341,6 +341,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** This usually points to a failed recording or a damaged conversion.
 - **What you can do:** Check the marked part. Replace the file if the picture should move.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `seconds` 10 seconds (2–600); `edgeSeconds` 60 seconds (0–600); `mediumPercent` 10 % (1–100)
 
 ### `VID-BLACK` Long black section
 
@@ -355,6 +356,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The sound was probably lost during recording or conversion.
 - **What you can do:** Replace it from a healthy copy if it should have sound.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `peakDb` -60 dBFS (-150–-10)
 
 ### `IMG-HEAVY-COMPRESSION` Heavily compressed
 
@@ -436,6 +438,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Players then show comb-like lines on movement, or blur the picture needlessly.
 - **What you can do:** Replace it, or convert it with a tool that de-interlaces it properly.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `combedPercent` 70 % (10–100); `progressivePercent` 90 % (10–100); `minFrames` 100 frames (10–600)
 
 ### `VID-HDR` HDR signalling problem
 

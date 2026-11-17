@@ -143,7 +143,8 @@ public sealed class ProbeArtifactProvider() : ArtifactProvider<ProbeArtifact>(ne
     }
 }
 
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+// Named literals: a measurement that comes out infinite or NaN (a flat black frame) must never fail a file.
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 [JsonSerializable(typeof(ProbeArtifact))]
 [JsonSerializable(typeof(ImageDecodeArtifact))]
 [JsonSerializable(typeof(VideoDecodeArtifact))]
@@ -151,4 +152,5 @@ public sealed class ProbeArtifactProvider() : ArtifactProvider<ProbeArtifact>(ne
 [JsonSerializable(typeof(StreamHashArtifact))]
 [JsonSerializable(typeof(StructureArtifact))]
 [JsonSerializable(typeof(FrameSamplesArtifact))]
+[JsonSerializable(typeof(InterlaceArtifact))]
 internal sealed partial class ProviderJsonContext : JsonSerializerContext;

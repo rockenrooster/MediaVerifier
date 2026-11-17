@@ -50,6 +50,7 @@ public enum ArtifactKind : byte
     Probe = 7,
     AudioDecode = 8,
     VideoDecode = 9,
+    Interlace = 10,
 }
 
 public enum FileEventKind : byte

@@ -22,6 +22,7 @@ public static class EngineFactory
         new ImageDecodeProvider(),
         new VideoDecodeProvider(),
         new FrameSampleProvider(),
+        new InterlaceProvider(),
     ];
 
     /// <summary>

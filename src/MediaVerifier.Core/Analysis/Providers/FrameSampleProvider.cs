@@ -147,7 +147,12 @@ public static class FrameSampling
             string number = end < 0 ? line[(y + 3)..] : line[(y + 3)..end];
             if (double.TryParse(number.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
             {
-                values.Add(value);
+                values.Add(double.IsFinite(value) ? value : 1);
+            }
+            else if (number.Trim() is "inf" or "nan")
+            {
+                // A flat frame (black, one colour) is rebuilt exactly.
+                values.Add(1);
             }
         }
 
@@ -177,9 +182,15 @@ public static class FrameSampling
             }
 
             int equals = line.IndexOf('=', StringComparison.Ordinal);
-            if (equals < 0 || !double.TryParse(line[(equals + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+            if (equals < 0)
             {
                 continue;
+            }
+
+            // Flat frames (black, a single colour) give inf or nan; they carry no detail, so they count as 0.
+            if (!double.TryParse(line[(equals + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || !double.IsFinite(value))
+            {
+                value = 0;
             }
 
             switch (line[..equals])

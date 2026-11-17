@@ -127,7 +127,14 @@ public sealed record VideoDecodeArtifact(
     int Freezes,
     double LongestBlackSeconds,
     int BlackSections,
-    bool Opened) : IArtifact, IStreamHashSource
+    bool Opened,
+    double[]? FreezeStarts = null,
+    double[]? FreezeDurations = null,
+    double[]? BlackStarts = null,
+    double[]? BlackDurations = null,
+
+    // volumedetect on the first audio stream: the loudest sample in dBFS; null without audio or a reading.
+    double? AudioMaxVolumeDb = null) : IArtifact, IStreamHashSource
 {
     [JsonIgnore]
     public byte[]? StreamHash => StreamHashBytes;
@@ -146,7 +153,11 @@ public sealed record VideoDecodeArtifact(
 /// </summary>
 public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecodeArtifact>(new ArtifactCodec<VideoDecodeArtifact>(ArtifactKind.VideoDecode, ProviderJsonContext.Default.VideoDecodeArtifact))
 {
-    public override int Version => 1;
+    /// <summary>Most freezes and black sections whose positions are kept.</summary>
+    private const int MaxSections = 50;
+
+    /// <summary>Version 2 keeps freeze and black positions and the soundtrack's peak (subplan 11, M3 rules).</summary>
+    public override int Version => 2;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -175,6 +186,12 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
             args.AddRange(["-vf", "freezedetect=n=0.003:d=10,blackdetect=d=30:pix_th=0.10"]);
         }
 
+        if (hasAudio)
+        {
+            // The peak of the default soundtrack (VID-AUDIO-SILENT); printed at info level when the run ends.
+            args.AddRange(["-filter:a:0", "volumedetect"]);
+        }
+
         args.AddRange(["-f", "null", "-"]);
         if (!deep)
         {
@@ -200,6 +217,11 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         int freezes = 0;
         double longestBlack = 0;
         int blacks = 0;
+        List<double> freezeStarts = [];
+        List<double> freezeDurations = [];
+        List<double> blackStarts = [];
+        List<double> blackDurations = [];
+        double? maxVolume = null;
         double? declared = probe?.Duration ?? probe?.Video?.Duration;
         FfResult result = await file.Runner.RunAsync(
             new FfRequest
@@ -208,18 +230,28 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                 Arguments = args,
                 Stdout = StdoutMode.Progress,
                 WorkingDirectory = file.TempDirectory,
-                LogLevel = deep ? "info" : "warning",
+                LogLevel = "info",
                 IdleTimeout = TimeSpan.FromSeconds(file.Settings.StallSeconds),
                 HardTimeout = FfmpegArgs.HardTimeout(file.Depth, declared, file.Stat.Size),
                 OnLogLine = line =>
                 {
                     if (deep)
                     {
+                        Match start = FreezeStart().Match(line.Raw);
+                        if (start.Success && freezeStarts.Count < MaxSections && double.TryParse(start.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double at))
+                        {
+                            freezeStarts.Add(at);
+                        }
+
                         Match freeze = FreezeDuration().Match(line.Raw);
                         if (freeze.Success && double.TryParse(freeze.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds))
                         {
                             freezes++;
                             longestFreeze = Math.Max(longestFreeze, seconds);
+                            if (freezeDurations.Count < MaxSections)
+                            {
+                                freezeDurations.Add(seconds);
+                            }
                         }
 
                         Match black = BlackDuration().Match(line.Raw);
@@ -227,7 +259,21 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                         {
                             blacks++;
                             longestBlack = Math.Max(longestBlack, blackSeconds);
+                            Match blackStart = BlackStart().Match(line.Raw);
+                            if (blackStarts.Count < MaxSections && blackStart.Success && double.TryParse(blackStart.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double blackAt))
+                            {
+                                blackStarts.Add(blackAt);
+                                blackDurations.Add(blackSeconds);
+                            }
                         }
+                    }
+
+                    Match volume = MaxVolume().Match(line.Raw);
+                    if (volume.Success)
+                    {
+                        maxVolume = volume.Groups[1].Value == "-inf" ? double.NegativeInfinity
+                            : double.TryParse(volume.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) ? db : maxVolume;
+                        return;
                     }
 
                     if (line.Kind is LogSignalKind.Noise or LogSignalKind.Benign)
@@ -277,7 +323,12 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
             freezes,
             longestBlack,
             blacks,
-            probe?.Opened == true && !result.Log.Has(LogSignalKind.OpenFailure));
+            probe?.Opened == true && !result.Log.Has(LogSignalKind.OpenFailure),
+            [.. freezeStarts],
+            [.. freezeDurations],
+            [.. blackStarts],
+            [.. blackDurations],
+            maxVolume is double v && double.IsNegativeInfinity(v) ? -200 : maxVolume);
     }
 
     /// <summary>Which stream a log line is about: input-stream contexts first, then the decoder's codec name.</summary>
@@ -315,6 +366,15 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
 
     [GeneratedRegex(@"freezedetect\.freeze_duration:\s*([0-9.]+)", RegexOptions.CultureInvariant)]
     private static partial Regex FreezeDuration();
+
+    [GeneratedRegex(@"freezedetect\.freeze_start:\s*([0-9.]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex FreezeStart();
+
+    [GeneratedRegex(@"black_start:\s*([0-9.]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex BlackStart();
+
+    [GeneratedRegex(@"max_volume:\s*(-inf|-?[0-9.]+) dB", RegexOptions.CultureInvariant)]
+    private static partial Regex MaxVolume();
 
     [GeneratedRegex(@"black_duration:\s*([0-9.]+)", RegexOptions.CultureInvariant)]
     private static partial Regex BlackDuration();
