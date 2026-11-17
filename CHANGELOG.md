@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.12 - 2026-11-17
+
 - Fixed: at the smallest window, long schedule summaries and rule limit names were cut short; they
   now take a second line.
 
