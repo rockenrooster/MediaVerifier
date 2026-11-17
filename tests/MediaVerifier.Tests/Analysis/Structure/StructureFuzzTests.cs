@@ -9,6 +9,7 @@ namespace MediaVerifier.Tests.Analysis.Structure;
 /// Task C-01 acceptance: the sniffer and the reader never throw on random input, and every call finishes
 /// quickly (each one is time-boxed at 200 ms).
 /// </summary>
+[Trait("Category", "Fuzz")]
 public sealed class StructureFuzzTests
 {
     private const int Cases = 10_000;

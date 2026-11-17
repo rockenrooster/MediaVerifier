@@ -24,7 +24,18 @@ jobs:
         run: dotnet build MediaVerifier.sln -c Release
 
       - name: Unit tests
-        run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Integration&Category!=System&Category!=Perf"
+        run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Integration&Category!=System&Category!=Perf&Category!=Fuzz"
+
+      - name: Parser fuzz (60-second budget, task T-07)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          dotnet test MediaVerifier.sln -c Release --no-build --filter "Category=Fuzz"
+          if ($LASTEXITCODE -ne 0) { throw 'Parser fuzz failed' }
+          $seconds = [math]::Round($watch.Elapsed.TotalSeconds, 1)
+          if ($seconds -gt 60) { throw "Parser fuzz took $seconds s; the budget is 60 s" }
+          Write-Host "Parser fuzz passed in $seconds s"
 
       - name: Self-check
         shell: pwsh
