@@ -11,6 +11,10 @@ on:
         description: Also repeat the appendix A experiments with the engine and print the report (task FFB-05)
         type: boolean
         default: false
+      benchmark:
+        description: Also run the corruption benchmark with the bundle, then with the tooling build (subplan 17, Updating FFmpeg)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -111,6 +115,28 @@ jobs:
           # Empty unless a manual run asks for the appendix A report (AppendixAMeasurements).
           MEDIAVERIFIER_APPENDIX_REPORT: ${{ inputs.appendix && format('{0}\appendix-a.md', runner.temp) || '' }}
         run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Perf&Category!=Fuzz&Category!=Calibration"
+
+      # Subplan 17, "Updating FFmpeg": the corruption benchmark with the bundle, then with the tooling build on the
+      # same fixtures, so that a change in a detection rate can be told apart from a change in the fixtures.
+      - name: Corruption benchmark, bundle and tooling build
+        if: ${{ always() && inputs.benchmark }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          TMP: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
+        run: |
+          $filter = 'FullyQualifiedName~CorruptionBenchmark'
+          dotnet test MediaVerifier.sln -c Release --no-build --filter $filter --logger 'console;verbosity=detailed'
+          $bundle = $LASTEXITCODE
+          Rename-Item deps\ffmpeg\bin bin-bundle
+          $probe = Get-ChildItem (Join-Path $env:ChocolateyInstall 'lib\ffmpeg-full') -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          $env:MEDIAVERIFIER_FFMPEG_DIR = $probe.DirectoryName
+          dotnet test MediaVerifier.sln -c Release --no-build --filter $filter --logger 'console;verbosity=detailed'
+          $tooling = $LASTEXITCODE
+          Rename-Item deps\ffmpeg\bin-bundle bin
+          Write-Host "Benchmark exit codes: bundle $bundle, tooling build $tooling"
+          if ($bundle -ne 0) { exit 1 }
 
       - name: Appendix A report
         if: ${{ always() && inputs.appendix }}
