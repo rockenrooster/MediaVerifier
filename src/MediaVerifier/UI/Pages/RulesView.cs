@@ -283,7 +283,9 @@ internal sealed class RulesView : KitControl
             }
         }
 
-        public int LogicalHeight => !_expanded ? 64 : 64 + 29 + ((_parameters.Count - 1) * 40) + 20 + (_effect.Visible ? 48 : 0) + 16;
+        // The effect line counts when it has text, not when _effect.Visible: a resize while the Rules section is hidden
+        // lays the list out with every row reading hidden, and the open rule lost the line's 48 px (clipped on return).
+        public int LogicalHeight => !_expanded ? 64 : 64 + 29 + ((_parameters.Count - 1) * 40) + 20 + (_effect.Text.Length > 0 ? 48 : 0) + 16;
 
         public async Task SetParameterAsync(string name, double value)
         {

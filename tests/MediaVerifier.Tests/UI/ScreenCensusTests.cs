@@ -115,6 +115,45 @@ public sealed class ScreenCensusTests
         Assert.True(clipping.Height > 0 && card.Contains(clipping), $"The first rule's switch {clipping} is not inside the rules card {card}.");
     }
 
+    /// <summary>A resize while another section is shown lays the hidden rule list out; the open rule keeps its effect line.</summary>
+    [Fact]
+    public void An_open_rule_keeps_its_effect_line_after_a_resize_while_rules_were_hidden()
+    {
+        int before = 0;
+        int after = 0;
+        Rectangle effect = Rectangle.Empty;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("rules-effect");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            Open(form, PageId.Settings);
+            SettingsPage settings = (SettingsPage)form.CurrentPageControl!;
+            ScreenRenderer.WaitFor(settings.ShowDemoRulesAsync());
+            Pump();
+            before = OpenRule(settings).Height;
+            settings.ShowSection(0);
+            Pump();
+            form.ClientSize = new Size(form.ClientSize.Width - 200, form.ClientSize.Height);
+            Pump();
+            settings.ShowSection(2);
+            Pump();
+            Control open = OpenRule(settings);
+            after = open.Height;
+            effect = Descendants(open).OfType<InfoBar>().First(b => b.Visible).Bounds;
+            form.Close();
+        });
+
+        Assert.Equal(before, after);
+        Assert.True(effect.Bottom <= after, $"The effect line {effect} runs past the bottom of its rule ({after} px).");
+    }
+
+    /// <summary>The rule row that shows an effect line (the demo opens Clipping and changes it).</summary>
+    private static Control OpenRule(Control root) =>
+        Descendants(root).Where(c => c.GetType().Name == "RuleRow").Single(r => Descendants(r).OfType<InfoBar>().Any(b => b.Visible));
+
     private static IEnumerable<Control> Descendants(Control root)
     {
         foreach (Control child in root.Controls)

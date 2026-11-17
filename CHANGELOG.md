@@ -5,6 +5,8 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: in Settings → Rules, an open rule's effect line was cut off after the window was resized
+  while another section was shown.
 
 ## 0.1.0.13 - 2026-11-17
 
