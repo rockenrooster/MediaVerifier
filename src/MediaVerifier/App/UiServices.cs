@@ -113,6 +113,9 @@ internal sealed class UiServices : IDisposable
     /// <summary>True for the render harness: no timers start work, nothing is written.</summary>
     public bool IsDemo { get; init; }
 
+    /// <summary>The only writer of user media (subplan 12); null in the render harness.</summary>
+    public Core.Remediation.OperationRunner? Operations { get; init; }
+
     /// <summary>Opens the user's library, the bundled media engine and the scan engine.</summary>
     public static UiServices CreateLive(AppState state)
     {
@@ -142,7 +145,21 @@ internal sealed class UiServices : IDisposable
             MediaEngine = new MediaEngineInfo(location, BundleIntegrity.Check(location)),
             Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence"))),
             Rules = rules,
+            Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
         };
+
+        // A crash during an operation leaves at most its journaled temporary file: clean it up now.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await services.Operations.RecoverAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                state.Log.Warning("Operation recovery failed", ex);
+            }
+        });
         services._owned.Add(scans);
         services._owned.Add(runner);
         services._owned.Add(database);

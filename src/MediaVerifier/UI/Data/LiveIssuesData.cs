@@ -119,6 +119,14 @@ internal sealed partial class LiveUiData
         }
 
         List<(string, DateTimeOffset)> history = [.. database.Events.ForFile(fileId).OrderByDescending(e => e.Utc).Select(e => (EventText(e), Ticks(e.Utc)))];
+        string? recommended = null;
+        if (findings.Count > 0 && root is not null && file.State != FileState.Missing)
+        {
+            bool healthy = MediaVerifier.Core.Remediation.ActionCatalog.HasHealthyCopy(database, MediaVerifier.Core.Engine.WindowsFileSystem.Instance, file);
+            bool clean = !findings.Any(f => f.RuleId is "COR-DECODE" or "COR-TRUNCATED" or "COR-CONCEALED");
+            recommended = MediaVerifier.Core.Remediation.ActionCatalog.Recommended(MediaVerifier.Core.Remediation.ActionCatalog.ForFinding(findings[0].RuleId, file, root, healthy, clean));
+        }
+
         FingerprintState fingerprint = file.Hash is null ? FingerprintState.None
             : findings.Any(f => f.RuleId == "INT-ROT") ? FingerprintState.Changed
             : file.VerifyCount > 0 ? FingerprintState.Unchanged : FingerprintState.NeverVerified;
@@ -137,7 +145,9 @@ internal sealed partial class LiveUiData
             history,
             TechnicalText(file),
             file.Size,
-            zeroRuns);
+            zeroRuns,
+            recommended is null ? string.Empty : ActionName(recommended),
+            recommended ?? string.Empty);
     }
 
     public AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token)

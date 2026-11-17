@@ -11,6 +11,10 @@ All notable changes to MediaVerifier are documented here.
   dropouts. The drawer shows the file's spectrogram with the cutoff marked, and a waveform with the
   clipped spots and dropouts; click a mark to see the 20 ms around it.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
+- Repairs from the Issues page: rebuild a damaged index, rename files with the wrong extension, store
+  padded audio as 16-bit, rewrite FLAC files with a wrong checksum, restore from a verified backup
+  copy, save a playable copy of damaged audio and video, and move files to quarantine. Every change
+  is checked before it replaces anything, keeps the original in quarantine and can be undone.
 - Video and photo quality checks: videos and photos enlarged from a smaller source, videos with too
   little bitrate for their resolution, heavy block artifacts, high bitrates on weak pictures, HDR
   marked on 8-bit video, heavily compressed JPEGs and (off by default) low-resolution photos.

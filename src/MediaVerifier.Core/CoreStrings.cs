@@ -10,4 +10,27 @@ public static class CoreStrings
 
     /// <summary>{0}: where the damaged copy was moved.</summary>
     public const string DatabaseRecoveredBody = "A fresh one was started. The damaged copy is at {0}.";
+
+    /// <summary>Why an operation did not run or failed (subplan 12, safe-operation protocol).</summary>
+    public static class Remediation
+    {
+        public const string BackupRoot = "The file is in a backup folder. Backup folders are only used as sources.";
+        public const string Missing = "The file is no longer there.";
+        public const string ChangedSinceScan = "The file changed since the last scan. Scan it again first.";
+        public const string ReadOnly = "The file is read-only.";
+        public const string InUse = "The file is in use by another program.";
+        public const string NoSpace = "There is not enough free space on the drive.";
+        public const string Cancelled = "Cancelled.";
+        public const string Interrupted = "Interrupted. The original was left unchanged.";
+        public const string CannotUndo = "This operation cannot be undone.";
+        public const string OriginalGone = "The kept original is no longer there.";
+        public const string NameTaken = "A file with the original name exists again.";
+        public const string NoHealthyCopy = "No verified healthy copy was found.";
+        public const string CopyChanged = "The copy no longer matches the file's fingerprint.";
+        public const string StreamsDiffer = "The rebuilt file's streams differ from the original's.";
+        public const string AudioDiffers = "The new file's audio differs from the original's.";
+        public const string OutputUnreadable = "The new file could not be read back.";
+        public const string NotNeeded = "The file already has the right extension.";
+        public const string ToolFailed = "The media engine could not write the new file.";
+    }
 }

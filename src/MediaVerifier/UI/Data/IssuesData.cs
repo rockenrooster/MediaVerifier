@@ -96,7 +96,8 @@ internal sealed record FileDetail(
     string TechnicalText,
     long SizeBytes,
     IReadOnlyList<long> ZeroRunOffsets,
-    string RecommendedAction = "");
+    string RecommendedAction = "",
+    string RecommendedActionId = "");
 
 /// <summary>Issues and drawer data (separate interface so pages depend only on what they read).</summary>
 internal interface IIssuesData

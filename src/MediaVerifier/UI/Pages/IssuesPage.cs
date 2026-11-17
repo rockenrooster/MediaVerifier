@@ -2,6 +2,7 @@ using System.Globalization;
 using MediaVerifier.App;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.UI.Data;
 using MediaVerifier.UI.Kit;
@@ -122,11 +123,18 @@ internal sealed class IssuesPage : PageBase
         _selectionBar.Closed += (_, _) => _list.ClearSelection();
         _selectionBar.SetButtons(
         [
-            Button(Strings.Issues.Fix, ButtonKind.Primary, IconName.Tools),
+            Button(Strings.Issues.Fix, ButtonKind.Primary, IconName.Tools, (_, _) => _ = FixSelectedAsync()),
             Button(Strings.Issues.Ignore, ButtonKind.Secondary, IconName.Ignore, (_, _) => _ = IgnoreSelectedAsync()),
             Button(Strings.Issues.ScanAgain, ButtonKind.Secondary, IconName.Refresh, (_, _) => ScanSelected()),
-            Button(Strings.Issues.Quarantine, ButtonKind.Secondary, IconName.Quarantine),
+            Button(Strings.Issues.Quarantine, ButtonKind.Secondary, IconName.Quarantine, (_, _) => _ = RunOnSelectedAsync(ActionIds.Quarantine)),
         ]);
+        _detail.PrimaryRequested += (_, _) =>
+        {
+            if (_detail.Detail is { RecommendedActionId.Length: > 0 } shown)
+            {
+                _ = RunAndReloadAsync([shown.FileId], shown.RecommendedActionId);
+            }
+        };
         KitButton fix = _selectionBar.Buttons[0];
         fix.Enabled = false;
         KitToolTip.Set(fix, Strings.Issues.NeedDifferentFixes);
@@ -556,7 +564,31 @@ internal sealed class IssuesPage : PageBase
         if (show)
         {
             _selectionBar.CountText = string.Format(CultureInfo.CurrentCulture, Strings.Issues.Selected, UiFormat.Count(count));
+            bool live = Services.Operations is not null;
+            string? fix = live ? Remediator.CommonFix(SelectedRows().Select(r => r.RuleId)) : null;
+            _selectionBar.Buttons[0].Enabled = fix is not null;
+            _selectionBar.Buttons[3].Enabled = live;
             _selectionBar.Invalidate();
+        }
+    }
+
+    private List<IssueRow> SelectedRows() => [.. _list.SelectedIds.Select(id => Rows.TryGetValue(id, out IssueRow? row) ? row : null).OfType<IssueRow>()];
+
+    private Task FixSelectedAsync()
+    {
+        List<IssueRow> rows = SelectedRows();
+        return Remediator.CommonFix(rows.Select(r => r.RuleId)) is string fix ? RunAndReloadAsync([.. rows.Select(r => r.FileId).Distinct()], fix) : Task.CompletedTask;
+    }
+
+    private Task RunOnSelectedAsync(string actionId) => RunAndReloadAsync([.. SelectedRows().Select(r => r.FileId).Distinct()], actionId);
+
+    private async Task RunAndReloadAsync(IReadOnlyList<long> fileIds, string actionId)
+    {
+        await Remediator.RunAsync(Services, this, fileIds, actionId).ConfigureAwait(true);
+        if (!IsDisposed)
+        {
+            CloseDetail();
+            Reload();
         }
     }
 
@@ -643,7 +675,7 @@ internal sealed class IssuesPage : PageBase
             new(Strings.Menu.ShowInFolder, IconName.Folder, Strings.Menu.ShortcutAltEnter, Tag: "show"),
             new(Strings.Menu.CopyPath, IconName.Copy, Strings.Menu.ShortcutCtrlC, Tag: "copy"),
             PopupItem.Separator,
-            new(Strings.Menu.MoveToQuarantine, IconName.Quarantine, Strings.Menu.ShortcutDel, Enabled: false, Tag: "quarantine"),
+            new(Strings.Menu.MoveToQuarantine, IconName.Quarantine, Strings.Menu.ShortcutDel, Enabled: Services.Operations is not null, Tag: "quarantine"),
         ];
         KitMenu.Show(_list, screen, items, item =>
         {
@@ -666,6 +698,9 @@ internal sealed class IssuesPage : PageBase
                     break;
                 case "copy":
                     CopySelectedPaths();
+                    break;
+                case "quarantine":
+                    _ = RunAndReloadAsync(SelectedRows() is { Count: > 0 } selected ? [.. selected.Select(r => r.FileId).Distinct()] : [row.FileId], ActionIds.Quarantine);
                     break;
             }
         });

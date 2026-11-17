@@ -155,6 +155,33 @@ public sealed class FindingStore(Database database)
         RecomputeFileSummary(context, fileId);
     }
 
+    /// <summary>Resolves every open finding of a file with a reason (an operation after a repair or a move to quarantine).</summary>
+    public static void ResolveAll(WriteContext context, long fileId, string resolution)
+    {
+        SqliteCommand command = context.Command(
+            "UPDATE findings SET status = $resolved, resolved_utc = $now, resolution = $resolution WHERE file_id = $file AND status = $open");
+        command.Add("$resolved", (int)FindingStatus.Resolved);
+        command.Add("$open", (int)FindingStatus.Open);
+        command.Add("$now", context.NowTicks);
+        command.Add("$resolution", resolution);
+        command.Add("$file", fileId);
+        command.ExecuteNonQuery();
+        RecomputeFileSummary(context, fileId);
+    }
+
+    /// <summary>Reopens the findings an operation resolved (its undo).</summary>
+    public static void Reopen(WriteContext context, long fileId, string resolution)
+    {
+        SqliteCommand command = context.Command(
+            "UPDATE findings SET status = $open, resolved_utc = NULL, resolution = NULL WHERE file_id = $file AND status = $resolved AND resolution = $resolution");
+        command.Add("$open", (int)FindingStatus.Open);
+        command.Add("$resolved", (int)FindingStatus.Resolved);
+        command.Add("$resolution", resolution);
+        command.Add("$file", fileId);
+        command.ExecuteNonQuery();
+        RecomputeFileSummary(context, fileId);
+    }
+
     /// <summary>Ignores or reopens findings chosen by the user. Ignored findings leave the file's open counts.</summary>
     public Task SetStatusAsync(IReadOnlyCollection<long> findingIds, FindingStatus status, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => SetStatus(context, findingIds, status), ChangeFlags.Findings | ChangeFlags.Files, cancellationToken);

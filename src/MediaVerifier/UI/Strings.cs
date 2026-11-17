@@ -784,6 +784,51 @@ internal static class Strings
         public const string Show = "Show";
     }
 
+    /// <summary>Dialog A (confirm a repair) and the result toasts (subplan 09, D); verbs and results from subplan 09.</summary>
+    public static class Repair
+    {
+        public const string OneFile = "1 file";
+        public const string ManyFiles = "{0} files";
+        public const string TitleRestore = "Restore {0} from a healthy copy?";
+        public const string TitleRemux = "Rebuild the index of {0}?";
+        public const string TitleRename = "Rename {0}?";
+        public const string TitleShrink = "Convert {0} to 16-bit?";
+        public const string TitleRewrite = "Rewrite {0}?";
+        public const string TitleSalvage = "Save a playable copy of {0}?";
+        public const string TitleQuarantine = "Move {0} to quarantine?";
+        public const string AboutRestore = "A copy from another folder whose fingerprint matches this file's is copied over the damaged file.";
+        public const string AboutRemux = "The container and its index are written again. The audio and video are copied unchanged and checked to be identical.";
+        public const string AboutRename = "The file gets the extension of the format it really holds. If that name is taken, a number is added.";
+        public const string AboutShrink = "The audio is stored again at 16 bits. The dropped bits are all zero, so nothing is lost; the result is checked sample by sample.";
+        public const string AboutRewrite = "The audio is decoded and stored again, which writes a correct checksum. The result is checked sample by sample.";
+        public const string AboutSalvage = "A new file is written beside the original without the damaged parts. The original stays as it is.";
+        public const string AboutQuarantine = "The file is moved to the quarantine folder inside its library folder and is no longer scanned.";
+        public const string WhatAndSize = "{0} · {1}";
+        public const string OriginalsToQuarantine = "Originals go to quarantine for {0} days";
+        public const string CanUndo = "You can undo this";
+        public const string VerbRestore = "Restore";
+        public const string VerbRemux = "Rebuild index";
+        public const string VerbRename = "Rename";
+        public const string VerbShrink = "Convert to 16-bit";
+        public const string VerbRewrite = "Rewrite";
+        public const string VerbSalvage = "Save a playable copy";
+        public const string VerbQuarantine = "Move to quarantine";
+        public const string ResultRestore = "Restored";
+        public const string ResultRemux = "Index rebuilt";
+        public const string ResultRename = "Renamed";
+        public const string ResultShrink = "Converted to 16-bit";
+        public const string ResultRewrite = "Rewritten";
+        public const string ResultSalvage = "Playable copy saved";
+        public const string ResultQuarantine = "Moved to quarantine";
+        public const string ResultAccept = "Accepted";
+        public const string ResultFor = "{0} for {1}";
+        public const string FailedFor = "{0} failed for {1}";
+        public const string Skipped = "{0} skipped";
+        public const string OriginalsInQuarantine = "originals are in quarantine";
+        public const string Undone = "Undone";
+        public const string UndoFailed = "Undo failed";
+    }
+
     public static class Tray
     {
         public const string Open = "Open";
