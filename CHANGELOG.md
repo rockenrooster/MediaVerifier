@@ -13,6 +13,8 @@ All notable changes to MediaVerifier are documented here.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
 - Updates: Settings → Updates checks for a signed new version and installs it after verifying the
   download. Portable zip and installer builds (the installer checks for the .NET 10 Desktop Runtime).
+- More repairs: extract the embedded preview of a damaged camera photo, make an experimental
+  de-clipped copy of lossless audio, and move files to the Recycle Bin.
 - Schedules: scans run on their own through Windows Task Scheduler, even when MediaVerifier is
   closed, with nightly, weekly and monthly templates; they wait while on battery or while a game or
   full-screen app runs, and report new problems in the notification area and the bell.

@@ -8,7 +8,6 @@ namespace MediaVerifier.Core.Remediation;
 
 /// <summary>
 /// Which actions apply to a finding, in the rule's order (subplan 12, task R-01), and the runnable ones.
-/// Actions not built yet (<c>ACT-EXTRACT-PREVIEW</c>, <c>ACT-DECLIP-COPY</c>) are never offered.
 /// </summary>
 public static class ActionCatalog
 {
@@ -16,7 +15,7 @@ public static class ActionCatalog
     public static IReadOnlyList<string> Runnable { get; } =
     [
         ActionIds.RestoreCopy, ActionIds.Remux, ActionIds.FixExtension, ActionIds.ShrinkBitDepth, ActionIds.ReencodeFlac,
-        ActionIds.Salvage, ActionIds.Quarantine, ActionIds.AcceptBaseline,
+        ActionIds.Salvage, ActionIds.ExtractPreview, ActionIds.DeclipCopy, ActionIds.Quarantine, ActionIds.Recycle, ActionIds.AcceptBaseline,
     ];
 
     /// <summary>Creates a runnable action, or null for advice, meta actions handled by the UI, and actions not built.</summary>
@@ -28,6 +27,9 @@ public static class ActionCatalog
         ActionIds.ShrinkBitDepth => new FlacRewriteAction(shrinkTo16: true),
         ActionIds.ReencodeFlac => new FlacRewriteAction(shrinkTo16: false),
         ActionIds.Salvage => new SalvageAction(),
+        ActionIds.ExtractPreview => new ExtractPreviewAction(),
+        ActionIds.DeclipCopy => new DeclipCopyAction(),
+        ActionIds.Recycle => new RecycleAction(),
         ActionIds.Quarantine => new QuarantineAction(),
         ActionIds.AcceptBaseline => new AcceptBaselineAction(fileSystem),
         _ => null,
@@ -63,7 +65,8 @@ public static class ActionCatalog
     }
 
     /// <summary>The first runnable action that applies, for the drawer's primary button; null when only advice applies.</summary>
-    public static string? Recommended(IReadOnlyList<string> actions) => actions?.FirstOrDefault(a => Runnable.Contains(a) && a != ActionIds.Quarantine && a != ActionIds.AcceptBaseline);
+    public static string? Recommended(IReadOnlyList<string> actions) =>
+        actions?.FirstOrDefault(a => Runnable.Contains(a) && a is not (ActionIds.Quarantine or ActionIds.Recycle or ActionIds.AcceptBaseline or ActionIds.DeclipCopy));
 
     private static bool Applies(string action, string ruleId, FileRecord file, RootRecord root, bool hasHealthyCopy, bool decodesCleanly)
     {
@@ -75,7 +78,8 @@ public static class ActionCatalog
             ActionIds.RestoreCopy => hasHealthyCopy && !backupRoot,
             ActionIds.Recycle => !share && !backupRoot,
             ActionIds.Salvage => file.MediaKind is MediaKind.Audio or MediaKind.Video && !backupRoot,
-            ActionIds.ExtractPreview or ActionIds.DeclipCopy => false,
+            ActionIds.ExtractPreview => file.MediaKind == MediaKind.Photo && !backupRoot,
+            ActionIds.DeclipCopy => Lossless(file.Ext) && !backupRoot,
             ActionIds.ReencodeFlac => flac && decodesCleanly && ruleId == "COR-CHECKSUM" && !backupRoot,
             ActionIds.ShrinkBitDepth => (flac || file.Ext.Equals("wav", StringComparison.OrdinalIgnoreCase)) && !backupRoot,
             ActionIds.AcceptBaseline => ruleId == "INT-ROT",
@@ -83,6 +87,8 @@ public static class ActionCatalog
             _ => true,
         };
     }
+
+    private static bool Lossless(string extension) => extension.ToLowerInvariant() is "flac" or "wav" or "aif" or "aiff" or "wv" or "ape";
 
     /// <summary>Whether a fingerprint-verified copy exists in another root (the finder checks name, size and fingerprint).</summary>
     public static bool HasHealthyCopy(Database database, IMediaFileSystem fileSystem, FileRecord file) =>

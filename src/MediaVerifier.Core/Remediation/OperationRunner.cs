@@ -23,6 +23,9 @@ public enum ActionClass
 
     /// <summary>Changes app state only.</summary>
     Meta,
+
+    /// <summary>Hands the file to the Windows Recycle Bin; it can be restored there, not undone here.</summary>
+    Recycle,
 }
 
 /// <summary>Everything an action needs about one file.</summary>
@@ -130,6 +133,11 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         if (action.Class == ActionClass.Meta)
         {
             return null;
+        }
+
+        if (action.Class == ActionClass.Recycle && root.Path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return CoreStrings.Remediation.NoRecycleBin;
         }
 
         FileStat? stat = fileSystem.Stat(path);
@@ -243,6 +251,11 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                     rollback = () => File.Move(backup, source);
                     result = null;
                     break;
+                case ActionClass.Recycle:
+                    Step("backup");
+                    RecycleAction.Send(source);
+                    result = null;
+                    break;
                 case ActionClass.Move:
                     string renamed = UniquePath(Path.Combine(Path.GetDirectoryName(source) ?? string.Empty, context.FinalName));
                     Step("rename");
@@ -292,6 +305,12 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         OperationRecord? operation = await Task.Run(() => database.Journal.List(int.MaxValue).FirstOrDefault(o => o.Id == operationId), token).ConfigureAwait(false);
         if (operation is not { Status: OperationStatus.Done, UndoJson: string json } || JsonSerializer.Deserialize(json, RemediationJsonContext.Default.UndoData) is not UndoData undo)
         {
+            return CoreStrings.Remediation.CannotUndo;
+        }
+
+        if (undo.ActionClass == nameof(ActionClass.Recycle))
+        {
+            // Windows restores it from the Recycle Bin; nothing here can.
             return CoreStrings.Remediation.CannotUndo;
         }
 
@@ -510,6 +529,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                     ChangeFlags.Files | ChangeFlags.Findings,
                     token).ConfigureAwait(false);
                 break;
+            case ActionClass.Recycle:
             case ActionClass.Move when kept is not null:
                 await database.Writer.ExecuteAsync(
                     c =>

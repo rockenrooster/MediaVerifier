@@ -109,7 +109,7 @@ internal static class Remediator
             lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Repair.OriginalsToQuarantine, quarantineDays));
         }
 
-        lines.Add(Strings.Repair.CanUndo);
+        lines.Add(action.Class == ActionClass.Recycle ? Strings.Repair.CannotUndo : Strings.Repair.CanUndo);
         return MessageDialog.Confirm(form, title, string.Join(Environment.NewLine, lines), Strings.Kit.Cancel, Verb(action.Id), destructive: false);
     }
 
@@ -131,7 +131,7 @@ internal static class Remediator
                 detail.Add(Strings.Repair.OriginalsInQuarantine);
             }
 
-            bool undoable = action.Class != ActionClass.Meta;
+            bool undoable = action.Class is not (ActionClass.Meta or ActionClass.Recycle);
             services.ShowToast?.Invoke(new ToastContent(Severity.None, title, string.Join(Strings.Separator, detail), undoable ? Strings.Dialogs.Undo : null, undoable ? () => _ = UndoBatchAsync(services, batch) : null));
         }
 
@@ -152,6 +152,9 @@ internal static class Remediator
         ActionIds.ShrinkBitDepth => Strings.Repair.VerbShrink,
         ActionIds.ReencodeFlac => Strings.Repair.VerbRewrite,
         ActionIds.Salvage => Strings.Repair.VerbSalvage,
+        ActionIds.ExtractPreview => Strings.Repair.VerbPreview,
+        ActionIds.DeclipCopy => Strings.Repair.VerbDeclip,
+        ActionIds.Recycle => Strings.Repair.VerbRecycle,
         ActionIds.AcceptBaseline => Strings.Dialogs.Accept,
         _ => Strings.Repair.VerbQuarantine,
     };
@@ -164,6 +167,9 @@ internal static class Remediator
         ActionIds.ShrinkBitDepth => Strings.Repair.ResultShrink,
         ActionIds.ReencodeFlac => Strings.Repair.ResultRewrite,
         ActionIds.Salvage => Strings.Repair.ResultSalvage,
+        ActionIds.ExtractPreview => Strings.Repair.ResultPreview,
+        ActionIds.DeclipCopy => Strings.Repair.ResultDeclip,
+        ActionIds.Recycle => Strings.Repair.ResultRecycle,
         ActionIds.AcceptBaseline => Strings.Repair.ResultAccept,
         _ => Strings.Repair.ResultQuarantine,
     };
@@ -176,6 +182,9 @@ internal static class Remediator
         ActionIds.ShrinkBitDepth => Strings.Repair.TitleShrink,
         ActionIds.ReencodeFlac => Strings.Repair.TitleRewrite,
         ActionIds.Salvage => Strings.Repair.TitleSalvage,
+        ActionIds.ExtractPreview => Strings.Repair.TitlePreview,
+        ActionIds.DeclipCopy => Strings.Repair.TitleDeclip,
+        ActionIds.Recycle => Strings.Repair.TitleRecycle,
         _ => Strings.Repair.TitleQuarantine,
     };
 
@@ -187,6 +196,9 @@ internal static class Remediator
         ActionIds.ShrinkBitDepth => Strings.Repair.AboutShrink,
         ActionIds.ReencodeFlac => Strings.Repair.AboutRewrite,
         ActionIds.Salvage => Strings.Repair.AboutSalvage,
+        ActionIds.ExtractPreview => Strings.Repair.AboutPreview,
+        ActionIds.DeclipCopy => Strings.Repair.AboutDeclip,
+        ActionIds.Recycle => Strings.Repair.AboutRecycle,
         _ => Strings.Repair.AboutQuarantine,
     };
 }

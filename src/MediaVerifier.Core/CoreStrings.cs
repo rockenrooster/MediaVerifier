@@ -49,5 +49,7 @@ public static class CoreStrings
         public const string OutputUnreadable = "The new file could not be read back.";
         public const string NotNeeded = "The file already has the right extension.";
         public const string ToolFailed = "The media engine could not write the new file.";
+        public const string NoPreview = "The file holds no intact embedded preview.";
+        public const string NoRecycleBin = "This drive has no Recycle Bin.";
     }
 }
