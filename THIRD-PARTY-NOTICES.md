@@ -1,5 +1,7 @@
 # Third-party notices
 
+MediaVerifier itself is released under the MIT License (`LICENSE`, beside this file).
+
 MediaVerifier ships the components below in its app folder. This file is copied into the app folder
 by `build.ps1`. The versions are those referenced by the projects; the FFmpeg section lists what is
 built into the bundle `ffmpeg-bundle-9.0.2-mv2`, from the bundle's own `THIRD-PARTY.txt` (subplan 17,

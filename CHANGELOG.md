@@ -5,6 +5,8 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- MediaVerifier is released under the MIT License; the licence is in the app folder and in
+  Settings → About → Licences.
 - MediaVerifier ships its own FFmpeg 9.0.2 (LGPL 2.1 or later), built with only the decoders,
   filters and file access it needs; it cannot open network addresses. The licences of FFmpeg and the
   libraries built into it are in THIRD-PARTY.txt beside it, and its source is published with the build.

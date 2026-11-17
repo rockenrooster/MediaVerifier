@@ -111,4 +111,6 @@ visible changes go under *Unreleased* in [CHANGELOG.md](CHANGELOG.md) and become
 
 ## License
 
-No license file is currently included; the owner chooses one before the first public release.
+MediaVerifier is released under the [MIT License](LICENSE). It runs FFmpeg as separate programs
+under the LGPL 2.1 or later; [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) lists every bundled component
+and its licence.
