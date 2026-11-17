@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.8 - 2026-11-17
+
 - Fixed: the schedule editor greyed out Save without saying why, and a time typed as 3:00 (not
   03:00) was enough to do it. 3:00 now counts, and the box at the bottom says what is missing.
 - Fixed: an ignored problem could not be brought back. Ignore now offers Undo, and in Issues with
