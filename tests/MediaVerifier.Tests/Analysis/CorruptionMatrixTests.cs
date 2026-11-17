@@ -19,7 +19,9 @@ namespace MediaVerifier.Tests.Analysis;
 [Trait("Category", "Integration")]
 public sealed class CorruptionMatrixTests(ITestOutputHelper output)
 {
-    /// <summary>Fixture, mutation, rules at Quick, Standard, Deep (each cumulative), rules that may also appear.</summary>
+    /// <summary>
+    /// Fixture, mutation, rules at Quick, Standard, Deep (each cumulative; "A|B" means either), rules that may also appear.
+    /// </summary>
     public static TheoryData<string, string, string, string, string, string> Matrix => new()
     {
         { "src16.flac", "flip", "", "COR-CHECKSUM", "", "COR-DECODE" },
@@ -31,7 +33,9 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
         { "o128.opus", "flip2", "", "COR-CHECKSUM", "", "COR-DECODE" },
         { "native1080.mp4", "truncate 0.6", "COR-CONTAINER", "", "", "COR-TRUNCATED" },
         { "fs.mp4", "truncate 0.6", "COR-TRUNCATED", "", "", "COR-DECODE" },
-        { "av.mp4", "random 2000", "", "COR-DECODE", "", "COR-CONCEALED" },
+        // Standard decodes key frames and all audio: it sees this only when the damage lands in audio (about 8 % of
+        // positions in docs/detection-rates.md). Deep decodes every frame: decoder errors or concealed frames.
+        { "av.mp4", "random 2000", "", "", "COR-DECODE|COR-CONCEALED", "COR-DECODE COR-CONCEALED" },
         { "fs.mp4", "random 2000", "", "", "COR-CONCEALED", "COR-DECODE" },
         { "fs.mp4", "flip", "", "", "COR-CONCEALED", "COR-DECODE" },
         { "t.mkv", "truncate 0.6", "COR-TRUNCATED", "", "", "COR-DECODE" },
@@ -66,8 +70,9 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
             Scan scan = await ScanOneAsync(fixture, path => Apply(path, mutation), depth);
             HashSet<string> found = [.. scan.Findings.Select(f => f.RuleId)];
             output.WriteLine($"{fixture} {mutation} @ {depth}: {string.Join(", ", scan.Findings.Select(f => $"{f.RuleId} {f.Severity} \"{f.Summary}\""))}");
-            Assert.True(expected.IsSubsetOf(found), $"{depth}: expected {string.Join(", ", expected)}; found {string.Join(", ", found)}");
-            Assert.True(found.IsSubsetOf(expected.Concat(allowed)), $"{depth}: unexpected {string.Join(", ", found.Except(expected).Except(allowed))}");
+            Assert.True(expected.All(word => word.Split('|').Any(found.Contains)), $"{depth}: expected {string.Join(", ", expected)}; found {string.Join(", ", found)}");
+            HashSet<string> permitted = [.. expected.SelectMany(word => word.Split('|')), .. allowed];
+            Assert.True(found.IsSubsetOf(permitted), $"{depth}: unexpected {string.Join(", ", found.Except(permitted))}");
         }
     }
 

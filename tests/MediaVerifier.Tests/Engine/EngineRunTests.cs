@@ -266,15 +266,17 @@ public sealed class EngineRunTests
     [Fact]
     public async Task ABudgetStopsTheRunAndTheNextOneContinues()
     {
-        CountingProvider provider = new(delay: TimeSpan.FromMilliseconds(150));
+        CountingProvider provider = new(delay: TimeSpan.FromMilliseconds(400));
         using EngineHarness h = new([provider]);
         for (int i = 0; i < 150; i++)
         {
             h.Write($"f{i:D3}.jpg", EngineHarness.Bytes(100, i));
         }
 
+        // Analysing all 150 files takes several seconds even with many cores; two seconds lets some finish on a slow
+        // CI runner and leaves some for the next run on a fast machine.
         await h.AddRootAsync(h.Library);
-        RunSummary first = await h.ScanAsync(budget: TimeSpan.FromMilliseconds(300));
+        RunSummary first = await h.ScanAsync(budget: TimeSpan.FromSeconds(2));
         Assert.Equal(RunStatus.BudgetReached, first.Status);
         int afterFirst = provider.Calls;
         Assert.InRange(afterFirst, 1, 149);

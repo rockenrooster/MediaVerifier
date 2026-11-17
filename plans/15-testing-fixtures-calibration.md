@@ -133,7 +133,7 @@ modified time was preserved.
 | Opus | Flip two bytes | — | `COR-CHECKSUM` | same | `INT-ROT` |
 | MP4, index at end | Truncate 60 % | `COR-CONTAINER` | same | same | (Modified) |
 | MP4, index at front | Truncate 60 % | `COR-TRUNCATED` | `COR-TRUNCATED` (4.0 of 6.0 s) | same | (Modified) |
-| MP4 with audio | Random 2,000 bytes | — | `COR-DECODE` | same (+ `COR-CONCEALED` when non-key frames are hit) | `INT-ROT` |
+| MP4 with audio | Random 2,000 bytes | — | `COR-DECODE` only when the audio is hit (about 8 % of positions, docs/detection-rates.md) | `COR-DECODE` or `COR-CONCEALED` | `INT-ROT` |
 | MP4, video only | Random 2,000 bytes | — | may be missed (non-key frames) | `COR-CONCEALED` | `INT-ROT` |
 | MP4, video only | Flip one byte | — | may be missed | `COR-CONCEALED` | `INT-ROT` |
 | MKV | Truncate 60 % | `COR-TRUNCATED` when the segment size is known | `COR-TRUNCATED` | same | (Modified) |
