@@ -51,3 +51,19 @@ only allocation that grew with the length.
 Subplan 10 asked for analysis under 25 % of the FLAC decode time. FFmpeg 8.0.1 decodes FLAC at about
 2,000 times real time, which leaves about 35 ms for 5 minutes, less than the FFT of the long-term
 spectrum alone; the target is restated as above (deviations log).
+
+## Frame sampling (subplan 11, task VP-02)
+
+`dotnet test -c Release --filter "Category=Perf&FullyQualifiedName~FrameSamplingPerfTests"`, 2026-11-17,
+FFmpeg 8.0.1. The same FFmpeg command the frame-sample provider builds; best of three.
+
+| Measurement | Before | After | Target |
+|-------------|--------|-------|--------|
+| 2160p film, 24 samples (measured on 10 samples of `uhd10m.mp4`, scaled) | 5.8 s | 3.3 s | under 5 s |
+| 3840 × 2160 photo (`img2x.jpg`) | 371 ms | 231 ms | under 0.3 s |
+
+Profile of the 2160p run before the change (10 samples): seeking and decoding the key frames about
+1,050 ms, the three down-up SSIM branches about 100 ms, and `siti`, `blockdetect` and `blurdetect` on
+the whole 2304 × 1296 crop about 1,070 ms. The measures now run on the centre quarter of the crop
+(its corner on the frame's 16-pixel grid, so block edges keep their phase), and photos measure only
+spatial information (blockiness and blur are video rules).

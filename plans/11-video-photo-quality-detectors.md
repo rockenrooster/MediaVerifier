@@ -75,6 +75,9 @@ ffmpeg <std> -noaccurate_seek -ss <t0> -i <file> -noaccurate_seek -ss <t1> -i <f
 
 - Each `c<height>.log` has one line per frame: `n:1 Y:0.994236 U:... V:... All:... (dB)`. Use `Y`.
 - `frame.log` has per-frame `lavfi.block`, `lavfi.blur`, `lavfi.siti.si` values.
+- The three measures run on the centre quarter of the crop (`crop=w/2:h/2` placed on the frame's
+  16-pixel grid) and photos run `siti` only; on the whole crop they cost as much as the decoding
+  (deviations log, VP-02).
 - Verified cost: about 0.3 s for three samples and two candidates at 1080p.
 - Compute sizes in C# from the probe; do not use `scale2ref` (deprecated).
 

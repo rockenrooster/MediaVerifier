@@ -33,6 +33,14 @@ public sealed class VideoPhotoQualityTests
         Assert.Equal(expected, graph);
         Assert.Equal(["-map", "[o]", "-f", "null", "-", "-map", "[ao]", "-f", "null", "-", "-map", "[bo]", "-f", "null", "-", "-map", "[mo]", "-f", "null", "-"], FrameSampling.Outputs(2));
         Assert.Contains("[0:v]yadif=deint=all,trim=end_frame=1", FrameSampling.Graph(1, 100, 100, [50], [(50, 50)], deinterlace: true), StringComparison.Ordinal);
+
+        // The measures run on the centre quarter, its corner on the frame's 16-pixel grid: 1080p crop 1152 x 648 at (384, 216).
+        MetricsWindow window = FrameSampling.Window(1920, 1080, 1152, 648, spatialOnly: false);
+        Assert.Equal(new MetricsWindow(288, 152, 576, 324, false), window);
+        Assert.Equal(0, (384 + window.X) % 16);
+        Assert.Equal(0, (216 + window.Y) % 16);
+        Assert.EndsWith("[m]crop=576:324:288:152,siti=print_summary=0,blockdetect,blurdetect,metadata=mode=print:file=frame.log[mo]", FrameSampling.Graph(3, 1152, 648, [720, 540], [(768, 432), (576, 324)], false, window), StringComparison.Ordinal);
+        Assert.EndsWith("[m]crop=1536:864:768:424,siti=print_summary=0,metadata=mode=print:file=frame.log[mo]", FrameSampling.Graph(1, 3072, 1728, [1440], [(2048, 1152)], false, FrameSampling.Window(3840, 2160, 3072, 1728, spatialOnly: true)), StringComparison.Ordinal);
     }
 
     [Fact]

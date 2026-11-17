@@ -35,6 +35,9 @@ public sealed record FrameSamplesArtifact(
         new(RunOutcome.Completed, LogDigest.Empty, width, height, 0, 0, [], [], reason);
 }
 
+/// <summary>The part of the crop the per-frame measures look at (see <see cref="FrameSampling.Window"/>).</summary>
+public sealed record MetricsWindow(int X, int Y, int Width, int Height, bool SpatialOnly);
+
 /// <summary>Sample times, crops, candidates, the filter graph and the log parsers (subplan 11, task V-01).</summary>
 public static class FrameSampling
 {
@@ -83,7 +86,7 @@ public static class FrameSampling
     /// <c>blockdetect</c> and <c>blurdetect</c> printed to <c>frame.log</c>. Stats files are relative names,
     /// so the graph holds no paths.
     /// </summary>
-    public static string Graph(int inputs, int cropWidth, int cropHeight, IReadOnlyList<int> candidates, IReadOnlyList<(int Width, int Height)> sizes, bool deinterlace)
+    public static string Graph(int inputs, int cropWidth, int cropHeight, IReadOnlyList<int> candidates, IReadOnlyList<(int Width, int Height)> sizes, bool deinterlace, MetricsWindow? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(sizes);
@@ -114,8 +117,31 @@ public static class FrameSampling
             graph.Append(c, $"[{l}1][{l}3]ssim=stats_file=c{candidates[k]}.log[{l}o];");
         }
 
-        graph.Append("[m]siti=print_summary=0,blockdetect,blurdetect,metadata=mode=print:file=frame.log[mo]");
+        string window = metrics is { } m ? string.Create(c, $"crop={m.Width}:{m.Height}:{m.X}:{m.Y},") : string.Empty;
+        string measures = metrics is { SpatialOnly: true } ? "siti=print_summary=0" : "siti=print_summary=0,blockdetect,blurdetect";
+        graph.Append(c, $"[m]{window}{measures},metadata=mode=print:file=frame.log[mo]");
         return graph.ToString();
+    }
+
+    /// <summary>
+    /// Where the per-frame measures run: the centre quarter of the crop, placed so that its top-left corner sits on
+    /// the frame's 16-pixel grid (block edges keep their phase); photos need only spatial information.
+    /// </summary>
+    public static MetricsWindow Window(int frameWidth, int frameHeight, int cropWidth, int cropHeight, bool spatialOnly)
+    {
+        int width = Even(cropWidth / 2.0);
+        int height = Even(cropHeight / 2.0);
+        int originX = (frameWidth - cropWidth) / 2;
+        int originY = (frameHeight - cropHeight) / 2;
+        int x = Aligned(originX, (cropWidth - width) / 2, cropWidth - width);
+        int y = Aligned(originY, (cropHeight - height) / 2, cropHeight - height);
+        return new MetricsWindow(x, y, width, height, spatialOnly);
+    }
+
+    private static int Aligned(int origin, int wanted, int max)
+    {
+        int absolute = (origin + wanted) / 16 * 16;
+        return Math.Clamp(absolute - origin, 0, Math.Max(0, max));
     }
 
     /// <summary>The output maps for <see cref="Graph"/>: every branch to the null muxer.</summary>
@@ -229,7 +255,8 @@ public sealed class FrameSampleProvider() : ArtifactProvider<FrameSamplesArtifac
     /// <summary>Photos below this many pixels are not tested (subplan 11, IMG-UPSCALED).</summary>
     public const int MinPhotoPixels = 1_000_000;
 
-    public override int Version => 1;
+    /// <summary>Version 2 measures spatial information, blocks and blur on the centre quarter of the crop.</summary>
+    public override int Version => 2;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -290,7 +317,8 @@ public sealed class FrameSampleProvider() : ArtifactProvider<FrameSamplesArtifac
             }
         }
 
-        args.AddRange(["-filter_complex", FrameSampling.Graph(times.Length, cropWidth, cropHeight, candidates, sizes, interlaced)]);
+        MetricsWindow window = FrameSampling.Window(width, height, cropWidth, cropHeight, spatialOnly: photo);
+        args.AddRange(["-filter_complex", FrameSampling.Graph(times.Length, cropWidth, cropHeight, candidates, sizes, interlaced, window)]);
         args.AddRange(FrameSampling.Outputs(candidates.Length));
         Directory.CreateDirectory(file.TempDirectory);
         foreach (string stale in candidates.Select(c => $"c{c}.log").Append("frame.log"))
