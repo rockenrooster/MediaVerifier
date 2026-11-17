@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.11 - 2026-11-17
+
 - Add folder on a network folder that is offline says it is trying to reach it, then that it cannot,
   instead of showing "Counting files…" for over two minutes.
 - The detail panel opens from the keyboard: each finding, History and Technical details has a
