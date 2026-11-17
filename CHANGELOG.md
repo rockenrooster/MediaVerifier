@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- MediaVerifier ships its own FFmpeg 9.0.2 (LGPL 2.1 or later), built with only the decoders,
+  filters and file access it needs; it cannot open network addresses. The licences of FFmpeg and the
+  libraries built into it are in THIRD-PARTY.txt beside it, and its source is published with the build.
 - Windows notifications: scheduled scans report in the Windows notification centre, where the
   notification stays after MediaVerifier exits; Review opens the run. A newer run replaces an unread
   older notification. Quiet hours post silently, with From and To times in Settings → Notifications,
