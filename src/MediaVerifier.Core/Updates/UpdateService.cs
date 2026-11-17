@@ -193,6 +193,16 @@ public sealed class UpdateService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts the downloaded installer silently; it closes MediaVerifier and opens it again afterwards. Tests replace it
+    /// so that nothing is installed.
+    /// </summary>
+    internal Action<string> StartInstaller { get; set; } = static path => Process.Start(new ProcessStartInfo(path)
+    {
+        Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS",
+        UseShellExecute = true,
+    })?.Dispose();
+
     public void InstallDownloadedUpdate(string setupPath)
     {
         if (!File.Exists(setupPath))
@@ -202,12 +212,7 @@ public sealed class UpdateService : IDisposable
 
         UpdateCheckResult result = LastResult ?? throw new InvalidOperationException("Check for updates before installing.");
         ValidateDownloadedFile(setupPath, result);
-
-        Process.Start(new ProcessStartInfo(setupPath)
-        {
-            Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS",
-            UseShellExecute = true
-        });
+        StartInstaller(setupPath);
     }
 
     public void Dispose() => _http.Dispose();

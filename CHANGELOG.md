@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Updates: every step of Download and install is written to the log and any failure is shown, instead
+  of the button seeming to do nothing. After an update of an all-users install MediaVerifier opens as
+  the signed-in user, not as administrator, and the installer closes a running MediaVerifier itself.
 
 ## 0.1.0.2 - 2026-11-17
 

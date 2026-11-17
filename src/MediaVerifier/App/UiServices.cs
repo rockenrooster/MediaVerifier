@@ -122,12 +122,15 @@ internal sealed class UiServices : IDisposable
     /// <summary>The last check found a newer release (the rail's Update item and the Settings dot).</summary>
     public bool UpdateAvailable => Updates?.LastResult?.IsUpdateAvailable == true;
 
-    /// <summary>Opens the user's library, the bundled media engine and the scan engine.</summary>
-    public static UiServices CreateLive(AppState state)
+    /// <summary>
+    /// Opens the user's library, the bundled media engine and the scan engine. Tests pass the engine and an update
+    /// service, and skip the start-up maintenance, which registers notifications and reconciles the Task Scheduler.
+    /// </summary>
+    public static UiServices CreateLive(AppState state, FfmpegLocation? mediaEngine = null, Core.Updates.UpdateService? updates = null, bool startupMaintenance = true)
     {
         ArgumentNullException.ThrowIfNull(state);
         Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
-        FfmpegLocation location = FfmpegLocator.Locate(state.Paths);
+        FfmpegLocation location = mediaEngine ?? FfmpegLocator.Locate(state.Paths);
         FfRunner runner = new(location);
         RuleSettings rules = RuleSettings.Defaults;
         try
@@ -152,12 +155,12 @@ internal sealed class UiServices : IDisposable
             Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence")), new Core.Analysis.PictureRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "pictures"))),
             Rules = rules,
             Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
-            Updates = new Core.Updates.UpdateService(),
+            Updates = updates ?? new Core.Updates.UpdateService(),
         };
         services._owned.Add(services.Updates);
 
         // A crash during an operation leaves at most its journaled temporary file: clean it up now.
-        _ = Task.Run(async () =>
+        _ = !startupMaintenance ? Task.CompletedTask : Task.Run(async () =>
         {
             try
             {

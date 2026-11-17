@@ -121,26 +121,30 @@ internal static class UpdateInstaller
         UpdateCheckResult? result = updates.LastResult;
         if (result is null || (portable ? !result.CanInstall : !result.CanDownload))
         {
+            services.State.Log.Info("Update install asked for, but the last check offers nothing to install");
             return;
         }
 
-        string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText.TrimStart('v', 'V'));
-        if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
-        {
-            return;
-        }
-
-        bool ownScan = services.Scans.Status.IsActive;
-        bool backgroundScan = !ownScan && services.BackgroundRunActive();
-        if ((ownScan || backgroundScan)
-            && !MessageDialog.Confirm(owner, Strings.Settings.ScanRunningTitle, Strings.Settings.ScanRunningUpdate, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
-        {
-            return;
-        }
-
+        // Every step is logged and every failure shown: a failure that is only swallowed looks like a dead button.
         try
         {
+            string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText.TrimStart('v', 'V'));
+            if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+            {
+                return;
+            }
+
+            bool ownScan = services.Scans.Status.IsActive;
+            bool backgroundScan = !ownScan && services.BackgroundRunActive();
+            if ((ownScan || backgroundScan)
+                && !MessageDialog.Confirm(owner, Strings.Settings.ScanRunningTitle, Strings.Settings.ScanRunningUpdate, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+            {
+                return;
+            }
+
+            services.State.Log.Info($"Update to {result.LatestVersionText}: downloading");
             string setup = portable ? await updates.DownloadInstallerAsync().ConfigureAwait(true) : await updates.DownloadLatestAsync().ConfigureAwait(true);
+            services.State.Log.Info($"Update to {result.LatestVersionText}: downloaded and verified");
             if (ownScan)
             {
                 // Cancel cleanly: the run is checkpointed and left resumable before the installer closes the app.
@@ -163,11 +167,13 @@ internal static class UpdateInstaller
                 owner.Close();
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or HttpRequestException or TaskCanceledException
-            or System.ComponentModel.Win32Exception or System.Security.Cryptography.CryptographicException)
+        catch (Exception ex)
         {
             services.State.Log.Warning("The update could not be installed", ex);
-            services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.High, Strings.Settings.Updates, Strings.Settings.NotVerified));
+            string message = ex is InvalidOperationException or System.Security.Cryptography.CryptographicException
+                ? Strings.Settings.NotVerified
+                : string.Format(CultureInfo.CurrentCulture, Strings.Settings.CheckFailed, ex.Message);
+            services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.High, Strings.Settings.Updates, message));
         }
     }
 

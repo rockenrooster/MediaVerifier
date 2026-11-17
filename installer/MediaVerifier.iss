@@ -31,7 +31,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=yes
+CloseApplications=force
 CloseApplicationsFilter=MediaVerifier.exe
 RestartApplications=no
 VersionInfoVersion={#AppVersion}
@@ -62,8 +62,9 @@ Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\MediaVer
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\MediaVerifier.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\MediaVerifier.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\MediaVerifier.exe"; Flags: nowait skipifnotsilent
+; runasoriginaluser: after an all-users (elevated) install or update, MediaVerifier runs as the user, not elevated.
+Filename: "{app}\MediaVerifier.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\MediaVerifier.exe"; Flags: nowait skipifnotsilent runasoriginaluser
 
 [UninstallRun]
 ; Removes scheduled tasks and per-user registrations (subplan 13); the data folder stays.

@@ -338,7 +338,8 @@ internal sealed class SettingsPage : PageBase
             return;
         }
 
-        _ = await updates.CheckAsync().ConfigureAwait(true);
+        Core.Updates.UpdateCheckResult result = await updates.CheckAsync().ConfigureAwait(true);
+        State.Log.Info("Update check: " + result.Message);
         RefreshUpdateUi();
         if (FindForm() is MainForm main)
         {
