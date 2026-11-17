@@ -17,6 +17,9 @@ All notable changes to MediaVerifier are documented here.
   watched folder in Library → Browse (the OK and Problems chips still apply); Esc clears the box.
 - Notifications of scheduled scans in the bell open Issues when the scan found problems, and Scans
   otherwise; before, clicking one only marked it read.
+- Fixed: in a small window, or with the detail panel open, tables ran off the right edge: Scans
+  history lost its Result column, and Library cut file names short. Less important columns now
+  make room, and Issues moves the problem's name onto the second line when its column will not fit.
 
 ## 0.1.0.6 - 2026-11-17
 

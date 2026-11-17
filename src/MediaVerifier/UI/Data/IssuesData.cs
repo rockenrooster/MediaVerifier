@@ -43,7 +43,11 @@ internal sealed record IssueRow(
     long Size,
     MediaKind Kind,
     string FullPath,
-    string? Problem = null);
+    string? Problem = null)
+{
+    /// <summary>Line 2 with the problem in front, for a list too narrow for the Problem column (built once, not per paint).</summary>
+    public string Line2WithProblem { get; } = Problem is null ? Line2 : Problem + Strings.Separator + Line2;
+}
 
 /// <summary>Which evidence view a finding gets in the drawer (subplan 09, task UI-14).</summary>
 internal enum EvidenceView

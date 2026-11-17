@@ -151,7 +151,7 @@ internal sealed class ToolsPage : PageBase
                 List<OperationRecord> kept = [.. _data.Operations.Where(o => o.Status == OperationStatus.Done && o.BackupPath is not null)];
                 _kept = kept;
                 _source.Rows = [.. kept.Select(o => new[] { Path.GetFileName(o.SourcePath), Path.GetDirectoryName(o.SourcePath) ?? string.Empty, o.BackupPath is string b && File.Exists(b) ? UiFormat.Size(new FileInfo(b).Length) : Strings.Dash, UiFormat.RecentDay(LiveUiData.Ticks(o.Utc), Services.Clock.UtcNow), string.Format(CultureInfo.CurrentCulture, Strings.Tools.DaysValue, Math.Max(0, State.Settings.Scanning.EmptyQuarantineAfterDays - (int)(Services.Clock.UtcNow - LiveUiData.Ticks(o.Utc)).TotalDays)) })];
-                _table.Columns = [new(Strings.Tools.ColFile, 280, Sortable: false), new(Strings.Tools.ColWasIn, 300, Sortable: false), new(Strings.Tools.ColSize, 96, RightAligned: true, Sortable: false), new(Strings.Tools.ColMoved, 120, Sortable: false), new(Strings.Tools.ColRemovedIn, 0, Sortable: false)];
+                _table.Columns = [new(Strings.Tools.ColFile, 280, Sortable: false), new(Strings.Tools.ColWasIn, 300, Sortable: false), new(Strings.Tools.ColSize, 96, RightAligned: true, Sortable: false, Drop: 1), new(Strings.Tools.ColMoved, 120, Sortable: false, Drop: 2), new(Strings.Tools.ColRemovedIn, 0, Sortable: false, MinWidth: 120)];
                 _empty.Icon = IconName.Quarantine;
                 _empty.Headline = Strings.Tools.QuarantineEmpty;
                 _empty.Body = Strings.Tools.QuarantineEmptyText;

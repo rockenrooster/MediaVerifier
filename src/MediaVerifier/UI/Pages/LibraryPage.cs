@@ -24,15 +24,16 @@ internal sealed record AddFolderRequest(string? Path);
 /// </summary>
 internal sealed class LibraryPage : PageBase
 {
-    // Owner request: a Problem column with the worst open finding; the name takes the width that is left.
+    // Owner request: a Problem column with the worst open finding; the name takes the width that is left. A narrow
+    // table (small window, open drawer) hides the dates first, then Format and Size, and Problem last.
     private static readonly ListColumn[] TableColumns =
     [
-        new(Strings.Library.ColumnName, 0),
-        new(Strings.Library.ColumnProblem, 170),
-        new(Strings.Library.ColumnFormat, 130, Sortable: false),
-        new(Strings.Library.ColumnSize, 64, RightAligned: true),
-        new(Strings.Library.ColumnScanned, 96),
-        new(Strings.Library.ColumnVerified, 100),
+        new(Strings.Library.ColumnName, 0, MinWidth: 160),
+        new(Strings.Library.ColumnProblem, 170, Drop: 5),
+        new(Strings.Library.ColumnFormat, 130, Sortable: false, Drop: 3),
+        new(Strings.Library.ColumnSize, 64, RightAligned: true, Drop: 4),
+        new(Strings.Library.ColumnScanned, 96, Drop: 2),
+        new(Strings.Library.ColumnVerified, 100, Drop: 1),
     ];
 
     private readonly SegmentedControl _view = new() { TabIndex = 0 };
@@ -244,9 +245,11 @@ internal sealed class LibraryPage : PageBase
 
         int top = S(48);
         int height = Math.Max(S(120), Height - top);
-        _treeCard.Bounds = new Rectangle(0, top, S(280), height);
+        // The tree gives up width (280 down to 180) to a narrow table: a small window or the open drawer.
+        int treeWidth = Math.Clamp(width - S(372), S(180), S(280));
+        _treeCard.Bounds = new Rectangle(0, top, treeWidth, height);
         _tree.Bounds = Rectangle.Inflate(new Rectangle(Point.Empty, _treeCard.Size), -S(1), -S(8));
-        _tableCard.Bounds = new Rectangle(S(292), top, Math.Max(S(200), width - S(292)), height);
+        _tableCard.Bounds = new Rectangle(treeWidth + S(12), top, Math.Max(S(200), width - treeWidth - S(12)), height);
         _table.Bounds = Rectangle.Inflate(new Rectangle(Point.Empty, _tableCard.Size), -S(1), -S(1));
     }
 

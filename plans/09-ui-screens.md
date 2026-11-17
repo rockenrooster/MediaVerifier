@@ -210,7 +210,9 @@ from `y0 + 48`, 160 px high, 12 px apart.
 After adding a Library folder, a toast offers the scan: `{name} added` / `{n} files are waiting to be scanned` / button `Scan now`.
 
 **Browse.** Breadcrumb from `x0 + 180`; state chips right-aligned: `All {n}`, `OK {n}`,
-`Problems {n}` (exclusive). Tree card 280 px wide from `y0 + 48`; table card to its right.
+`Problems {n}` (exclusive). Tree card 280 px wide from `y0 + 48`; table card to its right, 12 px gap.
+When the page is narrower than 652 px (smallest window, or the drawer open) the tree gives up width, down to
+180 px.
 
 | Column | Offset from the table's left edge | Content |
 |--------|-----------------------------------|---------|
@@ -221,6 +223,12 @@ After adding a Library folder, a toast offers the scan: `{name} added` / `{n} fi
 | `Size` | 64 wide, right-aligned | |
 | `Scanned` | 96 wide | Recent date or `—` |
 | `Verified` | 100 wide | Recent date or `—` |
+
+Narrow tables. When `Name` would get less than 160 px, columns hide in this order until it has 160:
+`Verified`, `Scanned`, `Format`, `Size`, `Problem`. The same rule keeps every table's last useful column
+in view: Scans history keeps `Result` at least 160 px by hiding `Started by`, `Depth`, `Duration`,
+`Resolved`, `New`, `Folders`, `Files` in that order; Quarantine keeps `Removed in` at least 120 px by
+hiding `Size`, then `Moved`.
 
 Skip reasons: `online-only cloud file`, `still being written`, `in use by another program`, `no permission to read`, `larger than the size limit`, `format not supported`.
 

@@ -976,6 +976,7 @@ internal sealed class IssuesPage : PageBase
             row.Line1 = issue.Name;
             row.Line2 = issue.Line2;
             row.Column = issue.Problem;
+            row.Line2Narrow = issue.Line2WithProblem;
             row.Folder = ShowFolder ? issue.Folder : null;
             row.Size = UiFormat.Size(issue.Size);
         }

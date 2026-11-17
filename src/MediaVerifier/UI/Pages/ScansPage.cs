@@ -21,15 +21,16 @@ internal sealed class ScansPage : PageBase
 {
     private static readonly ListColumn[] HistoryColumns =
     [
+        // A narrow table (smallest window, open drawer) hides columns in their drop order so Result stays in view.
         new(Strings.Scans.ColStarted, 152, Sortable: false),
-        new(Strings.Scans.ColStartedBy, 108, Sortable: false),
-        new(Strings.Scans.ColDepth, 92, Sortable: false),
-        new(Strings.Scans.ColFolders, 168, Sortable: false),
-        new(Strings.Scans.ColDuration, 104, RightAligned: true, Sortable: false),
-        new(Strings.Scans.ColFiles, 84, RightAligned: true, Sortable: false),
-        new(Strings.Scans.ColNew, 60, RightAligned: true, Sortable: false),
-        new(Strings.Scans.ColResolved, 84, RightAligned: true, Sortable: false),
-        new(Strings.Scans.ColResult, 0, Sortable: false, Pad: 28),
+        new(Strings.Scans.ColStartedBy, 108, Sortable: false, Drop: 1),
+        new(Strings.Scans.ColDepth, 92, Sortable: false, Drop: 2),
+        new(Strings.Scans.ColFolders, 168, Sortable: false, Drop: 6),
+        new(Strings.Scans.ColDuration, 104, RightAligned: true, Sortable: false, Drop: 3),
+        new(Strings.Scans.ColFiles, 84, RightAligned: true, Sortable: false, Drop: 7),
+        new(Strings.Scans.ColNew, 60, RightAligned: true, Sortable: false, Drop: 5),
+        new(Strings.Scans.ColResolved, 84, RightAligned: true, Sortable: false, Drop: 4),
+        new(Strings.Scans.ColResult, 0, Sortable: false, Pad: 28, MinWidth: 160),
     ];
 
     private readonly InfoBar _interrupted = new() { Tier = Severity.Medium, Text = Strings.Scans.InterruptedBar, Action = Strings.Scans.Continue, TabIndex = 0 };

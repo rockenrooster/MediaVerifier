@@ -82,6 +82,26 @@ public sealed class ListTests
         Assert.Equal(90, widths[2]);
     }
 
+    /// <summary>A narrow table hides columns in their drop order until the absorbing column has its minimum.</summary>
+    [Fact]
+    public void Narrow_table_hides_columns_in_drop_order()
+    {
+        ListColumn[] columns = [new("Name", 0, MinWidth: 160), new("Problem", 170, Drop: 3), new("Size", 64, Drop: 2), new("Date", 100, Drop: 1)];
+        Span<int> widths = stackalloc int[4];
+
+        VirtualList.ColumnWidths(columns, 500, 96, widths);
+        Assert.Equal([166, 170, 64, 100], widths.ToArray());
+
+        VirtualList.ColumnWidths(columns, 400, 96, widths);
+        Assert.Equal([166, 170, 64, 0], widths.ToArray());
+
+        VirtualList.ColumnWidths(columns, 300, 96, widths);
+        Assert.Equal([300, 0, 0, 0], widths.ToArray());
+
+        VirtualList.ColumnWidths(columns, 100, 96, widths);
+        Assert.Equal([100, 0, 0, 0], widths.ToArray());
+    }
+
     [Fact]
     public void Tree_loads_children_lazily_and_navigates_with_keys()
     {

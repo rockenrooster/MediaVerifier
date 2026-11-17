@@ -13,8 +13,12 @@ internal enum ListMode
     Table,
 }
 
-/// <summary>A table column: header text, fixed logical width (0 = absorbs the remaining width), alignment.</summary>
-internal sealed record ListColumn(string Header, int Width, bool RightAligned = false, bool Sortable = true, int Pad = 16);
+/// <summary>
+/// A table column: header text, fixed logical width (0 = absorbs the remaining width), alignment. When the absorbing
+/// column would get less than its <paramref name="MinWidth"/>, the columns with a <paramref name="Drop"/> order hide,
+/// 1 first, so a narrow window or an open drawer keeps the table readable instead of pushing columns off the edge.
+/// </summary>
+internal sealed record ListColumn(string Header, int Width, bool RightAligned = false, bool Sortable = true, int Pad = 16, int Drop = 0, int MinWidth = 80);
 
 /// <summary>
 /// One row's content, filled by the source into a reused instance (painting allocates nothing). Strings
@@ -50,6 +54,9 @@ internal sealed class ListRow
 
     /// <summary>A two-line row's column between the text and the folder (Issues: the finding's title).</summary>
     public string? Column;
+
+    /// <summary>Line 2 when the list is too narrow for <see cref="Column"/>: the column's text in front.</summary>
+    public string? Line2Narrow;
     public string? Size;
     public string? Folder;
     public string? Count;
@@ -73,6 +80,7 @@ internal sealed class ListRow
         Line1 = string.Empty;
         Line2 = null;
         Column = null;
+        Line2Narrow = null;
         Size = null;
         Folder = null;
         Count = null;
@@ -374,9 +382,11 @@ internal sealed class VirtualList : KitControl
         int folderRight = row.Right - Dpi.Scale(hover ? 100 + 132 : 100, dpi);
         int textX = row.X + Dpi.Scale(44, dpi);
 
-        // With a column, the folder gives up width (down to 120 px) before the name keeps less than 200 px.
+        // With a column, the folder gives up width (down to 120 px) before the name keeps less than 200 px; with no room
+        // for the column and 160 px of name (a narrow window with the drawer open), the column's text goes into line 2.
+        bool column = data.Column is not null && folderRight - textX >= Dpi.Scale(TwoLineColumnWidth + 16 + 160, dpi);
         int folderMax = Dpi.Scale(264, dpi);
-        if (data.Column is not null)
+        if (column)
         {
             folderMax = Math.Clamp(folderRight - textX - Dpi.Scale(TwoLineColumnWidth + 16 + 16 + 200, dpi), Dpi.Scale(120, dpi), folderMax);
         }
@@ -399,19 +409,19 @@ internal sealed class VirtualList : KitControl
         }
 
         int textRight = data.Folder is null ? right - Dpi.Scale(80, dpi) : folderRight - folderWidth - Dpi.Scale(16, dpi);
-        if (data.Column is not null)
+        if (column)
         {
             // At the same place in every row, so it reads as a column.
             int columnRight = data.Folder is null ? folderRight : folderRight - folderMax - Dpi.Scale(16, dpi);
             int columnX = columnRight - Dpi.Scale(TwoLineColumnWidth, dpi);
-            KitPaint.DrawText(g, data.Column, type.Body, t.Text, columnX, row.Y + Dpi.Scale(22, dpi), columnRight - columnX);
+            KitPaint.DrawText(g, data.Column!, type.Body, t.Text, columnX, row.Y + Dpi.Scale(22, dpi), columnRight - columnX);
             textRight = columnX - Dpi.Scale(16, dpi);
         }
 
         KitPaint.DrawText(g, data.Line1, type.BodyStrong, t.Text, textX, row.Y + Dpi.Scale(13, dpi), textRight - textX);
-        if (data.Line2 is not null)
+        if ((column ? data.Line2 : data.Line2Narrow ?? data.Line2) is string line2)
         {
-            KitPaint.DrawText(g, data.Line2, type.Body, t.Text2, textX, row.Y + Dpi.Scale(31, dpi), textRight - textX);
+            KitPaint.DrawText(g, line2, type.Body, t.Text2, textX, row.Y + Dpi.Scale(31, dpi), textRight - textX);
         }
 
         KitPaint.HorizontalLine(g, Color.FromArgb(153, t.Stroke), textX, row.Right, row.Bottom - Dpi.ScaleF(1, dpi), Dpi.ScaleF(1, dpi));
@@ -506,6 +516,12 @@ internal sealed class VirtualList : KitControl
         {
             ListColumn column = columns[i];
             int width = widths[i];
+            if (width <= 0)
+            {
+                // Hidden in a narrow table.
+                continue;
+            }
+
             int pad = Dpi.Scale(16, dpi);
             int labelWidth = KitPaint.MeasureWidth(column.Header, type.CaptionStrong);
             int labelX = column.RightAligned ? x + width - Dpi.Scale(RightPad, dpi) - labelWidth : x + (i == 0 && icons ? Dpi.Scale(44, dpi) : Dpi.Scale(column.Pad, dpi));
@@ -551,7 +567,7 @@ internal sealed class VirtualList : KitControl
         {
             int width = widths[i];
             string? text = i == 0 ? data.Line1 : data.Cells[i];
-            if (text is not null)
+            if (text is not null && width > 0)
             {
                 // Left-aligned text may run up to the next column (whose text starts 16 px in); right-aligned
                 // text keeps 4 px from both edges.
@@ -586,13 +602,18 @@ internal sealed class VirtualList : KitControl
         }
     }
 
-    /// <summary>Column widths for a total width: fixed columns keep theirs; the first zero-width column absorbs the rest.</summary>
+    /// <summary>
+    /// Column widths for a total width: fixed columns keep theirs; the first zero-width column absorbs the rest. When
+    /// that would be less than its <see cref="ListColumn.MinWidth"/>, columns with a drop order get width 0, 1 first.
+    /// </summary>
     public static void ColumnWidths(IReadOnlyList<ListColumn> columns, int total, int dpi, Span<int> widths)
     {
         int fixedTotal = 0;
         int absorbing = -1;
+        int lastDrop = 0;
         for (int i = 0; i < columns.Count; i++)
         {
+            lastDrop = Math.Max(lastDrop, columns[i].Drop);
             if (columns[i].Width > 0)
             {
                 widths[i] = Dpi.Scale(columns[i].Width, dpi);
@@ -608,10 +629,25 @@ internal sealed class VirtualList : KitControl
             }
         }
 
-        if (absorbing >= 0)
+        if (absorbing < 0)
         {
-            widths[absorbing] = Math.Max(Dpi.Scale(80, dpi), total - fixedTotal);
+            return;
         }
+
+        int floor = Dpi.Scale(columns[absorbing].MinWidth, dpi);
+        for (int order = 1; order <= lastDrop && total - fixedTotal < floor; order++)
+        {
+            for (int i = 0; i < columns.Count; i++)
+            {
+                if (columns[i].Drop == order && i != absorbing)
+                {
+                    fixedTotal -= widths[i];
+                    widths[i] = 0;
+                }
+            }
+        }
+
+        widths[absorbing] = Math.Max(Dpi.Scale(80, dpi), total - fixedTotal);
     }
 
     protected override AccessibleObject CreateAccessibilityInstance() => new ListAccessibleObject(this);
