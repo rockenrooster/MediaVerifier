@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.6 - 2026-11-17
+
 - Fixed: the toast after adding a folder grew each time it was drawn and slowed MediaVerifier down;
   tooltips had the same fault. Its Scan now button works again.
 - Fixed: Show in folder did nothing for files whose path has spaces.
