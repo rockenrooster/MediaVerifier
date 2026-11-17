@@ -72,7 +72,7 @@ cd /ffbuild/ffmpeg
   --enable-bsf='*' \
   --enable-muxer='*' \
   --enable-encoder=wrapped_avframe,flac,alac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be,png,mjpeg,bmp \
-  --enable-filter=scale,crop,split,asplit,concat,trim,atrim,setpts,asetpts,null,anull,format,aformat,aresample,metadata,ametadata,ssim,psnr,siti,blockdetect,blurdetect,idet,yadif,bwdif,freezedetect,blackdetect,volumedetect,ebur128,astats,adeclip,adeclick,select,fps,pad,transpose,hflip,vflip,rotate,showinfo \
+  --enable-filter=scale,crop,split,asplit,concat,trim,atrim,setpts,asetpts,null,anull,format,aformat,aresample,metadata,ametadata,ssim,psnr,siti,blockdetect,blurdetect,idet,yadif,bwdif,freezedetect,blackdetect,volumedetect,ebur128,astats,adeclip,adeclick,select,fps,pad,transpose,hflip,vflip,rotate,showinfo,fsync \
   || { cat ffbuild/config.log; exit 1; }
 
 make -j"$(nproc)"
