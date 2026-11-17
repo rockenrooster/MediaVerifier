@@ -114,6 +114,46 @@ public sealed class AddFolderTests
         Assert.Equal(folder.Path, await PathBox.StartFolderAsync(folder.Path, TimeSpan.FromSeconds(2)));
     }
 
+    /// <summary>
+    /// A folder given before the dialog shows (a dropped folder, or Edit folder) is checked without any typing: the
+    /// check never started, because the dialog read its hidden count bar as switched off, and Add folder / Save stayed
+    /// disabled.
+    /// </summary>
+    [Fact]
+    public void A_folder_given_up_front_is_checked_and_can_be_added_without_typing()
+    {
+        bool enabled = false;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("add-given");
+            string folder = Directory.CreateDirectory(temp.Combine("Dropped")).FullName;
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            Stopwatch watch = Stopwatch.StartNew();
+            using System.Windows.Forms.Timer timer = new() { Interval = 50 };
+            timer.Tick += (_, _) =>
+            {
+                if (Application.OpenForms.OfType<AddFolderDialog>().FirstOrDefault() is AddFolderDialog dialog)
+                {
+                    KitButton add = Find<KitButton>(dialog, b => b.Text == Strings.Library.AddFolder);
+                    if (add.Enabled || watch.Elapsed > TimeSpan.FromSeconds(5))
+                    {
+                        enabled = add.Enabled;
+                        dialog.Close();
+                    }
+                }
+            };
+            timer.Start();
+            Settle(AddFolderDialog.ShowAsync(form, services, null, folder));
+            timer.Stop();
+            form.Close();
+        });
+
+        Assert.True(enabled, "Add folder stayed disabled for a folder given before the dialog showed.");
+    }
+
     /// <summary>Types <paramref name="path"/> into Add folder with short reach limits; returns the bar's notice, the error and the wait.</summary>
     private static (string? Reaching, string? Error, long Waited) WaitForUnreachable(string path)
     {

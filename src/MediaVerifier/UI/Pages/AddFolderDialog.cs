@@ -190,8 +190,11 @@ internal sealed class AddFolderDialog : KitDialog
         _debounce.Stop();
         _counting?.Cancel();
         _counted = null;
-        _count.Visible = _error is null && path.Length > 0;
-        if (_count.Visible)
+        // The local, not _count.Visible: in the constructor (Edit folder, or a dropped folder) the dialog is not shown
+        // yet and WinForms reads every child as hidden, so the check never started and Save stayed disabled.
+        bool counting = _error is null && path.Length > 0;
+        _count.Visible = counting;
+        if (counting)
         {
             _count.Tier = Severity.Low;
             _count.Text = Strings.Library.Counting;

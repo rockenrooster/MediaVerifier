@@ -425,12 +425,33 @@ internal sealed class IssuesPage : PageBase
             _status.Invalidate();
         }
 
-        int x = 0;
         int chipHeight = S(28);
-        x = PlaceChip(_all, x);
+        int x = 0;
+        int y = 0;
+
+        // Chips and drop-downs flow left to right and wrap when the next would run past the page. With the drawer open
+        // at the smallest window the page is 464 px wide, and the rows ran off it: the Low chip and a drop-down could
+        // not be reached.
+        void Flow(Control control, int width, int gapBefore = 0)
+        {
+            if (x > 0 && x + gapBefore + width > Width)
+            {
+                x = 0;
+                y += S(40);
+            }
+            else if (x > 0)
+            {
+                x += gapBefore;
+            }
+
+            control.Bounds = new Rectangle(x, y, width, chipHeight);
+            x += width + S(8);
+        }
+
+        Flow(_all, S(_all.PreferredLogicalWidth));
         foreach (Chip chip in _tierChips)
         {
-            x = PlaceChip(chip, x);
+            Flow(chip, S(chip.PreferredLogicalWidth));
         }
 
         foreach (Chip chip in _kindChips)
@@ -440,32 +461,38 @@ internal sealed class IssuesPage : PageBase
 
         if (!_narrow)
         {
-            x += S(9);
-            foreach (Chip chip in _kindChips)
+            for (int i = 0; i < _kindChips.Length; i++)
             {
-                x = PlaceChip(chip, x);
+                Flow(_kindChips[i], S(_kindChips[i].PreferredLogicalWidth), i == 0 ? S(9) : 0);
             }
         }
 
-        int y = S(40);
+        // The drop-downs start their own row.
         x = 0;
+        y += S(40);
         _kindDrop.Visible = _narrow;
         _groupDrop.Visible = _narrow;
         _group.Visible = !_narrow;
         foreach (DropDown drop in _narrow ? new[] { _kindDrop, _category, _rule, _folder, _status, _groupDrop } : new[] { _category, _rule, _folder, _status })
         {
-            int width = DropWidth(drop);
-            drop.Bounds = new Rectangle(x, y, width, chipHeight);
-            x += width + S(8);
+            Flow(drop, DropWidth(drop));
         }
 
         if (!_narrow)
         {
+            // Right-aligned on the drop-down row when it fits beside them with its label, on a row of its own if not.
             int width = S(_group.PreferredLogicalWidth);
+            int label = KitPaint.MeasureWidth(Strings.Issues.GroupBy, Type.Caption) + S(16);
+            if (x + label + width > Width)
+            {
+                y += S(40);
+            }
+
             _group.Bounds = new Rectangle(Width - width, y, width, chipHeight);
         }
 
-        Rectangle list = new(0, S(80), Width, Math.Max(0, Height - S(80)));
+        int top = y + S(40);
+        Rectangle list = new(0, top, Width, Math.Max(0, Height - top));
         _list.Bounds = list;
         _empty.Bounds = Rectangle.Inflate(list, -S(1), -S(1));
         _selectionBar.Bounds = SelectionBar.PlaceIn(list, DeviceDpi);
@@ -477,16 +504,16 @@ internal sealed class IssuesPage : PageBase
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (!_narrow && _kindChips[0].Visible)
+        if (!_narrow && _kindChips[0].Visible && _kindChips[0].Left > 0)
         {
             int x = _kindChips[0].Left - S(9);
-            KitPaint.VerticalLine(e.Graphics, Tokens.Stroke, x, S(4), S(24), SF(1));
+            KitPaint.VerticalLine(e.Graphics, Tokens.Stroke, x, _kindChips[0].Top + S(4), _kindChips[0].Top + S(24), SF(1));
         }
 
         if (_group.Visible)
         {
             int width = KitPaint.MeasureWidth(Strings.Issues.GroupBy, Type.Caption);
-            KitPaint.DrawText(e.Graphics, Strings.Issues.GroupBy, Type.Caption, Tokens.Text3, _group.Left - S(8) - width, S(54), width + 1);
+            KitPaint.DrawText(e.Graphics, Strings.Issues.GroupBy, Type.Caption, Tokens.Text3, _group.Left - S(8) - width, _group.Top + S(14), width + 1);
         }
     }
 

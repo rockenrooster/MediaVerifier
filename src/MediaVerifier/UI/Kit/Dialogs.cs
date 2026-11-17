@@ -28,6 +28,21 @@ internal class KitDialog : Form
     /// <summary>Off-screen (render harness, tests) a dialog opens without taking the focus from the user's window.</summary>
     protected override bool ShowWithoutActivation => Diagnostics.ScreenRenderer.Offscreen;
 
+    /// <summary>Off-screen a dialog is never activated either (WS_EX_NOACTIVATE), opening or closing.</summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams parameters = base.CreateParams;
+            if (Diagnostics.ScreenRenderer.Offscreen)
+            {
+                parameters.ExStyle |= 0x08000000;
+            }
+
+            return parameters;
+        }
+    }
+
     private readonly List<KitButton> _buttons = [];
     private readonly Panel _body;
     private readonly IconButton? _close;
@@ -120,7 +135,7 @@ internal class KitDialog : Form
         DialogResult result = ShowDialog(owner);
         if (invoker is { IsDisposed: false, CanFocus: true })
         {
-            invoker.Focus();
+            KitFocus.Move(invoker);
         }
 
         return result;
@@ -167,7 +182,7 @@ internal class KitDialog : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        InitialFocus()?.Focus();
+        KitFocus.Move(InitialFocus());
     }
 
     /// <summary>The control focused when the dialog opens: in destructive confirmations the safe button.</summary>

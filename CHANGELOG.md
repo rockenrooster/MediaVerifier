@@ -5,6 +5,11 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: the first time a file's details opened, Show in folder and ⋯ lay on top of the main button.
+- Fixed: Settings → Rules could show an empty list when opened from the list of sections.
+- Fixed: Edit folder and a dropped folder kept Save / Add folder greyed out until the path was typed
+  again.
+- Fixed: in a small window with the details open, the Issues filters ran off the page; they wrap.
 
 ## 0.1.0.12 - 2026-11-17
 

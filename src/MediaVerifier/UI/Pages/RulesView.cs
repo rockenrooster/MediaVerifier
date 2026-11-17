@@ -71,7 +71,7 @@ internal sealed class RulesView : KitControl
             clipping.Expanded = true;
             await clipping.SetParameterAsync("highPerMinute", 300).ConfigureAwait(true);
             _list.Relayout();
-            List<RuleRow> shown = [.. _list.Rows.Where(r => r.Visible)];
+            List<RuleRow> shown = [.. _list.Rows.Where(r => r.Matches)];
             int index = shown.IndexOf(clipping);
             _scroll.ScrollOffset = index > 0 ? shown[index - 1].Top : clipping.Top;
         }
@@ -115,6 +115,7 @@ internal sealed class RulesView : KitControl
             RuleDefinition rule = row.Rule;
             bool show = (categories is null || categories.Contains(rule.Category))
                 && (text.Length == 0 || rule.Title.Contains(text, StringComparison.CurrentCultureIgnoreCase) || rule.Id.Contains(text, StringComparison.OrdinalIgnoreCase));
+            row.Matches = show;
             row.Visible = show;
         }
 
@@ -140,7 +141,9 @@ internal sealed class RulesView : KitControl
             RuleRow? last = null;
             foreach (RuleRow row in Rows)
             {
-                if (!row.Visible)
+                // Matches, not Visible: while the Rules section is hidden WinForms reports every row hidden, so the list
+                // was laid out empty and opening Rules from the section list showed a blank card.
+                if (!row.Matches)
                 {
                     continue;
                 }
@@ -255,6 +258,9 @@ internal sealed class RulesView : KitControl
         }
 
         public RuleDefinition Rule { get; }
+
+        /// <summary>The filter and the category chips let the row show (its own Visible reads false while the section is hidden).</summary>
+        public bool Matches { get; set; } = true;
 
         public bool Divider { get; set; } = true;
 

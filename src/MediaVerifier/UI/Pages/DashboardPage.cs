@@ -553,7 +553,7 @@ internal sealed class DashboardPage : PageBase
             base.OnVisibleChanged(e);
             if (Visible && _page.IsActive)
             {
-                _add.Focus();
+                KitFocus.Move(_add);
             }
         }
 

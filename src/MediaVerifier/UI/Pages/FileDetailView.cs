@@ -31,6 +31,7 @@ internal sealed class FileDetailView : KitControl
     private readonly IconButton _historyToggle = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = Strings.Drawer.History };
     private readonly IconButton _technicalToggle = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = Strings.Drawer.TechnicalDetails };
     private readonly KitButton _copyDetails = new() { Kind = ButtonKind.Subtle, Icon = IconName.Copy, Text = Strings.Drawer.CopyDetails, Visible = false };
+    private bool _hasPrimary;
     private readonly HashSet<int> _expanded = [0];
     private readonly List<Rectangle> _findingHeaders = [];
     private Rectangle _historyRow;
@@ -129,7 +130,8 @@ internal sealed class FileDetailView : KitControl
         _technicalOpen = false;
         StartEvidence(detail);
         _primary.Text = primaryAction;
-        _primary.Visible = primaryAction.Length > 0;
+        _hasPrimary = primaryAction.Length > 0;
+        _primary.Visible = _hasPrimary;
         foreach ((KitButton ignore, KitButton rescan) in _findingButtons)
         {
             Controls.Remove(ignore);
@@ -179,7 +181,10 @@ internal sealed class FileDetailView : KitControl
         _close.Bounds = new Rectangle(width - S(Pad) - S(32), S(16), S(32), S(32));
         int x = S(Pad);
         int y = S(126);
-        if (_primary.Visible)
+
+        // Not _primary.Visible: before the drawer shows, WinForms reports every child hidden, and Show in folder and
+        // More were placed on top of the main button the first time a file was opened.
+        if (_hasPrimary)
         {
             int w = S(_primary.PreferredLogicalWidth);
             _primary.Bounds = new Rectangle(x, y, w, S(32));

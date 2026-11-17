@@ -22,6 +22,24 @@ internal sealed class MainForm : Form
     /// <summary>Off-screen (render harness, tests) the window opens without taking the focus from the user's window.</summary>
     protected override bool ShowWithoutActivation => Diagnostics.ScreenRenderer.Offscreen;
 
+    /// <summary>
+    /// Off-screen the window is also never activated (WS_EX_NOACTIVATE): WinForms re-activates a dialog's owner when the
+    /// dialog closes, which took the focus from the user's window in the tests.
+    /// </summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams parameters = base.CreateParams;
+            if (Diagnostics.ScreenRenderer.Offscreen)
+            {
+                parameters.ExStyle |= 0x08000000;
+            }
+
+            return parameters;
+        }
+    }
+
     private readonly AppState _state;
     private readonly LaunchOptions _options;
     private readonly IpcServer? _ipc;

@@ -6,7 +6,8 @@ namespace MediaVerifier.Tests.TestSupport;
 
 /// <summary>
 /// Set before any test runs: tests never write to the user's own error log, because the static error log points to a
-/// folder in the temporary directory.
+/// folder in the temporary directory; and every window a test opens is off-screen and never activated, so it cannot
+/// take the focus from the window the user is working in (test runs made the screen flicker).
 /// </summary>
 internal static class TestEnvironment
 {
@@ -15,5 +16,8 @@ internal static class TestEnvironment
     [ModuleInitializer]
     [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries", Justification = "The test assembly is the only user; this must happen before any test runs.")]
     internal static void Initialize()
-        => ErrorLog.Configure(ErrorLogDirectory);
+    {
+        ErrorLog.Configure(ErrorLogDirectory);
+        MediaVerifier.Diagnostics.ScreenRenderer.Offscreen = true;
+    }
 }

@@ -29,9 +29,19 @@ internal static class DialogStage
         return owner;
     }
 
-    /// <summary>The off-screen owner: shown without activation.</summary>
+    /// <summary>The off-screen owner: shown without activation, and never activated (WS_EX_NOACTIVATE).</summary>
     private sealed class Stage : Form
     {
         protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams parameters = base.CreateParams;
+                parameters.ExStyle |= 0x08000000;
+                return parameters;
+            }
+        }
     }
 }
