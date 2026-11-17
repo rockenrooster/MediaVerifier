@@ -64,6 +64,11 @@ internal sealed class ShellLayout : Control
 
         int dpi = DeviceDpi;
         Rail.Collapsed = client.Width < Dpi.Scale(NavigationRail.CollapseBelowWindowWidth, dpi);
+        if (StatusStrip is ScanStatusStrip strip)
+        {
+            strip.Narrow = Rail.Collapsed;
+        }
+
         int railWidth = Dpi.Scale(Rail.LogicalWidth, dpi);
         int headerHeight = Dpi.Scale(56, dpi);
         int stripHeight = StatusStripVisible ? Dpi.Scale(36, dpi) : 0;

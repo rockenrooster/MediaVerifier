@@ -38,6 +38,9 @@ internal static class Strings
         public const string SearchPlaceholder = "Search files";
         public const string Notifications = "Notifications";
         public const string Scan = "Scan";
+        public const string Pause = "Pause";
+        public const string Resume = "Resume";
+        public const string Stop = "Stop";
     }
 
     public static class Tray

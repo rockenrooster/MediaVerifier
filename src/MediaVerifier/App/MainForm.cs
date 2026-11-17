@@ -25,6 +25,7 @@ internal sealed class MainForm : Form
     private readonly NavigationRail _rail = new();
     private readonly ShellHeader _header = new();
     private readonly PageViewport _viewport = new();
+    private readonly ScanStatusStrip _statusStrip = new();
     private readonly ShellLayout _shell;
     private readonly Dictionary<PageId, PageBase> _pages = [];
     private readonly Func<AppState, PageId, PageBase> _pageFactory;
@@ -48,7 +49,7 @@ internal sealed class MainForm : Form
         KeyPreview = true;
         BackColor = ThemeService.Tokens.Bg;
         Icon = AppIcon.Load();
-        _shell = new ShellLayout(_rail, _header, _viewport) { Dock = DockStyle.Fill };
+        _shell = new ShellLayout(_rail, _header, _viewport, _statusStrip) { Dock = DockStyle.Fill };
         Controls.Add(_shell);
         _rail.ItemInvoked += OnRailItemInvoked;
         ThemeService.Changed += OnThemeChanged;
@@ -73,6 +74,8 @@ internal sealed class MainForm : Form
     internal PageViewport Viewport => _viewport;
 
     internal ShellLayout Shell => _shell;
+
+    internal ScanStatusStrip StatusStrip => _statusStrip;
 
     public void Navigate(PageId id)
     {

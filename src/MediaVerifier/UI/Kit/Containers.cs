@@ -300,14 +300,15 @@ internal sealed class EmptyState : KitControl
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(dpi);
+        // Icon, 6 px, headline (24 px line), body centred 24 px below the headline (docs/design components sheet).
         int iconSize = small ? 32 : 48;
-        int height = iconSize + 16 + 24 + 4 + 20 + (hasButton ? 16 + 32 : 0) + (note is null ? 0 : 12 + 16);
+        int height = iconSize + 6 + 24 + 4 + 20 + (hasButton ? 16 + 32 : 0) + (note is null ? 0 : 12 + 16);
         int y = bounds.Y + ((bounds.Height - Dpi.Scale(height, dpi)) / 2);
         int centreX = bounds.X + (bounds.Width / 2);
         IconRenderer.Draw(g, icon, centreX - Dpi.ScaleF(iconSize / 2f, dpi), y, iconSize, dpi, t.Text3);
-        y += Dpi.Scale(iconSize + 16, dpi);
+        y += Dpi.Scale(iconSize + 6, dpi);
         KitPaint.DrawTextCentred(g, headline, type.Subtitle, t.Text, centreX, y + Dpi.Scale(12, dpi));
-        y += Dpi.Scale(28, dpi);
+        y += Dpi.Scale(26, dpi);
         KitPaint.DrawTextCentred(g, body, type.Body, t.Text2, centreX, y + Dpi.Scale(10, dpi));
         y += Dpi.Scale(20, dpi);
         int buttonY = y + Dpi.Scale(16, dpi);

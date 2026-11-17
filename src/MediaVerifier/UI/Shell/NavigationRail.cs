@@ -1,3 +1,4 @@
+using MediaVerifier.UI.Theme;
 using System.Globalization;
 using MediaVerifier.Core.Model;
 using MediaVerifier.UI.Kit;
@@ -266,6 +267,41 @@ internal sealed class NavigationRail : KitControl
                 PaintItem(g, i);
             }
         }
+    }
+
+    /// <summary>
+    /// Paints an expanded navigation item (subplan 08): 40 px, radius 4; hover a Hover fill and a StrokeStrong
+    /// bar, selected a Selected fill, an Accent bar and the label in BodyStrong; icon at +14, label at +42,
+    /// an optional count badge 10 px from the right. The render harness draws the reference items with it.
+    /// </summary>
+    public static void DrawItem(Graphics g, Rectangle bounds, IconName icon, string label, bool selected, bool hover, string? badge, Severity badgeTier, int dpi, Color? iconColor = null)
+    {
+        ThemeTokens t = ThemeService.Tokens;
+        TypeRamp type = TypeRamp.For(dpi);
+        float radius = Dpi.ScaleF(4, dpi);
+        if (selected || hover)
+        {
+            KitPaint.FillRoundedRect(g, bounds, radius, selected ? t.Selected : t.Hover);
+            RectangleF bar = new(bounds.X, bounds.Y + ((bounds.Height - Dpi.Scale(16, dpi)) / 2f), Dpi.ScaleF(3, dpi), Dpi.Scale(16, dpi));
+            KitPaint.FillRoundedRect(g, bar, Dpi.ScaleF(1.5f, dpi), selected ? t.Accent : t.StrokeStrong);
+        }
+
+        IconRenderer.Draw(g, icon, bounds.X + Dpi.Scale(14, dpi), bounds.Y + Dpi.Scale(12, dpi), 16, dpi, iconColor ?? t.Text);
+        int labelX = bounds.X + Dpi.Scale(42, dpi);
+        int badgeSpace = 0;
+        if (!string.IsNullOrEmpty(badge))
+        {
+            Font font = type.CaptionStrong;
+            int width = Math.Max(Dpi.Scale(20, dpi), KitPaint.MeasureWidth(badge, font) + Dpi.Scale(14, dpi));
+            int height = Dpi.Scale(20, dpi);
+            Rectangle pill = new(bounds.Right - Dpi.Scale(10, dpi) - width, bounds.Y + ((bounds.Height - height) / 2), width, height);
+            TierColors colors = t.ForSeverity(badgeTier);
+            KitPaint.FillRoundedRect(g, pill, height / 2f, colors.Pill);
+            KitPaint.DrawTextCentred(g, badge, font, colors.Text, pill.X + (pill.Width / 2), pill.Y + (pill.Height / 2));
+            badgeSpace = width + Dpi.Scale(10, dpi);
+        }
+
+        KitPaint.DrawText(g, label, selected ? type.BodyStrong : type.Body, t.Text, labelX, bounds.Y + (bounds.Height / 2), bounds.Right - labelX - badgeSpace - Dpi.Scale(8, dpi));
     }
 
     private void PaintItem(Graphics g, int index)
