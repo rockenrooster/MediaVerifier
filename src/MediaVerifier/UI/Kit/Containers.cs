@@ -501,6 +501,15 @@ internal sealed class Drawer : KitControl
 
     public void Close() => Animate(false);
 
+    /// <summary>Closes without the slide (the render harness).</summary>
+    public void CloseInstantly()
+    {
+        _opening = false;
+        _animation.Stop();
+        Progress = 0;
+        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         ThemeTokens t = Tokens;

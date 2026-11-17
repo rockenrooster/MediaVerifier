@@ -30,6 +30,7 @@ internal sealed class MainForm : Form
     private readonly Dictionary<PageId, PageBase> _pages = [];
     private readonly Func<UiServices, PageId, PageBase> _pageFactory;
     private readonly UiServices _services;
+    private readonly UI.Kit.Popups.ToastHost _toasts;
     private ShellBinder? _binder;
     private PageBase? _current;
     private TrayIcon? _tray;
@@ -50,6 +51,8 @@ internal sealed class MainForm : Form
             }
         };
         services.ShowDrawer = content => SetDrawerContent(content);
+        _toasts = new UI.Kit.Popups.ToastHost(this, () => _shell is { StatusStripVisible: true } ? 36 : 0);
+        services.ShowToast = content => _toasts.Show(content);
         AppState state = services.State;
         _state = state;
         _options = options ?? new LaunchOptions();
@@ -85,7 +88,15 @@ internal sealed class MainForm : Form
         UI.Kit.Drawer drawer = _shell.Drawer;
         if (content is null)
         {
-            drawer.Close();
+            if (_services.IsDemo)
+            {
+                drawer.CloseInstantly();
+            }
+            else
+            {
+                drawer.Close();
+            }
+
             return;
         }
 
@@ -116,6 +127,9 @@ internal sealed class MainForm : Form
 
         _shell.PerformLayout();
     }
+
+    /// <summary>Reads the scan status now (the render harness).</summary>
+    internal void PollScan() => _binder?.PollNow();
 
     /// <summary>Reloads the shell's badges and the current page (after scans and repairs).</summary>
     internal void RefreshAll()
@@ -289,6 +303,7 @@ internal sealed class MainForm : Form
 
             _tray?.Dispose();
             _binder?.Dispose();
+            _toasts.Dispose();
             foreach (PageBase page in _pages.Values)
             {
                 page.Dispose();
@@ -502,6 +517,7 @@ internal static class PageFactory
     {
         PageId.Dashboard => new DashboardPage(services),
         PageId.Issues => new IssuesPage(services),
+        PageId.Library => new LibraryPage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

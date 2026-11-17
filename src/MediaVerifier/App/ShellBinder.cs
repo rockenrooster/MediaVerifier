@@ -45,6 +45,9 @@ internal sealed class ShellBinder : IDisposable
     }
 
     /// <summary>Reloads the badge counts (after scans, repairs and settings changes).</summary>
+    /// <summary>Reads the scan status now (the render harness switches the demo scan between pages).</summary>
+    internal void PollNow() => Poll();
+
     public void Refresh()
     {
         if (_loading)

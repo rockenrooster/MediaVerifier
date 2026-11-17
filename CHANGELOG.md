@@ -13,3 +13,6 @@ All notable changes to MediaVerifier are documented here.
   and recent activity; dark, light and high-contrast themes that follow Windows.
 - Issues page: severity and media-kind chips, filters, grouping by severity, folder or rule, a
   multi-select selection bar, and a detail drawer explaining each problem with its evidence.
+- Library page: watched folders as cards (scan, verify, edit, remove, not-connected state), an Add
+  folder dialog that checks the folder and counts its media files, and Browse with the folder tree
+  and a sortable file table.

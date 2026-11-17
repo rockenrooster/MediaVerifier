@@ -139,6 +139,69 @@ internal static class UiFormat
         _ => Strings.Depths.Standard,
     };
 
+    /// <summary>A codec or format name as people know it: <c>FLAC</c>, <c>JPEG</c>, <c>H.264</c>.</summary>
+    public static string CodecName(string? codec) => codec?.ToLowerInvariant() switch
+    {
+        null or "" => string.Empty,
+        "mjpeg" or "jpeg" or "jpg" => "JPEG",
+        "h264" => "H.264",
+        "hevc" or "h265" => "HEVC",
+        "mpeg4" => "MPEG-4",
+        "mpeg2video" => "MPEG-2",
+        "pcm_s16le" or "pcm_s24le" or "pcm_s32le" or "pcm_s16be" or "pcm_s24be" => "PCM",
+        "vorbis" => "Vorbis",
+        "opus" => "Opus",
+        string other => other.ToUpperInvariant(),
+    };
+
+    /// <summary>
+    /// The Format column of Library → Browse (subplan 09): audio <c>FLAC 44.1 kHz 16-bit</c>, video
+    /// <c>HEVC 2160p</c>, photo <c>JPEG 1400 × 1400</c>; pending and skipped files say so.
+    /// </summary>
+    public static string FileFormat(Core.Storage.FileRow file)
+    {
+        CultureInfo culture = Culture;
+        switch (file.State)
+        {
+            case Core.Storage.FileState.Pending:
+                return Strings.Library.NotScannedYet;
+            case Core.Storage.FileState.Skipped:
+                return string.Format(culture, Strings.Library.Skipped, SkipText(file.SkipReason));
+        }
+
+        string?[] parts = file.Kind switch
+        {
+            MediaKind.Audio =>
+            [
+                CodecName(file.AudioCodec),
+                file.SampleRate is int rate ? string.Format(culture, Strings.Drawer.Kilohertz, (rate / 1000.0).ToString("0.#", culture)) : null,
+                file.BitDepth is int bits ? string.Format(culture, Strings.Drawer.Bits, bits) : null,
+            ],
+            MediaKind.Video =>
+            [
+                CodecName(file.VideoCodec),
+                file.Height is int height ? string.Format(culture, Strings.Drawer.Progressive, height) : null,
+            ],
+            _ =>
+            [
+                CodecName(file.VideoCodec ?? file.Container),
+                file.Width is int w && file.Height is int h ? string.Format(culture, Strings.Drawer.Dimensions, w, h) : null,
+            ],
+        };
+        return string.Join(' ', parts.Where(p => !string.IsNullOrEmpty(p)));
+    }
+
+    /// <summary>Why a file was skipped, as the Format column words it.</summary>
+    public static string SkipText(Core.Storage.SkipReason reason) => reason switch
+    {
+        Core.Storage.SkipReason.CloudPlaceholder => Strings.Library.SkipCloud,
+        Core.Storage.SkipReason.InProgress => Strings.Library.SkipInProgress,
+        Core.Storage.SkipReason.Locked => Strings.Library.SkipLocked,
+        Core.Storage.SkipReason.AccessDenied => Strings.Library.SkipDenied,
+        Core.Storage.SkipReason.TooLarge => Strings.Library.SkipTooLarge,
+        _ => Strings.Library.SkipUnsupported,
+    };
+
     /// <summary>Joins facts with the separator (<c> · </c>).</summary>
     public static string Facts(params string?[] facts) => string.Join(Strings.Separator, facts.Where(f => !string.IsNullOrEmpty(f)));
 

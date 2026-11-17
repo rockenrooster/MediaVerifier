@@ -69,6 +69,11 @@ internal abstract class PageBase : KitControl
         if (data is not null && !IsDisposed)
         {
             ApplyData(data);
+            if (Parent is Shell.PageViewport viewport)
+            {
+                viewport.LayoutPage();
+            }
+
             PerformLayout();
             Invalidate(true);
         }

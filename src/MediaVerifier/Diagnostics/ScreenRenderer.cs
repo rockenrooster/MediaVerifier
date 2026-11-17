@@ -66,6 +66,13 @@ internal static class ScreenRenderer
                     PrepareOffscreen(form, MainForm.DefaultClientSize);
                     foreach (PageId page in PageInfo.All)
                     {
+                        // The mockups of these pages were drawn during a scan; the others with none running.
+                        if (services.Scans is DemoScanControl demoScan)
+                        {
+                            demoScan.Status = page is PageId.Dashboard or PageId.Issues or PageId.Scans ? DemoScanControl.Running : Core.Engine.EngineStatus.Idle;
+                            form.PollScan();
+                        }
+
                         form.Navigate(page);
                         WaitFor(form.CurrentPageLoading);
                         form.Shell.PerformLayout();
@@ -73,6 +80,17 @@ internal static class ScreenRenderer
                         string name = $"{page.ToString().ToLowerInvariant()}-{theme}.png";
                         Save(form.Shell, Path.Combine(directory, name));
                         renders.Add(("Screens", $"{page} {theme}", name, ReferenceFor(page, theme)));
+                        if (form.CurrentPageControl is LibraryPage library)
+                        {
+                            library.ShowDemoBrowse();
+                            WaitFor(form.CurrentPageLoading);
+                            form.Shell.PerformLayout();
+                            Application.DoEvents();
+                            string browse = $"library-browse-{theme}.png";
+                            Save(form.Shell, Path.Combine(directory, browse));
+                            renders.Add(("Screens", $"Library browse {theme}", browse, theme == "dark" ? "library-browse-dark.png" : null));
+                        }
+
                         if (form.CurrentPageControl is IssuesPage issues)
                         {
                             issues.ShowDemoSelection();

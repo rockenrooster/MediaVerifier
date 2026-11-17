@@ -33,6 +33,12 @@ internal sealed class ListRow
     public bool Loaded = true;
     public Severity? Severity;
     public IconName? StateIcon;
+
+    /// <summary>The OK shape in OkText (a scanned file without problems).</summary>
+    public bool OkIcon;
+
+    /// <summary>A table cell drawn in Text3 (a skip reason); -1 for none.</summary>
+    public int MutedColumn = -1;
     public string Line1 = string.Empty;
     public string? Line2;
     public string? Size;
@@ -51,6 +57,8 @@ internal sealed class ListRow
         Loaded = true;
         Severity = null;
         StateIcon = null;
+        OkIcon = false;
+        MutedColumn = -1;
         Line1 = string.Empty;
         Line2 = null;
         Size = null;
@@ -438,6 +446,12 @@ internal sealed class VirtualList : KitControl
         KitPaint.FillRoundedRect(g, thumb, thumb.Width / 2f, hover ? color : Color.FromArgb(153, color));
     }
 
+    /// <summary>
+    /// Right-aligned cells end 4 px before their column's edge (the next column's text starts 16 px in), so
+    /// sizes and counts sit 20 px left of the following column as in the references.
+    /// </summary>
+    private const int RightPad = 4;
+
     /// <summary>Paints a table header: 32 px, Bg at 55 %, CaptionStrong Text3, 1 px Stroke below, sort arrow after the label.</summary>
     public static void DrawTableHeader(Graphics g, Rectangle bounds, IReadOnlyList<ListColumn> columns, ReadOnlySpan<int> widths, int sortColumn, bool descending, int dpi)
     {
@@ -453,7 +467,7 @@ internal sealed class VirtualList : KitControl
             int width = widths[i];
             int pad = Dpi.Scale(16, dpi);
             int labelWidth = KitPaint.MeasureWidth(column.Header, type.CaptionStrong);
-            int labelX = column.RightAligned ? x + width - pad - labelWidth : x + (i == 0 ? Dpi.Scale(44, dpi) : pad);
+            int labelX = column.RightAligned ? x + width - Dpi.Scale(RightPad, dpi) - labelWidth : x + (i == 0 ? Dpi.Scale(44, dpi) : pad);
             KitPaint.DrawText(g, column.Header, type.CaptionStrong, t.Text3, labelX, centreY, labelWidth + 1);
             if (i == sortColumn)
             {
@@ -481,6 +495,10 @@ internal sealed class VirtualList : KitControl
         {
             IconRenderer.DrawSeverity(g, severity, row.X + Dpi.ScaleF(16, dpi), row.Y + Dpi.ScaleF(10, dpi), 16, dpi, t.ForSeverity(severity).Text, background);
         }
+        else if (data.OkIcon)
+        {
+            IconRenderer.DrawSeverity(g, Core.Model.Severity.None, row.X + Dpi.ScaleF(16, dpi), row.Y + Dpi.ScaleF(10, dpi), 16, dpi, t.Ok.Text, background);
+        }
         else if (data.StateIcon is IconName icon)
         {
             IconRenderer.Draw(g, icon, row.X + Dpi.ScaleF(16, dpi), row.Y + Dpi.ScaleF(10, dpi), 16, dpi, t.Text3);
@@ -494,10 +512,13 @@ internal sealed class VirtualList : KitControl
             string? text = i == 0 ? data.Line1 : data.Cells[i];
             if (text is not null)
             {
-                int left = i == 0 ? row.X + Dpi.Scale(44, dpi) : x + pad;
-                int available = x + width - pad - left;
+                // Left-aligned text may run up to the next column (whose text starts 16 px in); right-aligned
+                // text keeps 4 px from both edges.
+                bool right = columns[i].RightAligned;
+                int left = i == 0 ? row.X + Dpi.Scale(44, dpi) : x + (right ? Dpi.Scale(RightPad, dpi) : pad);
+                int available = x + width - (right ? Dpi.Scale(RightPad, dpi) : 0) - left;
                 Font font = type.Body;
-                Color color = i == 0 ? t.Text : t.Text2;
+                Color color = i == data.MutedColumn ? t.Text3 : i == 0 ? t.Text : t.Text2;
                 KitPaint.DrawText(g, text, font, color, left, centreY, available, columns[i].RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
             }
 

@@ -32,6 +32,8 @@ public enum FileSort
     Size,
     Modified,
     State,
+    Scanned,
+    Verified,
 }
 
 /// <summary>Which findings an Issues view shows. Null members mean "no restriction".</summary>
@@ -68,8 +70,18 @@ public sealed record FileFilter
     public IReadOnlyCollection<FileState>? States { get; init; }
     public IReadOnlyCollection<MediaKind>? Kinds { get; init; }
     public Severity? MinSeverity { get; init; }
+
+    /// <summary>Only files whose worst open finding is at most this tier.</summary>
+    public Severity? MaxSeverity { get; init; }
+
     public string? Text { get; init; }
 }
+
+/// <summary>A watched folder's totals for its Library card (files present, open findings per tier).</summary>
+public sealed record RootSummary(long RootId, long Files, long Bytes, long? LastScannedUtc, long? FingerprintsUtc, SeverityCounts Open);
+
+/// <summary>The Browse state chips of one folder: every file, the OK ones (nothing above Low) and the problems.</summary>
+public sealed record FolderStateCounts(int All, int Ok, int Problems);
 
 /// <summary>One Issues list row: the finding plus what the row shows about its file.</summary>
 public sealed record FindingRow(
@@ -106,7 +118,14 @@ public sealed record FileRow(
     int OpenFindings,
     long? LastVerifiedUtc,
     int VerifyCount,
-    long? LastScannedUtc);
+    long? LastScannedUtc,
+    string? Container = null,
+    string? VideoCodec = null,
+    string? AudioCodec = null,
+    int? Width = null,
+    int? Height = null,
+    int? SampleRate = null,
+    int? BitDepth = null);
 
 /// <summary>Open findings per tier.</summary>
 public sealed record SeverityCounts(int Critical, int High, int Medium, int Low)
@@ -448,6 +467,8 @@ public sealed class LibraryQueries(Database database)
             FileSort.Size => $"f.size {direction}, f.name",
             FileSort.Modified => $"f.mtime_utc {direction}, f.name",
             FileSort.State => $"f.state {direction}, f.name",
+            FileSort.Scanned => $"f.last_scanned_utc {direction}, f.name",
+            FileSort.Verified => $"f.last_verified_utc {direction}, f.name",
             _ => $"f.name {direction}",
         });
         command.CommandText = sql.ToString();
@@ -460,7 +481,8 @@ public sealed class LibraryQueries(Database database)
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             "SELECT f.id, f.root_id, f.dir_id, f.name, d.rel_path, f.media_kind, f.size, f.mtime_utc, f.state, f.skip_reason, f.worst_severity, " +
-            "f.open_findings, f.last_verified_utc, f.verify_count, f.last_scanned_utc FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.id IN (" + SqlHelpers.InList() + ")";
+            "f.open_findings, f.last_verified_utc, f.verify_count, f.last_scanned_utc, f.container, f.video_codec, f.audio_codec, f.width, f.height, f.sample_rate, f.bit_depth " +
+            "FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.id IN (" + SqlHelpers.InList() + ")";
         foreach (ArraySegment<long> chunk in SqlHelpers.Chunks([.. ids]))
         {
             command.Parameters.Clear();
@@ -470,7 +492,9 @@ public sealed class LibraryQueries(Database database)
             {
                 FileRow row = new(
                     r.GetInt64(0), r.GetInt64(1), r.GetInt64(2), r.GetString(3), r.GetString(4), (MediaKind)r.GetInt32(5), r.GetInt64(6), r.GetInt64(7),
-                    (FileState)r.GetInt32(8), (SkipReason)r.GetInt32(9), (Severity)r.GetInt32(10), r.GetInt32(11), r.GetInt64OrNull(12), r.GetInt32(13), r.GetInt64OrNull(14));
+                    (FileState)r.GetInt32(8), (SkipReason)r.GetInt32(9), (Severity)r.GetInt32(10), r.GetInt32(11), r.GetInt64OrNull(12), r.GetInt32(13), r.GetInt64OrNull(14),
+                    r.IsDBNull(15) ? null : r.GetString(15), r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17),
+                    r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetInt32(19), r.IsDBNull(20) ? null : r.GetInt32(20), r.IsDBNull(21) ? null : r.GetInt32(21));
                 byId[row.Id] = row;
             }
         }
@@ -491,6 +515,65 @@ public sealed class LibraryQueries(Database database)
     /// The folder tree of one root with counts and the worst open tier rolled up from the files below
     /// each folder (one grouped query, then summed in memory).
     /// </summary>
+    /// <summary>Per watched folder: present files, their size, last scan, newest fingerprint and open findings per tier.</summary>
+    public List<RootSummary> RootSummaries() => database.Read(connection =>
+    {
+        Dictionary<long, (long Files, long Bytes, long? Scanned, long? Hashed)> files = [];
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT root_id, COUNT(*), SUM(size), MAX(last_scanned_utc), MAX(hash_utc) FROM files WHERE state <> 3 GROUP BY root_id";
+            using SqliteDataReader r = command.ExecuteReader();
+            while (r.Read())
+            {
+                files[r.GetInt64(0)] = (r.GetInt64(1), r.GetInt64OrNull(2) ?? 0, r.GetInt64OrNull(3), r.GetInt64OrNull(4));
+            }
+        }
+
+        Dictionary<long, int[]> tiers = [];
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT f.root_id, fi.severity, COUNT(*) FROM findings fi JOIN files f ON f.id = fi.file_id WHERE fi.status = 0 AND f.state <> 3 GROUP BY f.root_id, fi.severity";
+            using SqliteDataReader r = command.ExecuteReader();
+            while (r.Read())
+            {
+                long root = r.GetInt64(0);
+                int tier = r.GetInt32(1);
+                if (!tiers.TryGetValue(root, out int[]? counts))
+                {
+                    counts = new int[5];
+                    tiers[root] = counts;
+                }
+
+                if (tier is >= 0 and <= 4)
+                {
+                    counts[tier] = r.GetInt32(2);
+                }
+            }
+        }
+
+        List<RootSummary> result = [];
+        foreach (long root in files.Keys.Union(tiers.Keys))
+        {
+            (long count, long bytes, long? scanned, long? hashed) = files.GetValueOrDefault(root);
+            int[] t = tiers.GetValueOrDefault(root) ?? new int[5];
+            result.Add(new RootSummary(root, count, bytes, scanned, hashed, new SeverityCounts(t[4], t[3], t[2], t[1])));
+        }
+
+        return result;
+    });
+
+    /// <summary>The state chips of one folder's own files (Library → Browse).</summary>
+    public FolderStateCounts FolderStates(long dirId) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN state IN (1, 2) AND worst_severity < 2 THEN 1 ELSE 0 END), 0), " +
+            "COALESCE(SUM(CASE WHEN worst_severity >= 2 THEN 1 ELSE 0 END), 0) FROM files WHERE dir_id = $dir AND state <> 3";
+        command.Add("$dir", dirId);
+        using SqliteDataReader r = command.ExecuteReader();
+        return r.Read() ? new FolderStateCounts(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)) : new FolderStateCounts(0, 0, 0);
+    });
+
     public List<FolderNode> FolderRollup(long rootId) => database.Read(connection =>
     {
         Dictionary<long, FolderNode> nodes = [];
@@ -681,6 +764,12 @@ public sealed class LibraryQueries(Database database)
         {
             sql.Append(" AND f.worst_severity >= $minSev");
             command.Add("$minSev", (int)min);
+        }
+
+        if (filter.MaxSeverity is Severity max)
+        {
+            sql.Append(" AND f.worst_severity <= $maxSev");
+            command.Add("$maxSev", (int)max);
         }
 
         AppendText(sql, command, filter.Text);

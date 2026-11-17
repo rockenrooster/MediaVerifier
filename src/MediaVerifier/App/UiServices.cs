@@ -102,6 +102,9 @@ internal sealed class UiServices : IDisposable
     /// <summary>Shows content in the detail drawer (null closes it); set by the main window.</summary>
     public Action<Control?>? ShowDrawer { get; set; }
 
+    /// <summary>Shows a toast at the bottom right of the main window (set by the main window).</summary>
+    public Action<UI.Kit.Popups.ToastContent>? ShowToast { get; set; }
+
     /// <summary>True for the render harness: no timers start work, nothing is written.</summary>
     public bool IsDemo { get; init; }
 
@@ -164,6 +167,29 @@ internal sealed class UiServices : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Starts a manual scan of <paramref name="scopes"/> unless one cannot run (demo, no engine, a scan
+    /// already running); returns false when nothing started.
+    /// </summary>
+    public async Task<bool> StartScanAsync(IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null)
+    {
+        if (IsDemo || scopes.Count == 0 || CannotScanReason(true) is not null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await Scans.StartAsync(new ScanRequest(scopes, depth, RunTrigger.Manual, Options: options), scopeText).ConfigureAwait(true);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            State.Log.Warning("Scan not started: " + ex.Message);
+            return false;
+        }
     }
 
     public void Dispose()

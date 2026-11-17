@@ -75,6 +75,13 @@ internal sealed partial class DemoUiData : IUiData
         ],
         OpenProblemsHistory: [302, 310, 322, 317, 328, 340, 337, 329, 334, 341, 337, 332, 329, 330, 325]);
 
+    /// <summary>A local time on a day of 2026, as UTC.</summary>
+    public static DateTimeOffset Local(int month, int day, int hour, int minute)
+    {
+        DateTime local = new(2026, month, day, hour, minute, 0, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+    }
+
     /// <summary>A local time on a day of November 2026, as UTC.</summary>
     public static DateTimeOffset At(int day, int hour, int minute)
     {
@@ -93,7 +100,8 @@ internal sealed partial class DemoUiData : IUiData
 /// <summary>The running scan of the mockups: 12,404 of 58,210 files, 21 %, 142 MB/s, about 1 h 12 min left.</summary>
 internal sealed class DemoScanControl : IScanControl
 {
-    public EngineStatus Status { get; } = new(
+    /// <summary>The run of the dashboard and issues mockups.</summary>
+    public static readonly EngineStatus Running = new(
         EnginePhase.Scanning,
         42,
         ScanDepth.Standard,
@@ -117,6 +125,9 @@ internal sealed class DemoScanControl : IScanControl
         false,
         0,
         RunTrigger.Manual);
+
+    /// <summary>Running for the dashboard, issues and scans renders; idle for the other pages, as in their mockups.</summary>
+    public EngineStatus Status { get; set; } = Running;
 
     public string ScopeText => "Music and Photos";
 
