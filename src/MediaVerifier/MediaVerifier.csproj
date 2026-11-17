@@ -6,10 +6,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>MediaVerifier</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
+    <!-- Framework-dependent (D-01): the installed .NET 10 Desktop Runtime (x64) is a prerequisite. -->
+    <SelfContained>false</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
-    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>

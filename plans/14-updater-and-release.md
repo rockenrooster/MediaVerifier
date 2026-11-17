@@ -94,13 +94,13 @@ Port with these properties:
 
 1. Run `scripts/Get-FfmpegBundle.ps1` (subplan 17). It fails the build if the bundle cannot be fetched
    or verified.
-2. Publish `src/MediaVerifier/MediaVerifier.csproj`: `-c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishReadyToRun=true /p:EnableCompressionInSingleFile=false` into an
+2. Publish `src/MediaVerifier/MediaVerifier.csproj`: `-c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:PublishReadyToRun=true` into an
    intermediate folder.
 3. Assemble the app folder `artifacts\MediaVerifier\`:
 
    ```
    MediaVerifier\
-     MediaVerifier.exe          self-contained single file (about 125 MB)
+     MediaVerifier.exe          framework-dependent single file (about 7 MB; needs the .NET 10 Desktop Runtime)
      e_sqlite3.dll              SQLite 3.54.0 from SQLitePCLRaw.bundle_e_sqlite3
      ffmpeg\                    the bundle exactly as verified (subplan 17)
      THIRD-PARTY-NOTICES.md     licences of everything shipped (subplan 16)
@@ -153,8 +153,12 @@ Start from FastTaskMgr's script and change:
 - Files: everything in `artifacts\MediaVerifier\`, recursively, with `ignoreversion`. An upgrade
   replaces the whole `ffmpeg\` folder (`[InstallDelete]` of `{app}\ffmpeg\*` first, so DLLs from an
   older FFmpeg with different version suffixes never linger).
-- `Compression=lzma2/ultra64` and `SolidCompression=yes` (the self-contained runtime compresses well;
-  the 90 MB installer budget depends on it).
+- `Compression=lzma2/ultra64` and `SolidCompression=yes`.
+- Prerequisite check in `InitializeSetup`: when no `Microsoft.WindowsDesktop.App` 10.x folder exists
+  under `{commonpf64}\dotnet\shared`, stop with `MediaVerifier needs the .NET 10 Desktop Runtime (x64).
+  Install it from https://dotnet.microsoft.com/download/dotnet/10.0, then run this setup again.` The
+  installer never downloads or installs the runtime itself (D-16). A silent update skips the check:
+  the runtime was there when the app last ran.
 
 ## Signing key
 
@@ -184,7 +188,7 @@ self-check still passes because it tests the algorithm with a throwaway key.
 | U-03 | Unit tests for trust and validation | Valid signature accepted; tampered manifest, wrong key, wrong tag, wrong version, wrong asset name, wrong size, bad hash, non-HTTPS URL, foreign host and path mismatch are each rejected |
 | U-04 | Download and install path tests against a local HTTP listener | Correct file installs to the update folder; short stream, long stream, wrong hash and wrong `Content-Length` each delete the temp file and report an error |
 | U-05 | `build.ps1`, `Directory.Build.props` versioning | Local run produces the `artifacts\MediaVerifier\` folder exactly as listed and the portable zip; the folder runs on a machine with no .NET installed; version increments; `-NoIncrement` and `-Version` honoured; without a key the manifest is skipped with a warning; an unexpected file in the publish output fails the build |
-| U-06 | `installer/MediaVerifier.iss` | Compiles with Inno Setup 6 within the size budget; per-user install without elevation; installs and runs on a clean Windows 10 22H2 virtual machine with no .NET runtime; upgrade in place keeps settings and replaces `ffmpeg\` cleanly; uninstall removes tasks and registry entries; silent install relaunches the app |
+| U-06 | `installer/MediaVerifier.iss` | Compiles with Inno Setup 6 within the size budget; per-user install without elevation; on a clean Windows 10 22H2 virtual machine setup stops with the prerequisite message until the .NET 10 Desktop Runtime is installed, then installs and runs; upgrade in place keeps settings and replaces `ffmpeg\` cleanly; uninstall removes tasks and registry entries; silent install relaunches the app |
 | U-07 | `release.ps1`, `release.yml` (and `ci.yml` if task F-01 has not already added it) | CI green on a pull request. A tag on a fork or test repository with a test key produces a release with all six assets; a tag without the secret fails the workflow |
 | U-08 | Settings → Updates card and nav indicator | States: never checked, checking, up to date, update available, downloading with percentage, validation failed, offline. Buttons enable exactly per `CanDownload` / `CanInstall` |
 | U-09 | Startup check timing, active-scan confirmation, portable *Install* path | Manual test of all three |

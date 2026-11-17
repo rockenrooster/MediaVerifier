@@ -35,7 +35,7 @@ runtime, FFmpeg and SQLite, and never downloads components at run time.
 | Built-in updater like FastTaskMgr | 14 |
 | Public GitHub repository | Done in phase 0 (`rockenrooster/MediaVerifier`) |
 | UI kit and all design decisions specified exactly, not left to the implementer | 08, 09 and the reference mockups in `docs/design/` (D-15) |
-| All dependencies self-contained | D-01, D-04, D-05, D-16; bundled FFmpeg in 17 |
+| All dependencies ship with the app, except the .NET 10 Desktop Runtime (an installed prerequisite, owner decision) | D-01, D-04, D-05, D-16; bundled FFmpeg in 17 |
 | Anything else appropriate | Healthy-copy restore (06, 12), evidence views (09), reports (12), headless mode (13), calibration harness (15) |
 
 ## 3. Non-goals for v1
@@ -56,7 +56,7 @@ changes are informed.
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D-01 | C# / .NET 10, WinForms, `win-x64`, nullable enabled, warnings as errors. Published **self-contained** as a single file with ReadyToRun and **without** single-file compression; no trimming | Matches the owner's FastTaskMgr stack, so its updater and UI patterns port directly, while needing no installed runtime. Measured on a WinForms probe with SQLite and hashing referenced: self-contained uncompressed starts in 111–124 ms with 15.5 MB private memory (123.5 MB on disk); compressed is 53 MB on disk but starts in 271–284 ms with 75 MB private memory, because assemblies are unpacked into memory. The installer compresses the download anyway. WinForms and the late-bound COM used for scheduling do not support trimming |
+| D-01 | C# / .NET 10, WinForms, `win-x64`, nullable enabled, warnings as errors. Published **framework-dependent** as a single file with ReadyToRun; no trimming. The **.NET 10 Desktop Runtime (x64) installed on the PC is a prerequisite** (owner decision, 2026-11-16); the default roll-forward picks the newest installed 10.0 patch | Matches the owner's FastTaskMgr stack and build (`--self-contained false /p:PublishSingleFile=true /p:PublishReadyToRun=true`), so its updater and UI patterns port directly, and the runtime is serviced by Windows Update rather than by our releases. Measured: the published `MediaVerifier.exe` is 6.7 MB plus the 2 MB `e_sqlite3.dll`, and runs on the installed runtime (10.0.15). Without the runtime, the .NET app host shows its own message with the download link. WinForms and the late-bound COM used for scheduling do not support trimming |
 | D-02 | Three projects: `MediaVerifier` (WinForms exe), `MediaVerifier.Core` (engine library, no UI references), `MediaVerifier.Tests` (xUnit) | The engine must be testable and usable headless; single-file publish still yields one exe |
 | D-03 | All decoding goes through external `ffmpeg.exe` / `ffprobe.exe` processes. No FFmpeg libraries are loaded in-process | The inputs are corrupt files by definition. A decoder crash or hang must never take the app down, and a stuck decode must be killable. Also avoids unsafe code and native leaks, and keeps FFmpeg licensing separate |
 | D-04 | FFmpeg is bundled: our own LGPL 2.1+ build of FFmpeg 9.0.2 with every decoder and demuxer, no network code, no devices and only the encoders and filters the app uses ([subplan 17](17-bundled-ffmpeg.md)). The app uses no other copy | Self-contained, reproducible and identical on every machine, so results do not depend on what the user has installed. A scanned file can never trigger network access. LGPL 2.1+ keeps licence obligations to offering FFmpeg's own source |
@@ -71,7 +71,7 @@ changes are informed.
 | D-13 | Every numeric threshold lives in one place (`RuleDefaults`), is user-tunable per rule, and is calibrated against a generated fixture corpus | "Measure before changing algorithms"; avoids scattered magic numbers |
 | D-14 | Installer is per-user by default (`PrivilegesRequired=lowest`) | Silent updates without a UAC prompt; tasks and registrations are per-user anyway |
 | D-15 | The design is specified, not delegated. Subplans 08 and 09 and the mockups in `docs/design/` fix every colour, size, position, icon, state and string; the implementer reproduces them and logs any case they do not cover | The owner asked for every creative and design decision to be spelled out. A specified design can be checked; an improvised one drifts |
-| D-16 | Nothing is fetched or required at run time beyond Windows itself. The only operating-system parts relied on are ones every supported Windows 10 and 11 installation has: Win32, GDI and GDI+, the Universal C Runtime, ICU, the Segoe UI and Consolas fonts, Task Scheduler, the notification platform and the shell. Icons are drawn from geometry; no icon font (Segoe Fluent Icons exists only on Windows 11), WebView2, Windows App SDK or Visual C++ redistributable is used | Self-contained, as the owner asked, and works the same on every supported machine |
+| D-16 | Nothing is fetched at run time, and nothing is required beyond Windows itself and the .NET 10 Desktop Runtime (D-01). The only operating-system parts relied on are ones every supported Windows 10 and 11 installation has: Win32, GDI and GDI+, the Universal C Runtime, ICU, the Segoe UI and Consolas fonts, Task Scheduler, the notification platform and the shell. Icons are drawn from geometry; no icon font (Segoe Fluent Icons exists only on Windows 11), WebView2, Windows App SDK or Visual C++ redistributable is used | Works the same on every supported machine with the one documented prerequisite |
 
 ## 5. Architecture
 
@@ -202,9 +202,9 @@ These are requirements, verified in subplan 16. Measure before optimising.
 
 | Metric | Budget |
 |--------|--------|
-| Installed size (app folder: self-contained exe, `e_sqlite3.dll`, `ffmpeg\`) | 200 MB or less (expected: about 125 MB exe, 2 MB SQLite, at most 60 MB FFmpeg) |
+| Installed size (app folder: framework-dependent exe, `e_sqlite3.dll`, `ffmpeg\`) | 200 MB or less (measured: 6.7 MB exe, 2 MB SQLite; at most 60 MB FFmpeg) |
 | Installer download | 90 MB or less |
-| Cold start to interactive window | 500 ms or less on an SSD (the self-contained probe measured 111–124 ms) |
+| Cold start to interactive window | 500 ms or less on an SSD (the self-contained probe measured 111–124 ms; re-measured framework-dependent in subplan 16) |
 | Idle CPU with the window open and no scan | 0 % (no polling timers on hidden pages) |
 | Idle private memory, 100,000-file database | 80 MB or less (the probe measured 15.5 MB) |
 | Background processes when the app is closed | None |
@@ -299,7 +299,8 @@ These apply to every task.
 
 **Dependencies**
 
-Everything the app needs ships inside its folder (D-01, D-04, D-05, D-16).
+Everything the app needs ships inside its folder, except the .NET 10 Desktop Runtime, which must be
+installed on the PC (D-01, D-04, D-05, D-16).
 
 - NuGet packages for the product: `Microsoft.Data.Sqlite.Core` 10.0.9, `SQLitePCLRaw.bundle_e_sqlite3`
   2.1.14, `System.IO.Hashing`, `System.Numerics.Tensors`. Pin exact versions.
@@ -333,7 +334,7 @@ A task is done when:
 | False positives in heuristic rules erode trust | High | Confidence values, conservative defaults, calibration corpus (15), per-rule tuning and ignore |
 | FFmpeg log text differs between versions | Medium | One bundled version; classifier matches message cores, not prefixes; captured log corpus re-run on every FFmpeg update (17) |
 | The FFmpeg build image or source archive disappears upstream | Low | Image pinned by digest; source mirrored into our own release; built bundles stay in our releases, so only a version change needs a rebuild (17) |
-| Installed size is larger than a framework-dependent app | Low | Measured and budgeted; uncompressed single file chosen for start time and memory; the installer compresses (D-01) |
+| The .NET 10 Desktop Runtime is missing or too old | Medium | The installer checks for it before installing and names the download page; the app host shows the same link if it is removed later (D-01) |
 | Full-library first scan takes many hours | Medium | Depth choice, time estimates before starting, resumable runs, per-volume I/O policy, scrub budgets |
 | Remediation damages a file | Critical | Never in place; verify before swap; journal and undo; packet-hash equality check for remuxes (12) |
 | Toast interop fails on some Windows builds | Low | Balloon fallback and in-app notification centre; self-check exercises the path |

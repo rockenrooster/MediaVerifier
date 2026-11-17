@@ -72,7 +72,9 @@ The interface is fully designed: every screen, component, state, icon, colour an
 
 ## Technology
 
-C# on .NET 10 with WinForms for Windows 10 and 11 (x64), published self-contained. Media is decoded
+C# on .NET 10 with WinForms for Windows 10 and 11 (x64), published framework-dependent: the
+[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64) must be installed
+on the PC. Media is decoded
 by a bundled LGPL build of FFmpeg 9.0.2 that runs as separate processes, never in-process, so a
 corrupt file cannot crash the app; the build contains no network code. Storage is a bundled SQLite.
 The updater follows the signed-manifest flow in [docs/updater.md](docs/updater.md).

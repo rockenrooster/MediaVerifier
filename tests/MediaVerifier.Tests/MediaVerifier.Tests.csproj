@@ -6,8 +6,6 @@
     <RootNamespace>MediaVerifier.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- The app project is a self-contained exe (D-01); the test host only loads its assembly. -->
-    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
 
   <ItemGroup>

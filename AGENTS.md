@@ -20,7 +20,8 @@ documents only; the first code is written in phase 1.
 - **All decoding goes through the bundled `ffmpeg.exe` / `ffprobe.exe` as separate processes**
   (subplans 04 and 17). Do not load FFmpeg libraries in-process and do not look for another FFmpeg.
   Pass arguments only through `ProcessStartInfo.ArgumentList`; never use a shell.
-- **Everything ships inside the app folder.** Self-contained .NET, bundled FFmpeg and SQLite. Never
+- **Everything else ships inside the app folder.** The one prerequisite is the .NET 10 Desktop
+  Runtime (x64) installed on the PC (master plan D-01). FFmpeg and SQLite are bundled. Never
   download, install or look up a component at run time, and never depend on an optional Windows
   component (master plan D-16).
 - **Do not design.** Colours, sizes, layout, icons, states and every user-facing string are fixed by
@@ -39,8 +40,8 @@ documents only; the first code is written in phase 1.
 
 ## Working conventions
 
-- C# on .NET 10, WinForms, `win-x64`, self-contained single-file publish with ReadyToRun and without
-  compression. Nullable enabled, warnings as errors.
+- C# on .NET 10, WinForms, `win-x64`, framework-dependent single-file publish with ReadyToRun; the
+  installed .NET 10 Desktop Runtime is a prerequisite. Nullable enabled, warnings as errors.
 - Low overhead, no leaks: dispose what you create, no allocations in paint or scroll paths.
 - Measure before optimising. Prefer SIMD-capable library routines and keep a scalar fallback.
 - Small, focused commits. Do not touch unrelated files.

@@ -5,6 +5,8 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- MediaVerifier uses the .NET 10 Desktop Runtime (x64) installed on the PC instead of carrying its
+  own copy: the download is much smaller, and setup asks for the runtime when it is missing.
 - Scans check every photo, video and music file for damage: broken or truncated containers, decoder
   errors, hidden video damage at Deep depth, embedded checksum failures (FLAC, PNG, Ogg), stalled
   decodes, wrong seek indexes, mismatched extensions and unrecognised files.

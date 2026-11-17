@@ -82,10 +82,10 @@ message.
   anchor.
 - `docs/detection-rates.md`, `docs/calibration/*.md`, `docs/perf.md`: generated or recorded by
   subplan 15 and this one.
-- `docs/troubleshooting.md`: FFmpeg not found, scheduled scans not running, no toasts, slow scans on
-  HDD, false positives and how to tune or ignore a rule.
+- `docs/troubleshooting.md`: the .NET 10 Desktop Runtime missing, FFmpeg not found, scheduled scans
+  not running, no toasts, slow scans on HDD, false positives and how to tune or ignore a rule.
 - `THIRD-PARTY-NOTICES.md`, shipped in the app folder and shown under Settings → About → Licences:
-  the .NET runtime and libraries (MIT), Microsoft.Data.Sqlite (MIT), SQLitePCLRaw (Apache-2.0),
+  the .NET libraries shipped in the app (MIT), Microsoft.Data.Sqlite (MIT), SQLitePCLRaw (Apache-2.0),
   SQLite (public domain), System.IO.Hashing and System.Numerics.Tensors (MIT), FFmpeg (LGPL 2.1 or
   later, with where to get its source), dav1d (BSD-2-Clause), libjxl (BSD-3-Clause) and each library
   linked into it, and zlib (zlib licence). Generated from the package metadata and the bundle's
