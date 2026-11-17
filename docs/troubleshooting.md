@@ -27,6 +27,19 @@ not use any other FFmpeg on the PC.
 Check Settings → Notifications and Windows Settings → System → Notifications. Every notification is
 also kept in the bell at the top of the window.
 
+- **Send a test notification** (Settings → Notifications) shows whether Windows notifications work.
+  When they do not, the test appears inside the window instead.
+- MediaVerifier registers itself for notifications each time it starts (under
+  `HKEY_CURRENT_USER\Software\Classes\AppUserModelId\rockenrooster.MediaVerifier`). Start it once after
+  moving a portable copy; `MediaVerifier.exe --self-check` reports whether the Windows notification
+  service can be reached.
+- Focus assist (Do not disturb) and quiet hours hold notifications back: quiet hours put them in the
+  notification centre without a pop-up.
+- Scheduled scans notify only about new problems at or above *Notify about* and the schedule's own
+  setting; a scan that finds nothing new stays silent unless the schedule says *Always*.
+- A webhook that does not answer is logged (Settings → Advanced → Open logs folder); *Send test* next
+  to it checks the address.
+
 ## Scans are slow
 
 - Hard disks and network drives are read one file at a time on purpose; SSDs in parallel.

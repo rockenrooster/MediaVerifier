@@ -599,11 +599,13 @@ public sealed class PhotoQualityDetector : IDetector
                 new Dictionary<string, object>(StringComparer.Ordinal) { ["width"] = width, ["height"] = height });
         }
 
+        // Heavy JPEG compression removes detail the same way enlarging does: such a verdict carries less confidence
+        // (calibration, docs/calibration/photo.md), as a starved video's does.
+        bool compressed = quality is double qv && qv < rules.Value("IMG-HEAVY-COMPRESSION", "lowQuality");
         if (input.Get<FrameSamplesArtifact>() is { Sampled: true } samples
-            && UpscaleDecision.Decide(samples, rules.Value("IMG-UPSCALED", "minSpatialInfo"), rules.Value("IMG-UPSCALED", "ssim"), 1, false) is UpscaleVerdict verdict)
+            && UpscaleDecision.Decide(samples, rules.Value("IMG-UPSCALED", "minSpatialInfo"), rules.Value("IMG-UPSCALED", "ssim"), 1, compressed) is UpscaleVerdict verdict)
         {
             double r = (double)verdict.EffectiveHeight / verdict.ContainerHeight;
-            bool compressed = quality is double qv && qv < rules.Value("IMG-HEAVY-COMPRESSION", "lowQuality");
             int effectiveWidth = (int)Math.Round(samples.Width * r);
             sink.Raise(
                 "IMG-UPSCALED",
