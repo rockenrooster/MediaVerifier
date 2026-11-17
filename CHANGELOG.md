@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.1 - 2026-11-17
+
 - MediaVerifier is released under the MIT License; the licence is in the app folder and in
   Settings → About → Licences.
 - MediaVerifier ships its own FFmpeg 9.0.2 (LGPL 2.1 or later), built with only the decoders,
@@ -101,3 +104,4 @@ All notable changes to MediaVerifier are documented here.
   its licence and integrity, and database maintenance (back up, compact, check, reset).
 - Notifications flyout under the bell; keyboard shortcuts (Ctrl+F, /, F5, Ctrl+N, Ctrl+Shift+S, F1,
   Esc); ignoring a rule for a folder from the Issues row menu.
+
