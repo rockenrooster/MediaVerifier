@@ -188,48 +188,88 @@ internal sealed class ToolsPage : PageBase
 
     private QuarantineEntry? SelectedKept() => _view == 0 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _kept.Count ? _kept[_table.FocusedIndex] : null;
 
+    /// <summary>
+    /// What Restore and Delete for good act on (subplan 09, Quarantine: they are selection actions): the selected rows
+    /// (Ctrl or Shift with a click, Ctrl+A), or the focused one. They acted on the focused row only.
+    /// </summary>
+    internal List<QuarantineEntry> ChosenKept()
+    {
+        if (_view != 0)
+        {
+            return [];
+        }
+
+        List<QuarantineEntry> chosen = [.. _table.SelectedIds.Where(i => i >= 0 && i < _kept.Count).Order().Select(i => _kept[(int)i])];
+        if (chosen.Count == 0 && SelectedKept() is QuarantineEntry focused)
+        {
+            chosen.Add(focused);
+        }
+
+        return chosen;
+    }
+
     private void UpdateViewButtons()
     {
         bool live = Services.Operations is not null && !Services.IsDemo;
-        _restore.Enabled = _delete.Enabled = live && SelectedKept() is not null;
+        _restore.Enabled = _delete.Enabled = live && ChosenKept().Count > 0;
         _openFolder.Enabled = SelectedKept() is { Size: not null };
         _undo.Enabled = live && _view == 1 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _batches.Count
             && _data?.Operations.Any(o => o.BatchId == _batches[_table.FocusedIndex] && o.Status == OperationStatus.Done && o.UndoJson is not null) == true;
     }
 
-    /// <summary>Restore: the original comes back (the operation is undone).</summary>
+    /// <summary>Restore: the originals come back (their operations are undone), one toast for all of them.</summary>
     private async Task RestoreSelectedAsync()
     {
-        if (SelectedKept()?.Operation is not OperationRecord kept || Services.Operations is not { } runner)
+        List<QuarantineEntry> chosen = ChosenKept();
+        if (chosen.Count == 0 || Services.Operations is not { } runner)
         {
             return;
         }
 
-        string? failure = await Task.Run(() => runner.UndoAsync(kept.Id, Services.Clock.UtcNow.UtcTicks, CancellationToken.None)).ConfigureAwait(true);
+        long batch = Services.Clock.UtcNow.UtcTicks;
+        string? failure = await Task.Run(async () =>
+        {
+            string? first = null;
+            foreach (QuarantineEntry entry in chosen)
+            {
+                first ??= await runner.UndoAsync(entry.Operation.Id, batch, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            return first;
+        }).ConfigureAwait(true);
+        string what = chosen.Count == 1 ? Path.GetFileName(chosen[0].Operation.SourcePath) : UiFormat.Plural(chosen.Count, Strings.Repair.OneFile, Strings.Repair.ManyFiles);
         Services.ShowToast?.Invoke(failure is null
-            ? new ToastContent(Severity.None, Strings.Repair.Undone, Path.GetFileName(kept.SourcePath))
+            ? new ToastContent(Severity.None, Strings.Repair.Undone, what)
             : new ToastContent(Severity.Critical, Strings.Repair.UndoFailed, failure));
+        _table.ClearSelection();
         Reload();
     }
 
-    /// <summary>Delete for good after dialog B (subplan 09): the only permanent deletion.</summary>
+    /// <summary>Delete for good after dialog B (subplan 09): the only permanent deletion; one question for all chosen.</summary>
     private async Task DeleteSelectedAsync()
     {
-        if (SelectedKept() is not QuarantineEntry entry || Services.Operations is not { } runner || FindForm() is not Form owner)
+        List<QuarantineEntry> chosen = ChosenKept();
+        if (chosen.Count == 0 || Services.Operations is not { } runner || FindForm() is not Form owner)
         {
             return;
         }
 
-        OperationRecord kept = entry.Operation;
-        long size = entry.Size ?? 0;
-        string title = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteTitle, UiFormat.Count(1));
+        long size = chosen.Sum(e => e.Size ?? 0);
+        string title = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteTitle, UiFormat.Count(chosen.Count));
         string text = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteText, UiFormat.Size(size));
         if (!MessageDialog.Confirm(owner, title, text, Strings.Dialogs.KeepThem, Strings.Dialogs.DeleteForGood, destructive: true))
         {
             return;
         }
 
-        await Task.Run(() => runner.PurgeOneAsync(kept.Id)).ConfigureAwait(true);
+        await Task.Run(async () =>
+        {
+            foreach (QuarantineEntry entry in chosen)
+            {
+                await runner.PurgeOneAsync(entry.Operation.Id).ConfigureAwait(false);
+            }
+        }).ConfigureAwait(true);
+        _table.ClearSelection();
         Reload();
     }
 

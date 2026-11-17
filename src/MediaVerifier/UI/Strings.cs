@@ -416,6 +416,8 @@ internal static class Strings
         public const string Found = "{0} media files found · {1}";
         public const string NoneFound = "No media files found here";
         public const string ErrorMissing = "This folder does not exist";
+        public const string ErrorUnreachable = "This folder cannot be reached";
+        public const string Reaching = "Trying to reach this folder…";
         public const string ErrorWatched = "This folder is already being watched";
         public const string ErrorInside = "This folder is inside {0}, which is already being watched";
         public const string AddedToast = "{0} added";

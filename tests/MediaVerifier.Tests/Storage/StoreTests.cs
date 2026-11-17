@@ -194,6 +194,32 @@ public sealed class StoreTests
     }
 
     /// <summary>
+    /// The Library tree's "Ignore a rule here…" lists the rules with open problems in the folder and below it, with
+    /// their counts, and none from beside it.
+    /// </summary>
+    [Fact]
+    public async Task RuleCountsOfAFolderCoverItsSubtreeOnly()
+    {
+        using TestDatabase db = new();
+        long root = await db.Database.Roots.AddAsync(new RootRecord { Path = @"D:\Music" });
+        FileUpsertResult[] files = await db.Database.Files.UpsertAsync(
+        [
+            new(root, @"Live\2019", "a.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+            new(root, "Live", "b.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+            new(root, "Studio", "c.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+        ]);
+        await db.Database.Findings.ReplaceForFileAsync(files[0].FileId, 1, StandardRules, [Raise("AUD-CLIPPING", Severity.Medium)], false);
+        await db.Database.Findings.ReplaceForFileAsync(files[1].FileId, 1, StandardRules, [Raise("AUD-CLIPPING", Severity.Medium)], false);
+        await db.Database.Findings.ReplaceForFileAsync(files[2].FileId, 1, StandardRules, [Raise("AUD-DC", Severity.Low)], false);
+        long live = db.Database.Queries.FolderRollup(root).Single().Children.Single(c => c.Name == "Live").Id;
+
+        Dictionary<string, int> counts = db.Database.Queries.CountsByRule(new FindingFilter { RootId = root, DirId = live });
+
+        Assert.Equal(2, Assert.Single(counts, c => c.Key == "AUD-CLIPPING").Value);
+        Assert.DoesNotContain("AUD-DC", counts.Keys);
+    }
+
+    /// <summary>
     /// Undo of Ignore and Stop ignoring: an ignored finding opens again, and one hidden by a folder ignore removes the
     /// ignore, so the next scan does not hide it again. Open findings are left alone.
     /// </summary>

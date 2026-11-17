@@ -62,6 +62,8 @@ internal sealed partial class LiveUiData
         return groups;
     }
 
+    public SeverityCounts CountIssues(FindingFilter filter) => database.Queries.SeverityCounts(filter);
+
     public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids)
     {
         List<FindingRow> rows = database.Queries.FindingRows(ids);

@@ -25,6 +25,9 @@ internal enum DialogWidth
 /// </summary>
 internal class KitDialog : Form
 {
+    /// <summary>Off-screen (render harness, tests) a dialog opens without taking the focus from the user's window.</summary>
+    protected override bool ShowWithoutActivation => Diagnostics.ScreenRenderer.Offscreen;
+
     private readonly List<KitButton> _buttons = [];
     private readonly Panel _body;
     private readonly IconButton? _close;

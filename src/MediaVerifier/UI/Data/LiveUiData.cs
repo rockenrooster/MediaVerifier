@@ -22,18 +22,7 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
         HealthSnapshot health = database.Queries.Health(TimeSpan.FromDays(scan.ScrubPeriodDays), clock.UtcNow);
         List<RunRecord> runs = database.Runs.List(30);
         RunRecord? last = runs.FirstOrDefault(r => r.Status != RunStatus.Running);
-        List<ActivityItem> activity = [];
-        foreach (RunRecord run in runs.Where(r => r.Status != RunStatus.Running).Take(4))
-        {
-            string text = run.Status switch
-            {
-                RunStatus.Completed or RunStatus.BudgetReached => run.Trigger == RunTrigger.Scheduled ? Strings.Activity.ScheduledFinished : Strings.Activity.ScanFinished,
-                RunStatus.Cancelled => Strings.Activity.StoppedByYou,
-                _ => Strings.Activity.CouldNotRun,
-            };
-            activity.Add(new ActivityItem(text, Ticks(run.EndedUtc ?? run.StartedUtc)));
-        }
-
+        List<ActivityItem> activity = Activity(runs, roots);
         List<KindRow> kinds = [.. database.Queries.KindSummaries().Select(k => new KindRow(k.Kind, k.Files, k.Bytes, k.Tiers, k.HealthyFiles))];
         IReadOnlyList<RecommendationItem> recommendations = [.. Core.Remediation.RecommendationEngine.Build(database, scan, Core.Engine.WindowsFileSystem.Instance, clock.UtcNow).Select(r => Word(r, scan))];
         NextRunInfo? next = null;
@@ -66,6 +55,76 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
             activity,
             []);
     }
+
+    /// <summary>Meta key of the last folder that stopped being watched, as <c>{utc ticks}|{name}</c> (Recent activity).</summary>
+    public const string RemovedFolderKey = "activity.folderRemoved";
+
+    /// <summary>Meta key of the last update, as <c>{utc ticks}|{version}</c> (Recent activity).</summary>
+    public const string UpdatedKey = "activity.updated";
+
+    /// <summary>
+    /// Recent activity (subplan 09, Dashboard): scans, folders added and removed, restores and repairs from the journal,
+    /// and updates, newest first, four at most. Only scans were listed.
+    /// </summary>
+    private List<ActivityItem> Activity(List<RunRecord> runs, List<RootRecord> roots)
+    {
+        System.Globalization.CultureInfo c = System.Globalization.CultureInfo.CurrentCulture;
+        List<ActivityItem> items = [];
+        foreach (RunRecord run in runs.Where(r => r.Status != RunStatus.Running).Take(4))
+        {
+            string text = run.Status switch
+            {
+                RunStatus.Completed or RunStatus.BudgetReached => run.Trigger == RunTrigger.Scheduled ? Strings.Activity.ScheduledFinished : Strings.Activity.ScanFinished,
+                RunStatus.Cancelled => Strings.Activity.StoppedByYou,
+                _ => Strings.Activity.CouldNotRun,
+            };
+            items.Add(new ActivityItem(text, Ticks(run.EndedUtc ?? run.StartedUtc)));
+        }
+
+        foreach (RootRecord root in roots.Where(r => r.AddedUtc.Year > 2000))
+        {
+            items.Add(new ActivityItem(string.Format(c, Strings.Activity.FolderAdded, root.Label ?? Path.GetFileName(root.Path.TrimEnd('\\'))), root.AddedUtc));
+        }
+
+        // A batch of one action is one entry; undo records and actions that change no file (quarantine, accept) are left out.
+        foreach (IGrouping<long, OperationRecord> batch in database.Journal.List(200, status: OperationStatus.Done)
+            .Where(o => o.DetailJson?.StartsWith("undo:", StringComparison.Ordinal) != true)
+            .GroupBy(o => o.BatchId))
+        {
+            int n = batch.Count();
+            string? text = batch.First().ActionId switch
+            {
+                Core.Rules.ActionIds.RestoreCopy => n == 1 ? Strings.Activity.RestoredOne : string.Format(c, Strings.Activity.Restored, UiFormat.Count(n)),
+                Core.Rules.ActionIds.Remux or Core.Rules.ActionIds.FixExtension or Core.Rules.ActionIds.ShrinkBitDepth or Core.Rules.ActionIds.ReencodeFlac
+                    or Core.Rules.ActionIds.Salvage or Core.Rules.ActionIds.ExtractPreview or Core.Rules.ActionIds.DeclipCopy
+                    => n == 1 ? Strings.Activity.RepairedOne : string.Format(c, Strings.Activity.Repaired, UiFormat.Count(n)),
+                _ => null,
+            };
+            if (text is not null)
+            {
+                items.Add(new ActivityItem(text, Ticks(batch.Max(o => o.Utc))));
+            }
+        }
+
+        if (Marked(RemovedFolderKey) is (DateTimeOffset removed, string name))
+        {
+            items.Add(new ActivityItem(string.Format(c, Strings.Activity.FolderRemoved, name), removed));
+        }
+
+        if (Marked(UpdatedKey) is (DateTimeOffset updated, string version))
+        {
+            items.Add(new ActivityItem(string.Format(c, Strings.Activity.Updated, version), updated));
+        }
+
+        return [.. items.OrderByDescending(i => i.When).Take(4)];
+    }
+
+    /// <summary>A <c>{utc ticks}|{text}</c> meta value.</summary>
+    private (DateTimeOffset When, string Text)? Marked(string key) =>
+        database.Meta.Get(key) is string value && value.IndexOf('|', StringComparison.Ordinal) is int bar and > 0
+        && long.TryParse(value.AsSpan(0, bar), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long ticks)
+            ? (Ticks(ticks), value[(bar + 1)..])
+            : null;
 
     /// <summary>The wording of subplan 09's recommendation table for one recommendation.</summary>
     internal static RecommendationItem Word(Core.Remediation.Recommendation r, ScanSettings scan)

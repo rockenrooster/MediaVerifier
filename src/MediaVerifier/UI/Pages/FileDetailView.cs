@@ -24,6 +24,13 @@ internal sealed class FileDetailView : KitControl
     private readonly IconButton _more = new() { Icon = IconName.More };
     private readonly IconButton _close = new() { Icon = IconName.Close };
     private readonly List<(KitButton Ignore, KitButton Rescan)> _findingButtons = [];
+
+    // The cards' chevrons are buttons, so the keyboard opens what a click on the row opens (findings past the first,
+    // History, Technical details were mouse only).
+    private readonly List<IconButton> _expanders = [];
+    private readonly IconButton _historyToggle = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = Strings.Drawer.History };
+    private readonly IconButton _technicalToggle = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = Strings.Drawer.TechnicalDetails };
+    private readonly KitButton _copyDetails = new() { Kind = ButtonKind.Subtle, Icon = IconName.Copy, Text = Strings.Drawer.CopyDetails, Visible = false };
     private readonly HashSet<int> _expanded = [0];
     private readonly List<Rectangle> _findingHeaders = [];
     private Rectangle _historyRow;
@@ -60,7 +67,27 @@ internal sealed class FileDetailView : KitControl
         _showInFolder.Click += (_, _) => ShowInFolderRequested?.Invoke(this, EventArgs.Empty);
         _primary.Click += (_, _) => PrimaryRequested?.Invoke(this, EventArgs.Empty);
         _more.Click += (_, _) => MoreRequested?.Invoke(this, _more.PointToScreen(new Point(0, _more.Height)));
-        Controls.AddRange([_close, _primary, _showInFolder, _more]);
+        _historyToggle.Click += (_, _) =>
+        {
+            _historyOpen = !_historyOpen;
+            Relayout();
+        };
+        _technicalToggle.Click += (_, _) =>
+        {
+            _technicalOpen = !_technicalOpen;
+            Relayout();
+        };
+        _copyDetails.Click += (_, _) =>
+        {
+            if (_detail is FileDetail shown)
+            {
+                ShellActions.CopyText([shown.TechnicalText]);
+            }
+        };
+        _historyToggle.TabIndex = 1000;
+        _technicalToggle.TabIndex = 1001;
+        _copyDetails.TabIndex = 1002;
+        Controls.AddRange([_close, _primary, _showInFolder, _more, _historyToggle, _technicalToggle, _copyDetails]);
     }
 
     public event EventHandler? CloseRequested;
@@ -112,14 +139,27 @@ internal sealed class FileDetailView : KitControl
         }
 
         _findingButtons.Clear();
-        foreach (FindingDetail finding in detail.Findings)
+        foreach (IconButton expander in _expanders)
         {
-            KitButton ignore = new() { Kind = ButtonKind.Subtle, Icon = IconName.Ignore, Text = Strings.Issues.Ignore };
-            KitButton rescan = new() { Kind = ButtonKind.Subtle, Icon = IconName.Refresh, Text = Strings.Issues.ScanAgain };
+            Controls.Remove(expander);
+            expander.Dispose();
+        }
+
+        _expanders.Clear();
+        for (int i = 0; i < detail.Findings.Count; i++)
+        {
+            FindingDetail finding = detail.Findings[i];
+            KitButton ignore = new() { Kind = ButtonKind.Subtle, Icon = IconName.Ignore, Text = Strings.Issues.Ignore, TabIndex = 11 + (3 * i) };
+            KitButton rescan = new() { Kind = ButtonKind.Subtle, Icon = IconName.Refresh, Text = Strings.Issues.ScanAgain, TabIndex = 12 + (3 * i) };
+            IconButton expander = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = finding.Title, TabIndex = 10 + (3 * i) };
             long id = finding.Id;
+            int index = i;
             ignore.Click += (_, _) => FindingAction?.Invoke(this, (id, true));
             rescan.Click += (_, _) => FindingAction?.Invoke(this, (id, false));
+            expander.Click += (_, _) => ToggleFinding(index);
             _findingButtons.Add((ignore, rescan));
+            _expanders.Add(expander);
+            Controls.Add(expander);
             Controls.Add(ignore);
             Controls.Add(rescan);
         }
@@ -411,7 +451,6 @@ internal sealed class FileDetailView : KitControl
                     Card.Draw(g, new Rectangle(x, top, width, cardHeight), null, VisualState.Rest, false, DeviceDpi);
                     int badge = BadgePainter.PaintSeverityBadge(g, x + S(12), top + S(12), f.Severity, DeviceDpi);
                     KitPaint.DrawText(g, f.Title, type.BodyStrong, t.Text, x + S(12) + badge + S(12), top + S(22), width - badge - S(64));
-                    IconRenderer.Draw(g, IconName.ChevronDown, x + width - SF(28), top + SF(14), 16, DeviceDpi, t.Text2);
                 }
 
                 HideButtons(i);
@@ -464,6 +503,7 @@ internal sealed class FileDetailView : KitControl
             }
 
             _findingHeaders.Add(new Rectangle(x, top, width, S(44)));
+            PlaceExpander(i < _expanders.Count ? _expanders[i] : null, x, top, width, open);
             y = top + cardHeight + S(12);
         }
 
@@ -474,7 +514,6 @@ internal sealed class FileDetailView : KitControl
         {
             Card.Draw(g, new Rectangle(x, y, width, historyHeight), null, VisualState.Rest, false, DeviceDpi);
             KitPaint.DrawText(g, Strings.Drawer.History, type.BodyStrong, t.Text, x + S(24), y + S(22), width - S(64));
-            IconRenderer.Draw(g, _historyOpen ? IconName.ChevronUp : IconName.ChevronDown, x + width - SF(28), y + SF(14), 16, DeviceDpi, t.Text2);
             if (_historyOpen)
             {
                 IReadOnlyList<(string, string)> events = [.. d.History.Select(h => (h.Text, UiFormat.RecentDate(h.When, _now)))];
@@ -482,22 +521,44 @@ internal sealed class FileDetailView : KitControl
             }
         }
 
+        PlaceExpander(_historyToggle, x, y, width, _historyOpen);
         y += historyHeight + S(12);
         _technicalRow = new Rectangle(x, y, width, S(44));
-        int technicalHeight = _technicalOpen ? S(44) + TextWrap.Measure(d.TechnicalText, type.Mono, width - S(24), S(16)) + S(12) : S(44);
+        int technicalText = _technicalOpen ? TextWrap.Measure(d.TechnicalText, type.Mono, width - S(24), S(16)) : 0;
+        int technicalHeight = _technicalOpen ? S(40) + technicalText + S(8) + S(32) + S(12) : S(44);
         if (g is not null)
         {
             Card.Draw(g, new Rectangle(x, y, width, technicalHeight), null, VisualState.Rest, false, DeviceDpi);
             KitPaint.DrawText(g, Strings.Drawer.TechnicalDetails, type.BodyStrong, t.Text, x + S(24), y + S(22), width - S(64));
-            IconRenderer.Draw(g, _technicalOpen ? IconName.ChevronUp : IconName.ChevronDown, x + width - SF(28), y + SF(14), 16, DeviceDpi, t.Text2);
             if (_technicalOpen)
             {
                 TextWrap.Draw(g, d.TechnicalText, type.Mono, t.Text2, x + S(12), y + S(40), width - S(24), S(16));
             }
         }
 
+        PlaceExpander(_technicalToggle, x, y, width, _technicalOpen);
+
+        // Copy details (subplan 09, Detail drawer): the technical text as shown, for a bug report or a forum post.
+        _copyDetails.Visible = _technicalOpen;
+        if (_technicalOpen)
+        {
+            _copyDetails.Bounds = new Rectangle(x + S(12), y + S(40) + technicalText + S(8), S(_copyDetails.PreferredLogicalWidth), S(32));
+        }
+
         y += technicalHeight + S(Pad);
         return y;
+    }
+
+    /// <summary>A card's chevron: a button where the painted chevron was, pointing up while the card is open.</summary>
+    private void PlaceExpander(IconButton? expander, int x, int top, int width, bool open)
+    {
+        if (expander is null)
+        {
+            return;
+        }
+
+        expander.Icon = open ? IconName.ChevronUp : IconName.ChevronDown;
+        expander.Bounds = new Rectangle(x + width - S(34), top + S(8), S(28), S(28));
     }
 
     private int EvidenceHeight(FindingDetail f) => f.View switch

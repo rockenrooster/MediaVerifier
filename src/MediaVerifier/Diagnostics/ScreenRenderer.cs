@@ -169,11 +169,18 @@ internal static class ScreenRenderer
     }
 
     /// <summary>
+    /// True once windows are shown off-screen (the render harness and the tests): they then open without taking the
+    /// keyboard focus, so the user's own window does not flicker each time one opens.
+    /// </summary>
+    internal static bool Offscreen { get; set; }
+
+    /// <summary>
     /// Shows the window far off-screen at the given client size so every control has a handle and a
     /// layout; nothing appears on the user's screen.
     /// </summary>
     internal static void PrepareOffscreen(MainForm form, Size logicalClientSize)
     {
+        Offscreen = true;
         form.StartPosition = FormStartPosition.Manual;
         form.ShowInTaskbar = false;
         form.Location = new Point(-32000, -32000);

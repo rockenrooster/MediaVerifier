@@ -33,6 +33,10 @@ internal sealed class IssuesPage : PageBase
     private readonly VirtualList _list = new() { Mode = ListMode.TwoLine, AccessibleName = Strings.Pages.Issues };
     private readonly EmptyState _empty = new() { Visible = false };
     private readonly SelectionBar _selectionBar = new() { Visible = false };
+
+    /// <summary>"{n} new problems · Show" (subplan 09, Issues: new results during a scan), centred at the top of the list.</summary>
+    private readonly KitButton _newResults = new() { Kind = ButtonKind.Primary, Compact = true, Visible = false };
+    private bool _counting;
     private readonly IssuesSource _source;
     private readonly FileDetailView _detail = new();
     private readonly DrawerActions _drawer;
@@ -161,10 +165,17 @@ internal sealed class IssuesPage : PageBase
         Controls.Add(_all);
         Controls.AddRange(_tierChips);
         Controls.AddRange(_kindChips);
-        Controls.AddRange([_kindDrop, _category, _rule, _folder, _status, _groupDrop, _group, _list, _empty, _selectionBar]);
+        Controls.AddRange([_kindDrop, _category, _rule, _folder, _status, _groupDrop, _group, _list, _empty, _selectionBar, _newResults]);
         _selectionBar.BringToFront();
+        _newResults.BringToFront();
+        _newResults.Click += (_, _) =>
+        {
+            _newResults.Visible = false;
+            Reload();
+        };
+        CreatePageTimer(2000, (_, _) => UiTask.Run(CheckNewResultsAsync()));
         int tab = 0;
-        List<Control> order = [_all, .. _tierChips, .. _kindChips, _kindDrop, _category, _rule, _folder, _status, _group, _groupDrop, _list, _selectionBar];
+        List<Control> order = [_all, .. _tierChips, .. _kindChips, _kindDrop, _category, _rule, _folder, _status, _group, _groupDrop, _newResults, _list, _selectionBar];
         foreach (Control control in order)
         {
             control.TabIndex = tab++;
@@ -271,6 +282,50 @@ internal sealed class IssuesPage : PageBase
         }
     }
 
+    /// <summary>
+    /// While a scan runs, the shown filter is counted again every 2 seconds, off the UI thread: the chips take the new
+    /// counts at once, and problems added since the list loaded show as the pill, which reloads the list when pressed.
+    /// The list itself never changes under the pointer.
+    /// </summary>
+    internal async Task CheckNewResultsAsync()
+    {
+        if (_counting || _data is not IssuesData shown || !Services.Scans.Status.IsActive)
+        {
+            return;
+        }
+
+        _counting = true;
+        try
+        {
+            FindingFilter filter = _query.Filter;
+            SeverityCounts counts = await Task.Run(() => Services.Data.CountIssues(filter)).ConfigureAwait(true);
+            if (IsDisposed || !ReferenceEquals(_data, shown) || !ReferenceEquals(filter, _query.Filter))
+            {
+                return;
+            }
+
+            _updating = true;
+            _all.Count = (int)counts.Total;
+            for (int i = 0; i < Tiers.Length; i++)
+            {
+                _tierChips[i].Count = counts[Tiers[i]];
+            }
+
+            _updating = false;
+            long added = counts.Total - shown.TierCounts.Total;
+            if (added > 0)
+            {
+                _newResults.Text = string.Format(CultureInfo.CurrentCulture, Strings.Issues.NewResults, UiFormat.Count(added));
+                _newResults.Visible = true;
+                PerformLayout();
+            }
+        }
+        finally
+        {
+            _counting = false;
+        }
+    }
+
     internal void ClearFilters()
     {
         _firstRun = null;
@@ -338,6 +393,7 @@ internal sealed class IssuesPage : PageBase
         }
 
         _updating = false;
+        _newResults.Visible = false;
         _source.Rebuild(issues);
         _list.Refresh();
         UpdateEmptyState(issues);
@@ -414,6 +470,8 @@ internal sealed class IssuesPage : PageBase
         _empty.Bounds = Rectangle.Inflate(list, -S(1), -S(1));
         _selectionBar.Bounds = SelectionBar.PlaceIn(list, DeviceDpi);
         _source.ShowFolder = Width >= S(720);
+        int pill = S(_newResults.PreferredLogicalWidth);
+        _newResults.Bounds = new Rectangle(list.X + ((list.Width - pill) / 2), list.Y + S(8), pill, S(28));
     }
 
     protected override void OnPaint(PaintEventArgs e)

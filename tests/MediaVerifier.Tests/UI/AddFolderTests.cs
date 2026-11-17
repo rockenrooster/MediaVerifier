@@ -99,6 +99,12 @@ public sealed class AddFolderTests
         Assert.InRange(typing, 0, 500);
         Assert.False(addEnabled);
 
+        // The dialog, left open on that folder, says it is trying to reach it and then that it cannot (no 136 s wait).
+        (string? reaching, string? error, long waited) = WaitForUnreachable(Offline);
+        Assert.Equal(Strings.Library.Reaching, reaching);
+        Assert.Equal(Strings.Library.ErrorUnreachable, error);
+        Assert.InRange(waited, 0, 10_000);
+
         Stopwatch picker = Stopwatch.StartNew();
         string start = await PathBox.StartFolderAsync(Offline, TimeSpan.FromSeconds(2));
         Assert.Equal(string.Empty, start);
@@ -106,6 +112,71 @@ public sealed class AddFolderTests
 
         using TempDirectory folder = new("picker");
         Assert.Equal(folder.Path, await PathBox.StartFolderAsync(folder.Path, TimeSpan.FromSeconds(2)));
+    }
+
+    /// <summary>Types <paramref name="path"/> into Add folder with short reach limits; returns the bar's notice, the error and the wait.</summary>
+    private static (string? Reaching, string? Error, long Waited) WaitForUnreachable(string path)
+    {
+        string? reaching = null;
+        string? error = null;
+        long waited = -1;
+        TimeSpan notice = AddFolderDialog.ReachNotice;
+        TimeSpan limit = AddFolderDialog.ReachLimit;
+        AddFolderDialog.ReachNotice = TimeSpan.FromSeconds(1);
+        AddFolderDialog.ReachLimit = TimeSpan.FromSeconds(3);
+        try
+        {
+            Sta.Run(() =>
+            {
+                using TempDirectory temp = new("add-folder");
+                using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+                using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+                using MainForm form = new(services);
+                ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+                Stopwatch watch = new();
+                using System.Windows.Forms.Timer timer = new() { Interval = 50 };
+                timer.Tick += (_, _) =>
+                {
+                    if (Application.OpenForms.OfType<AddFolderDialog>().FirstOrDefault() is not AddFolderDialog dialog)
+                    {
+                        return;
+                    }
+
+                    if (!watch.IsRunning)
+                    {
+                        Find<PathBox>(dialog, _ => true).Text = path;
+                        watch.Start();
+                        return;
+                    }
+
+                    InfoBar bar = Find<InfoBar>(dialog, _ => true);
+                    if (bar.Text == Strings.Library.Reaching)
+                    {
+                        reaching = bar.Text;
+                    }
+
+                    string? shown = (string?)typeof(AddFolderDialog).GetField("_error", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(dialog);
+                    if (shown is not null || watch.Elapsed > TimeSpan.FromSeconds(10))
+                    {
+                        error = shown;
+                        waited = watch.ElapsedMilliseconds;
+                        dialog.Close();
+                    }
+                };
+                timer.Start();
+                Task shown = AddFolderDialog.ShowAsync(form, services, null, null);
+                Settle(shown);
+                timer.Stop();
+                form.Close();
+            });
+        }
+        finally
+        {
+            AddFolderDialog.ReachNotice = notice;
+            AddFolderDialog.ReachLimit = limit;
+        }
+
+        return (reaching, error, waited);
     }
 
     private static string? ClickAndCatchDialog(Action click)

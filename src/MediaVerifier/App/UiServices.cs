@@ -188,6 +188,7 @@ internal sealed class UiServices : IDisposable
                 await services.Operations.RecoverAsync().ConfigureAwait(false);
                 await services.Operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays).ConfigureAwait(false);
                 await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
+                await RecordUpdateAsync(database).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException or System.Security.SecurityException)
             {
@@ -198,6 +199,29 @@ internal sealed class UiServices : IDisposable
         services._owned.Add(runner);
         services._owned.Add(database);
         return services;
+    }
+
+    /// <summary>Meta key of the version that last ran against this database.</summary>
+    internal const string VersionKey = "app.version";
+
+    /// <summary>
+    /// After an update, the first start notes it for the Dashboard's Recent activity ("Updated to version {v}"). The
+    /// first start of all only records the version.
+    /// </summary>
+    internal static async Task RecordUpdateAsync(Database database)
+    {
+        string? previous = database.Meta.Get(VersionKey);
+        if (previous == AppInfo.VersionText)
+        {
+            return;
+        }
+
+        if (previous is not null)
+        {
+            await database.Meta.SetAsync(UI.Data.LiveUiData.UpdatedKey, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{DateTimeOffset.UtcNow.UtcTicks}|{AppInfo.VersionText}")).ConfigureAwait(false);
+        }
+
+        await database.Meta.SetAsync(VersionKey, AppInfo.VersionText).ConfigureAwait(false);
     }
 
     /// <summary>Takes ownership of something to dispose with the services (demo databases, temp folders).</summary>

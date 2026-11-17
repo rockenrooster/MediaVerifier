@@ -5,6 +5,17 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Add folder on a network folder that is offline says it is trying to reach it, then that it cannot,
+  instead of showing "Counting files…" for over two minutes.
+- The detail panel opens from the keyboard: each finding, History and Technical details has a
+  chevron button, and Technical details has Copy details.
+- Issues shows "N new problems · Show" while a scan finds more, without moving the list under you.
+- In Library, right-click a folder in the tree for "Ignore a rule here…".
+- Quarantine: Restore and Delete for good act on every selected file.
+- The Dashboard's Recent activity also lists folders added and removed, restores, repairs and
+  updates.
+- Copy system report (Settings → Advanced) copies the facts a bug report needs.
+- Fixed: at the smallest window, the Schedule page's verification text was cut short.
 
 ## 0.1.0.10 - 2026-11-17
 

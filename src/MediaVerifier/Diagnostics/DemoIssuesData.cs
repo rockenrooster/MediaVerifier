@@ -62,6 +62,8 @@ internal sealed partial class DemoUiData
 
     public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids) => [.. ids.Select(id => Rows.First(r => r.Id == id))];
 
+    public SeverityCounts CountIssues(FindingFilter filter) => LoadIssues(new IssuesQuery(filter)).TierCounts;
+
     public long? FileOfFinding(long findingId) => Rows.FirstOrDefault(r => r.Id == findingId)?.FileId;
 
     public FileDetail? LoadFileDetail(long fileId)

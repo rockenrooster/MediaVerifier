@@ -109,9 +109,19 @@ internal sealed class SchedulePage : PageBase
         int card = VerificationTop();
         _scrubDays.Bounds = new Rectangle(S(323), card + S(105), S(64), S(32));
         _budget.Bounds = new Rectangle(S(208), card + S(145), S(63), S(32));
-        _pass.Bounds = new Rectangle(w - S(392), card + S(104), S(376), S(40));
-        Height = card + S(196) + S(24);
+        _pass.Bounds = Stacked
+            ? new Rectangle(S(132), card + S(196), Math.Min(S(376), w - S(148)), S(40))
+            : new Rectangle(w - S(392), card + S(104), S(376), S(40));
+        Height = card + VerificationHeight + S(24);
     }
+
+    /// <summary>
+    /// Too narrow for the pass note beside the settings (the smallest window): it goes under them, so the card's text
+    /// keeps its width. Side by side, the text was cut to "Every file should be re-read and compared with i…".
+    /// </summary>
+    private bool Stacked => Width < S(980);
+
+    private int VerificationHeight => S(Stacked ? 288 : 196);
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -157,21 +167,30 @@ internal sealed class SchedulePage : PageBase
 
         // Verification card.
         int card = VerificationTop();
-        Card.Draw(g, new Rectangle(0, card, w, S(196)), null, VisualState.Rest, false, DeviceDpi);
+        bool stacked = Stacked;
+        int textWidth = stacked ? w - S(148) : w - S(560);
+        Card.Draw(g, new Rectangle(0, card, w, VerificationHeight), null, VisualState.Rest, false, DeviceDpi);
         KitPaint.DrawText(g, Strings.Schedule.Verification, type.CaptionStrong, t.Text3, S(16), card + S(23), S(200));
         DataPaint.Donut(g, new PointF(S(64), card + S(109)), SF(40), SF(9), _data.VerifiedShare, t.Accent);
         string percent = (_data.VerifiedShare * 100).ToString("0", CultureInfo.CurrentCulture) + " %";
         KitPaint.DrawTextCentred(g, percent.Replace(" %", "%", StringComparison.Ordinal), type.BodyStrong, t.Text, S(64), card + S(109));
-        KitPaint.DrawText(g, Strings.Schedule.VerificationLine1, type.Body, t.Text, S(132), card + S(57), w - S(560));
-        KitPaint.DrawText(g, Strings.Schedule.VerificationLine2, type.Body, t.Text, S(132), card + S(77), w - S(560));
+        KitPaint.DrawText(g, Strings.Schedule.VerificationLine1, type.Body, t.Text, S(132), card + S(57), textWidth);
+        KitPaint.DrawText(g, Strings.Schedule.VerificationLine2, type.Body, t.Text, S(132), card + S(77), textWidth);
         KitPaint.DrawText(g, Strings.Schedule.ReReadEvery, type.Body, t.Text, S(132), card + S(121), S(190));
         KitPaint.DrawText(g, Strings.Schedule.Days, type.Body, t.Text, S(395), card + S(121), S(80));
         KitPaint.DrawText(g, Strings.Schedule.SpendUpTo, type.Body, t.Text, S(132), card + S(161), S(80));
-        KitPaint.DrawText(g, Strings.Schedule.MinutesEachRun, type.Body, t.Text, S(279), card + S(161), w - S(700));
+        KitPaint.DrawText(g, Strings.Schedule.MinutesEachRun, type.Body, t.Text, S(279), card + S(161), stacked ? w - S(295) : w - S(700));
         if (_data.OverdueFiles > 0)
         {
             string overdue = string.Format(CultureInfo.CurrentCulture, Strings.Schedule.OverdueCaption, UiFormat.Count(_data.OverdueFiles)) + Strings.Schedule.VerifyNowLink + ".";
-            KitPaint.DrawText(g, overdue, type.Caption, t.Text3, w - S(392), card + S(161), S(376));
+            if (stacked)
+            {
+                KitPaint.DrawText(g, overdue, type.Caption, t.Text3, S(132), card + S(253), w - S(148));
+            }
+            else
+            {
+                KitPaint.DrawText(g, overdue, type.Caption, t.Text3, w - S(392), card + S(161), S(376));
+            }
         }
     }
 

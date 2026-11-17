@@ -139,7 +139,7 @@ internal sealed class SettingsPage : PageBase
                 Buttons(Strings.Settings.Diagnostics, null,
                 [
                     (Strings.Settings.RunSelfCheck, () => UiTask.Run(RunSelfCheckAsync())),
-                    (Strings.Settings.CopyReport, () => ShellActions.CopyText([AppInfo.WindowTitle, Environment.OSVersion.VersionString, ".NET " + Environment.Version])),
+                    (Strings.Settings.CopyReport, () => UiTask.Run(CopySystemReportAsync())),
                 ]),
             ]),
             Section(Strings.Settings.About, string.Empty, [new AboutRow(this)]),
@@ -372,6 +372,13 @@ internal sealed class SettingsPage : PageBase
 
         await UpdateInstaller.RunAsync(owner, Services, updates, _portable).ConfigureAwait(true);
         RefreshUpdateUi();
+    }
+
+    /// <summary><c>Copy system report</c>: the facts a bug report needs, gathered off the UI thread (it reads the database).</summary>
+    private async Task CopySystemReportAsync()
+    {
+        string report = await Task.Run(() => Diagnostics.SystemReport.Build(Services, State)).ConfigureAwait(true);
+        ShellActions.CopyText([report.TrimEnd()]);
     }
 
     /// <summary><c>Run self-check</c>: runs <c>--self-check</c> as its own process and reports the result.</summary>

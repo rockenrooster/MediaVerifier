@@ -200,6 +200,58 @@ public sealed class AppFlowTests
     }
 
     /// <summary>
+    /// Tools → Quarantine: with two kept originals selected, Restore brings both back (it acted on the focused row
+    /// only).
+    /// </summary>
+    [FixtureFact]
+    public void Restore_in_quarantine_brings_back_every_selected_original()
+    {
+        bool bothBack = false;
+        int chosen = 0;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("quarantine-many");
+            string library = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+            string[] files = [FixtureFactory.CopyTo("m128.mp3", library, "one.mp3"), FixtureFactory.CopyTo("m128.mp3", library, "two.mp3")];
+            foreach (string file in files)
+            {
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddHours(-1));
+            }
+
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = _ => { };
+            Task<long> add = services.Database.Roots.AddAsync(new RootRecord { Path = library, Label = "My Music", Role = RootRole.Library, MediaMask = MediaKindMask.All, AddedUtc = services.Clock.UtcNow });
+            Settle(() => add.IsCompleted);
+            Task<bool> scan = services.StartScanAsync([new MediaVerifier.Core.Engine.ScanScope(add.Result)], ScanDepth.Quick, "My Music");
+            Settle(() => scan.IsCompleted && Db(() => services.Database.Runs.List(5)).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
+            long[] ids = [.. Db(() => services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter()))).Select(f => f.Id)];
+            Answer<RepairDialog>(() => UiTask.Run(Remediator.RunAsync(services, form, ids, MediaVerifier.Core.Rules.ActionIds.Quarantine)), d => d.DialogResult = DialogResult.OK);
+            Settle(() => files.All(f => !File.Exists(f)), TimeSpan.FromSeconds(30));
+
+            form.Navigate(PageId.Tools);
+            Settle(() => form.CurrentPageLoading.IsCompleted);
+            ToolsPage tools = (ToolsPage)form.CurrentPageControl!;
+            typeof(ToolsPage).GetMethod("ShowView", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(tools, [0]);
+            Pump(TimeSpan.FromMilliseconds(200));
+            MediaVerifier.UI.Kit.Lists.VirtualList table = Descendants(tools).OfType<MediaVerifier.UI.Kit.Lists.VirtualList>().First(l => l.Visible);
+            table.ApplyClickSelection(0, Keys.None);
+            table.ApplyClickSelection(1, Keys.Control);
+            chosen = tools.ChosenKept().Count;
+            Find<KitButton>(tools, b => b.Text == Strings.Tools.Restore && b.Visible).PerformClick();
+            Settle(() => files.All(File.Exists), TimeSpan.FromSeconds(30));
+            bothBack = files.All(File.Exists);
+            form.Close();
+        });
+
+        Assert.Equal(2, chosen);
+        Assert.True(bothBack, "Restore did not bring back both selected originals.");
+    }
+
+    /// <summary>
     /// Stop watching a folder while it is scanned: the scan ends cleanly, the folder's rows are gone, and its unfinished
     /// files are skipped. Each used to count as an error with a stack trace in error.log ('FOREIGN KEY constraint
     /// failed'): 22 errors for a 30-file folder removed after 8.

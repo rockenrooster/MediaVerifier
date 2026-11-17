@@ -111,6 +111,9 @@ internal interface IIssuesData
 {
     IssuesData LoadIssues(IssuesQuery query);
 
+    /// <summary>The tier counts <see cref="LoadIssues"/> gives for <paramref name="filter"/>, without the list (the new-problems pill).</summary>
+    SeverityCounts CountIssues(FindingFilter filter);
+
     IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids);
 
     FileDetail? LoadFileDetail(long fileId);

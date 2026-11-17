@@ -638,6 +638,7 @@ internal sealed class LibraryPage : PageBase
         [
             new(Strings.Menu.ScanThisFolder, IconName.Scans, Tag: "scan"),
             new(Strings.Menu.VerifyThisFolder, IconName.ShieldCheck, Tag: "verify"),
+            new(Strings.Menu.IgnoreRuleHereEllipsis, IconName.Ignore, Enabled: !Services.IsDemo, Tag: "ignore-rule"),
             new(Strings.Menu.ShowInFolder, IconName.Folder, Tag: "show"),
         ];
         KitMenu.Show(_tree, screen, items, item =>
@@ -651,6 +652,9 @@ internal sealed class LibraryPage : PageBase
                 case "verify":
                     UiTask.Run(Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], ScanDepth.Quick, folder.Name, new ScanOptions { VerifyOnly = true, VerifyEverything = true }));
                     break;
+                case "ignore-rule":
+                    UiTask.Run(IgnoreRuleHereAsync(folder, screen));
+                    break;
                 case "show":
                     string? root = _library?.Folders.FirstOrDefault(f => f.RootId == folder.RootId)?.Path;
                     ShellActions.OpenFolder(root is null ? null : Path.Combine(root, relDir));
@@ -658,6 +662,54 @@ internal sealed class LibraryPage : PageBase
             }
         });
     }
+
+    /// <summary>
+    /// Ignore a rule here… (subplan 09, Library tree menu): the rules with open problems in this folder and below, by
+    /// name with their counts. The one chosen is ignored here after the same question as in Issues, with Undo.
+    /// </summary>
+    internal async Task IgnoreRuleHereAsync(BrowseFolder folder, Point screen)
+    {
+        if (Services.IsDemo || FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        Dictionary<string, int> counts = await Task.Run(() => Services.Database.Queries.CountsByRule(new FindingFilter { RootId = folder.RootId, DirId = folder.DirId })).ConfigureAwait(true);
+        List<PopupItem> items = [.. counts.OrderBy(c => RuleTitle(c.Key), StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new PopupItem(string.Create(CultureInfo.CurrentCulture, $"{RuleTitle(c.Key)} ({UiFormat.Count(c.Value)})"), Tag: c.Key))];
+        if (items.Count == 0)
+        {
+            items.Add(new PopupItem(Strings.Issues.NoneHeadline, Enabled: false));
+        }
+
+        KitMenu.Show(_tree, screen, items, item =>
+        {
+            if (item.Tag is string ruleId)
+            {
+                UiTask.Run(IgnoreRuleAsync(owner, folder, ruleId));
+            }
+        });
+    }
+
+    private async Task IgnoreRuleAsync(Form owner, BrowseFolder folder, string ruleId)
+    {
+        string title = RuleTitle(ruleId);
+        if (!MessageDialog.Confirm(owner, string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.IgnoreRuleTitle, title, folder.Name), Strings.Dialogs.IgnoreRuleText, Strings.Kit.Cancel, Strings.Menu.Ignore, destructive: false))
+        {
+            return;
+        }
+
+        long ignoreId = await Services.Database.Ignores.AddAsync(folder.RootId, folder.DirId, ruleId, null).ConfigureAwait(true);
+        Reload();
+        Services.ShowToast?.Invoke(new ToastContent(
+            Severity.None,
+            Strings.Issues.Ignored,
+            string.Format(CultureInfo.CurrentCulture, Strings.Issues.IgnoredRuleIn, title, folder.Name),
+            Strings.Dialogs.Undo,
+            () => UiTask.Run(DrawerActions.UndoAsync(Services, () => Services.Database.Ignores.RemoveAsync(ignoreId), Reload))));
+    }
+
+    private static string RuleTitle(string ruleId) => Core.Rules.RuleCatalog.TryGet(ruleId, out Core.Rules.RuleDefinition rule) ? rule.Title : ruleId;
 
     private static string FolderRelPath(TreeItem? node)
     {
@@ -727,6 +779,9 @@ internal sealed class LibraryPage : PageBase
         }
 
         await Services.Database.Roots.RemoveAsync(card.RootId).ConfigureAwait(true);
+
+        // For the Dashboard's Recent activity: "Folder removed: {name}".
+        await Services.Database.Meta.SetAsync(LiveUiData.RemovedFolderKey, string.Create(CultureInfo.InvariantCulture, $"{Services.Clock.UtcNow.UtcTicks}|{card.Name}")).ConfigureAwait(true);
         Reload();
     }
 

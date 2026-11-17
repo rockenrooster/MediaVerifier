@@ -71,6 +71,54 @@ public sealed class FileDetailViewTests
         Assert.True(view.Height > 900, $"all four findings open: {view.Height}");
     }
 
+    /// <summary>
+    /// Every card opens from the keyboard: the chevrons are buttons (findings after the first, History and Technical
+    /// details were mouse only), named for screen readers, and Technical details has its Copy details button.
+    /// </summary>
+    [Fact]
+    public void The_cards_open_from_the_keyboard_and_technical_details_can_be_copied()
+    {
+        FileDetail detail = new(
+            1,
+            "Night Drive - 07 - Overpass.flac",
+            @"D:\Music\Night Drive - 07 - Overpass.flac",
+            ["D:", "Music"],
+            MediaKind.Audio,
+            "FLAC",
+            FingerprintState.Unchanged,
+            DateTimeOffset.UtcNow,
+            1,
+            DateTimeOffset.UtcNow,
+            [Finding(1, "AUD-FAKE-LOSSLESS", EvidenceView.None, new Dictionary<string, object>()), Finding(2, "AUD-DC", EvidenceView.None, new Dictionary<string, object>())],
+            [],
+            "codec flac\nsample rate 44100",
+            1000,
+            []);
+        using FileDetailView view = new() { Width = 440 };
+        view.Bind(detail, DateTimeOffset.UtcNow, string.Empty);
+        List<IconButton> chevrons = [.. view.Controls.OfType<IconButton>().Where(b => b.Icon is IconName.ChevronDown or IconName.ChevronUp)];
+        Assert.Equal(4, chevrons.Count);
+        Assert.All(chevrons, c => Assert.False(string.IsNullOrEmpty(c.AccessibleName)));
+        KitButton copy = view.Controls.OfType<KitButton>().Single(b => b.Text == Strings.Drawer.CopyDetails);
+        Assert.False(copy.Visible);
+
+        int closed = view.Height;
+        IconButton second = chevrons.Single(c => c.AccessibleName == "AUD-DC");
+        Assert.Equal(IconName.ChevronDown, second.Icon);
+        PressEnter(second);
+        Assert.Equal(IconName.ChevronUp, second.Icon);
+        Assert.True(view.Height > closed, "the second finding did not open");
+
+        PressEnter(chevrons.Single(c => c.AccessibleName == Strings.Drawer.TechnicalDetails));
+        Assert.True(copy.Visible, "Copy details is not shown with the technical details");
+        PressEnter(chevrons.Single(c => c.AccessibleName == Strings.Drawer.History));
+        Assert.Equal(IconName.ChevronUp, chevrons.Single(c => c.AccessibleName == Strings.Drawer.History).Icon);
+    }
+
+    /// <summary>Enter on a focused control, through its own key handling (the keyboard's path, not a click).</summary>
+    private static void PressEnter(Control control) =>
+        typeof(Control).GetMethod("OnKeyDown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(control, [new KeyEventArgs(Keys.Enter)]);
+
     private static FindingDetail Finding(long id, string rule, EvidenceView view, IReadOnlyDictionary<string, object> evidence) =>
         new(id, rule, Severity.Medium, 0.85f, rule, "summary", "what", "why", "do", view, evidence, "caption");
 }

@@ -19,6 +19,9 @@ internal sealed class MainForm : Form
     public static readonly Size DefaultClientSize = new(1280, 800);
     public static readonly Size MinimumClientSize = new(960, 600);
 
+    /// <summary>Off-screen (render harness, tests) the window opens without taking the focus from the user's window.</summary>
+    protected override bool ShowWithoutActivation => Diagnostics.ScreenRenderer.Offscreen;
+
     private readonly AppState _state;
     private readonly LaunchOptions _options;
     private readonly IpcServer? _ipc;

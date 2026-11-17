@@ -40,6 +40,9 @@ internal sealed class AddFolderDialog : KitDialog
 
     /// <summary>The folder being checked now; a later one replaces it and the earlier answer is dropped.</summary>
     private string? _checking;
+
+    /// <summary>The folder did not answer in time (a network folder that is offline), as opposed to not existing.</summary>
+    private bool _unreachable;
     private bool _nameEdited;
     private string _autoName = string.Empty;
 
@@ -212,7 +215,7 @@ internal sealed class AddFolderDialog : KitDialog
             }
             else if (!_exists)
             {
-                error = Strings.Library.ErrorMissing;
+                error = _unreachable ? Strings.Library.ErrorUnreachable : Strings.Library.ErrorMissing;
             }
             else
             {
@@ -269,28 +272,58 @@ internal sealed class AddFolderDialog : KitDialog
         }
 
         _checking = full;
-        _ = Task.Run(() => Directory.Exists(full)).ContinueWith(
-            task =>
-            {
-                if (IsDisposed || _checking != full)
-                {
-                    return;
-                }
-
-                _checking = null;
-                _existsFor = full;
-                _exists = task.IsCompletedSuccessfully && task.Result;
-                ValidateForm();
-                _count.Visible = _error is null;
-                if (_error is null)
-                {
-                    StartCount();
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.None,
-            TaskScheduler.FromCurrentSynchronizationContext());
+        UiTask.Run(AwaitCheckAsync(full, Task.Run(() => Directory.Exists(full))));
     }
+
+    /// <summary>
+    /// The answer to the check. A network folder that is offline takes over two minutes to fail (measured: 136 s), so
+    /// after <see cref="ReachNotice"/> the bar says it is still being reached, and after <see cref="ReachLimit"/> the
+    /// folder counts as unreachable; a late "it exists" (a drive waking up) still clears that.
+    /// </summary>
+    private async Task AwaitCheckAsync(string full, Task<bool> probe)
+    {
+        if (await Task.WhenAny(probe, Task.Delay(ReachNotice)).ConfigureAwait(true) != probe && _checking == full && !IsDisposed)
+        {
+            _count.Tier = Severity.Low;
+            _count.Text = Strings.Library.Reaching;
+        }
+
+        if (await Task.WhenAny(probe, Task.Delay(ReachLimit - ReachNotice)).ConfigureAwait(true) != probe)
+        {
+            Answer(full, exists: false, unreachable: true);
+            if (!await probe.ConfigureAwait(true))
+            {
+                return;
+            }
+        }
+
+        Answer(full, probe.IsCompletedSuccessfully && probe.Result, unreachable: false);
+    }
+
+    private void Answer(string full, bool exists, bool unreachable)
+    {
+        if (IsDisposed || Normalize(_folder.Text.Trim()) != full)
+        {
+            return;
+        }
+
+        _checking = null;
+        _existsFor = full;
+        _exists = exists;
+        _unreachable = unreachable;
+        ValidateForm();
+        _count.Visible = _error is null;
+        if (_error is null)
+        {
+            StartCount();
+        }
+    }
+
+    /// <summary>When the bar says the folder is still being reached (tests shorten it).</summary>
+    internal static TimeSpan ReachNotice { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>When a folder that has not answered counts as unreachable (tests shorten it).</summary>
+    internal static TimeSpan ReachLimit { get; set; } = TimeSpan.FromSeconds(15);
 
     private static string Normalize(string path)
     {
