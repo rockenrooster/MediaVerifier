@@ -341,7 +341,9 @@ control right-aligned), separated by 1 px `Stroke` lines, inside one card.
 `BodyStrong`, meta line `{rule id} · {kind} · {depth} depth` in `Caption` `Text3`, a drop-down
 `Up to Critical` / `Up to High` / `Up to Medium` / `Up to Low` (only tiers the rule can reach), and a
 chevron that expands the rule's parameters. Each parameter row: label, number box, unit; when the
-value differs from the default, the caption `Default is {n}` and a subtle `Reset` button. After any
+value differs from the default, the caption `Default is {n}` and a subtle `Reset` button. The label
+column is as wide as the rule's longest label (at least 120 px), as far as the box, unit, caption and
+`Reset` leave room; the filter box narrows (down to 160 px) so the chips stay in view. After any
 change a Low info bar reports the effect: `{n} findings changed tier with this value.`, `{n} findings appeared.`, `{n} findings no longer apply.`, or `No findings changed.` A rule whose switch is off
 shows its title in `Text2`.
 

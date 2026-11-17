@@ -12,6 +12,8 @@ All notable changes to MediaVerifier are documented here.
   for this folder").
 - Fixed: Review on a Dashboard recommendation opened every problem; it now opens just the problems
   it counts.
+- Fixed: in Settings → Rules, most limits had their names cut short ("High from this sha…"); the
+  names now show in full.
 
 ## 0.1.0.7 - 2026-11-17
 

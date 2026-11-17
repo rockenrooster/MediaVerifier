@@ -80,8 +80,11 @@ internal sealed class RulesView : KitControl
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        _filter.Bounds = new Rectangle(0, S(64), Math.Min(S(320), Width), S(32));
-        int x = S(336);
+        // The filter box gives up width (320 down to 160) so the category chips stay in view in a narrow window.
+        int chips = _chips.Sum(c => S(c.PreferredLogicalWidth) + S(8)) - S(8);
+        int filterWidth = Math.Clamp(Width - chips - S(16), S(160), S(320));
+        _filter.Bounds = new Rectangle(0, S(64), Math.Min(filterWidth, Width), S(32));
+        int x = filterWidth + S(16);
         foreach (Chip chip in _chips)
         {
             int width = S(chip.PreferredLogicalWidth);
@@ -179,6 +182,12 @@ internal sealed class RulesView : KitControl
         private readonly System.Windows.Forms.Timer _debounce = new() { Interval = 400 };
         private bool _expanded;
         private bool _binding;
+
+        /// <summary>The parameter labels' column: as wide as the longest label, within the room the row leaves (at least 120 px).</summary>
+        private int _labelWidth;
+
+        /// <summary>The units' column: as wide as the longest unit.</summary>
+        private int _unitWidth;
 
         public RuleRow(RulesView view, RuleDefinition rule)
         {
@@ -294,11 +303,29 @@ internal sealed class RulesView : KitControl
             _enabled.Bounds = new Rectangle(S(16), (S(64) - toggle.Height) / 2, toggle.Width, toggle.Height);
             _expand.Bounds = new Rectangle(Width - S(16) - S(28), S(18), S(28), S(28));
             _cap.Bounds = new Rectangle(Width - S(48) - S(150), S(16), S(150), S(32));
+
+            // Labels such as "Report from this many clipped peaks" were cut at 120 px: the column takes the longest
+            // one, as far as the box, the unit, "Default is {n}" and Reset leave room in a narrow window.
+            int label = S(120);
+            int defaultWidth = 0;
+            int resetRoom = 0;
+            _unitWidth = 0;
+            foreach ((RuleParameter parameter, _, KitButton reset) in _parameters)
+            {
+                label = Math.Max(label, KitPaint.MeasureWidth(parameter.Label, Type.Body) + S(8));
+                _unitWidth = Math.Max(_unitWidth, KitPaint.MeasureWidth(parameter.Unit, Type.Body));
+                defaultWidth = Math.Max(defaultWidth, KitPaint.MeasureWidth(string.Format(CultureInfo.CurrentCulture, Strings.Settings.DefaultIs, parameter.Format(parameter.Default)), Type.Caption));
+                resetRoom = S(reset.PreferredLogicalWidth);
+            }
+
+            int room = Width - S(72) - S(8) - S(72) - S(12) - _unitWidth - S(16) - defaultWidth - S(12) - resetRoom - S(16);
+            _labelWidth = Math.Clamp(label, S(120), Math.Max(S(120), Math.Min(S(360), room)));
+            int boxX = S(72) + _labelWidth + S(8);
             for (int i = 0; i < _parameters.Count; i++)
             {
                 (_, NumberBox box, KitButton reset) = _parameters[i];
                 int centre = S(64 + 29 + (40 * i));
-                box.Bounds = new Rectangle(S(200), centre - S(16), S(72), S(32));
+                box.Bounds = new Rectangle(boxX, centre - S(16), S(72), S(32));
                 int resetWidth = S(reset.PreferredLogicalWidth);
                 reset.Bounds = new Rectangle(Width - S(16) - resetWidth, centre - S(16), resetWidth, S(32));
             }
@@ -329,11 +356,12 @@ internal sealed class RulesView : KitControl
                 {
                     (RuleParameter parameter, NumberBox box, _) = _parameters[i];
                     int centre = S(64 + 29 + (40 * i));
-                    KitPaint.DrawText(g, parameter.Label, type.Body, t.Text, S(72), centre, S(120));
-                    KitPaint.DrawText(g, parameter.Unit, type.Body, t.Text2, S(284), centre, S(160));
+                    int unitX = box.Right + S(12);
+                    KitPaint.DrawText(g, parameter.Label, type.Body, t.Text, S(72), centre, _labelWidth);
+                    KitPaint.DrawText(g, parameter.Unit, type.Body, t.Text2, unitX, centre, _unitWidth + 1);
                     if (IsChanged(box))
                     {
-                        KitPaint.DrawText(g, string.Format(CultureInfo.CurrentCulture, Strings.Settings.DefaultIs, parameter.Format(parameter.Default)), type.Caption, t.Text3, S(444), centre, S(160));
+                        KitPaint.DrawText(g, string.Format(CultureInfo.CurrentCulture, Strings.Settings.DefaultIs, parameter.Format(parameter.Default)), type.Caption, t.Text3, unitX + _unitWidth + S(16), centre, S(160));
                     }
                 }
             }
