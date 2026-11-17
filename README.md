@@ -108,6 +108,8 @@ Releases follow [plans/14-updater-and-release.md](plans/14-updater-and-release.m
 bumps the version and tags; the release workflow builds, signs the update manifest with the key held
 in the repository secret, and publishes the installer, the portable zip and their checksums. User
 visible changes go under *Unreleased* in [CHANGELOG.md](CHANGELOG.md) and become the release notes.
+After a release, `LiveReleaseTests` checks the published release with the app's own updater and the
+key built into the app (it downloads the installer, so it runs only with `MEDIAVERIFIER_LIVE_RELEASE=1`).
 
 ## License
 
