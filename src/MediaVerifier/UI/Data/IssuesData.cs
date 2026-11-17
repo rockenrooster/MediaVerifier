@@ -42,7 +42,8 @@ internal sealed record IssueRow(
     string Folder,
     long Size,
     MediaKind Kind,
-    string FullPath);
+    string FullPath,
+    string? Problem = null);
 
 /// <summary>Which evidence view a finding gets in the drawer (subplan 09, task UI-14).</summary>
 internal enum EvidenceView
@@ -98,7 +99,8 @@ internal sealed record FileDetail(
     long SizeBytes,
     IReadOnlyList<long> ZeroRunOffsets,
     string RecommendedAction = "",
-    string RecommendedActionId = "");
+    string RecommendedActionId = "",
+    IReadOnlyList<string>? FixActionIds = null);
 
 /// <summary>Issues and drawer data (separate interface so pages depend only on what they read).</summary>
 internal interface IIssuesData

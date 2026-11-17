@@ -144,6 +144,11 @@ internal sealed partial class DemoUiData
 
     public byte[]? LoadCompare(FileDetail detail, FindingDetail finding, double time, CancellationToken token) => null;
 
-    private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind) =>
-        new(id, id, rule, severity, confidence, name, line2, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name));
+    /// <summary>A demo row; <paramref name="line2"/> is "{title} · {detail}" as the mockups write it, the detail starting a sentence here.</summary>
+    private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind)
+    {
+        string[] parts = line2.Split(" · ", 2);
+        string detail = parts.Length > 1 ? char.ToUpper(parts[1][0], System.Globalization.CultureInfo.InvariantCulture) + parts[1][1..] : line2;
+        return new(id, id, rule, severity, confidence, name, detail, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name), parts[0]);
+    }
 }

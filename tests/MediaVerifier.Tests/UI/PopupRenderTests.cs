@@ -84,12 +84,18 @@ public sealed class PopupRenderTests
         }
     }
 
-    /// <summary>Form.Opacity switches a window to SetLayeredWindowAttributes, after which the toast showed as a white box.</summary>
+    /// <summary>
+    /// Form.Opacity switches a window to SetLayeredWindowAttributes, after which the toast showed as a white box; and
+    /// the toast took its window's own size for its content, so it grew each time it was painted.
+    /// </summary>
     [Fact]
     public void A_toast_stays_a_per_pixel_layered_window_while_it_fades()
     {
         bool attributes = true;
         byte opacity = 0;
+        Size content = Size.Empty;
+        Size first = Size.Empty;
+        Size later = Size.Empty;
         Sta.Run(() =>
         {
             using Form owner = new() { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000), Size = new Size(900, 700), ShowInTaskbar = false };
@@ -106,10 +112,20 @@ public sealed class PopupRenderTests
             LayeredPopup toast = Application.OpenForms.OfType<LayeredPopup>().Single(f => f.Owner == owner);
             opacity = toast.PopupOpacity;
             attributes = GetLayeredWindowAttributes(toast.Handle, out _, out _, out _);
+            content = toast.ContentScreenBounds.Size;
+            first = toast.Size;
+
+            // Moving the window paints the toast again at its new place: it keeps its size.
+            owner.Location = new Point(-31900, -31900);
+            owner.Location = new Point(-32000, -32000);
+            Application.DoEvents();
+            later = toast.Size;
         });
 
         Assert.Equal(255, opacity);
         Assert.False(attributes, "The toast was switched to SetLayeredWindowAttributes (Form.Opacity), which hides its image.");
+        Assert.Equal(new Size(ToastHost.Width, ToastHost.Height), content);
+        Assert.Equal(first, later);
     }
 
     private static double Luma(Color c) => (0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B);

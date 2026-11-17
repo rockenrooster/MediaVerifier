@@ -133,7 +133,11 @@ internal sealed class UiServices : IDisposable
     /// Opens the user's library, the bundled media engine and the scan engine. Tests pass the engine and an update
     /// service, and skip the start-up maintenance, which registers notifications and reconciles the Task Scheduler.
     /// </summary>
-    public static UiServices CreateLive(AppState state, FfmpegLocation? mediaEngine = null, Core.Updates.UpdateService? updates = null, bool startupMaintenance = true)
+    /// <param name="engineMutexName">
+    /// Tests pass their own, so a MediaVerifier that is scanning on the same machine neither blocks their scans nor
+    /// counts as a scheduled scan.
+    /// </param>
+    public static UiServices CreateLive(AppState state, FfmpegLocation? mediaEngine = null, Core.Updates.UpdateService? updates = null, bool startupMaintenance = true, string? engineMutexName = null)
     {
         ArgumentNullException.ThrowIfNull(state);
         Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
@@ -150,7 +154,7 @@ internal sealed class UiServices : IDisposable
         }
 
         UiServices services = null!;
-        ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => services.Rules));
+        ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => services.Rules), engineMutexName ?? Core.Ipc.NamedMutexLock.EngineName);
         EngineScanControl scans = new(engine);
         services = new UiServices
         {
@@ -163,6 +167,7 @@ internal sealed class UiServices : IDisposable
             Rules = rules,
             Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
             Updates = updates ?? new Core.Updates.UpdateService(),
+            BackgroundProbe = engineMutexName is null ? PlanHost.BackgroundRunActive : static () => false,
         };
         services._owned.Add(services.Updates);
 

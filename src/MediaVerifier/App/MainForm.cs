@@ -509,6 +509,12 @@ internal sealed class MainForm : Form
         {
             _tray = new TrayIcon(Icon ?? SystemIcons.Application) { Visible = true };
             _tray.OpenRequested += (_, _) => BringToFrontFromAnywhere();
+            _tray.CanScan = () => !_services.IsDemo && _services.CannotScanReason(true) is null;
+            _tray.ScanRequested += (_, _) =>
+            {
+                BringToFrontFromAnywhere();
+                _binder?.StartDefaultScan();
+            };
             _tray.ExitRequested += (_, _) => ExitApplication();
         }
 

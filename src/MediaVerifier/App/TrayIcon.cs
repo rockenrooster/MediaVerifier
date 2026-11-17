@@ -24,6 +24,7 @@ internal sealed class TrayIcon : IDisposable
         ToolStripMenuItem exit = new(Strings.Tray.Exit);
         exit.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
         _menu.Items.AddRange([open, _scanNow, new ToolStripSeparator(), exit]);
+        _menu.Opening += (_, _) => _scanNow.Enabled = CanScan?.Invoke() ?? false;
 
         _icon = new NotifyIcon
         {
@@ -64,6 +65,9 @@ internal sealed class TrayIcon : IDisposable
         get => _scanNow.Enabled;
         set => _scanNow.Enabled = value;
     }
+
+    /// <summary>Asked each time the menu opens: whether Scan now can start a scan.</summary>
+    public Func<bool>? CanScan { get; set; }
 
     public void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
     {

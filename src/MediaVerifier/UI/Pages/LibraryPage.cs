@@ -55,6 +55,7 @@ internal sealed class LibraryPage : PageBase
     private readonly Dictionary<long, FileRow> _rows = [];
     private readonly Dictionary<long, string> _problems = [];
     private readonly FileDetailView _detail = new();
+    private readonly DrawerActions _drawer;
     private readonly ScrollPanel _detailScroll;
     private LibraryData? _library;
     private BrowseData? _browse;
@@ -73,7 +74,11 @@ internal sealed class LibraryPage : PageBase
         _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
         _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
-        _detail.ShowInFolderRequested += (_, _) => ShellActions.ShowInFolder(_detail.Detail?.FullPath);
+        _drawer = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
+        {
+            Reload();
+            UiTask.Run(LoadDetailAsync(fileId));
+        });
         _view.Segments.Add(Strings.Library.Folders);
         _view.Segments.Add(Strings.Library.Browse);
         _view.SelectedIndex = 0;
@@ -99,6 +104,10 @@ internal sealed class LibraryPage : PageBase
         _table.SetSort(0, false);
         _table.SortChanged += (_, sort) => SetSort(sort.Column, sort.Descending);
         _table.ItemActivated += (_, index) => OpenDetails(index);
+
+        // Owner request: a click shows the details, a double-click opens the file in its program.
+        _table.ItemClicked += (_, index) => OpenDetails(index);
+        _table.ItemDoubleClicked += (_, index) => ShellActions.OpenFile(RowAt(index) is FileRow row ? PathOf(row) : null);
         _table.MoreRequested += (_, args) => ShowRowMenu(args.Index, args.Screen);
         _table.KeyDown += OnTableKey;
         Controls.AddRange([_view, _add, _drop, _crumbs, .. _chips, _treeCard, _tableCard]);
@@ -446,7 +455,7 @@ internal sealed class LibraryPage : PageBase
             return string.Empty;
         }
 
-        string title = Core.Rules.SeverityPolicy.Hedge(Core.Rules.RuleCatalog.TryGet(row.WorstRuleId, out Core.Rules.RuleDefinition rule) ? rule.Title : row.WorstRuleId, row.WorstConfidence);
+        string title = LiveUiData.Title(row.WorstRuleId, row.WorstConfidence);
         return row.OpenFindings > 1 ? string.Format(CultureInfo.CurrentCulture, Strings.Library.ProblemMore, title, UiFormat.Count(row.OpenFindings - 1)) : title;
     }
 
@@ -459,14 +468,28 @@ internal sealed class LibraryPage : PageBase
         return root is null ? null : row.RelDir.Length == 0 ? Path.Combine(root, row.Name) : Path.Combine(root, row.RelDir, row.Name);
     }
 
-    private async void OpenDetails(int index)
+    private void OpenDetails(int index)
     {
-        if (RowAt(index) is not FileRow row)
+        if (RowAt(index) is FileRow row)
         {
-            return;
+            UiTask.Run(LoadDetailAsync(row.Id));
         }
+    }
 
-        FileDetail? detail = await Task.Run(() => Services.Data.LoadFileDetail(row.Id)).ConfigureAwait(true);
+    /// <summary>Runs a fix (Remediator asks first), then closes the drawer and reloads the folder.</summary>
+    private async Task RunAndReloadAsync(IReadOnlyList<long> fileIds, string actionId)
+    {
+        await Remediator.RunAsync(Services, this, fileIds, actionId).ConfigureAwait(true);
+        if (!IsDisposed)
+        {
+            Services.ShowDrawer?.Invoke(null);
+            Reload();
+        }
+    }
+
+    private async Task LoadDetailAsync(long fileId)
+    {
+        FileDetail? detail = await Task.Run(() => Services.Data.LoadFileDetail(fileId)).ConfigureAwait(true);
         if (detail is null || IsDisposed)
         {
             return;
@@ -510,21 +533,37 @@ internal sealed class LibraryPage : PageBase
             return;
         }
 
-        PopupItem[] items =
+        string? fix = Services.Operations is null || row.WorstRuleId is null ? null : Remediator.CommonFix([row.WorstRuleId]);
+        List<PopupItem> items =
         [
             new(Strings.Menu.Details, IconName.Info, Strings.Menu.ShortcutEnter, Tag: "details"),
+        ];
+        if (fix is not null)
+        {
+            items.Add(new(LiveUiData.ActionName(fix), IconName.Tools, Tag: "fix"));
+        }
+
+        items.AddRange(
+        [
             new(Strings.Menu.ScanAgain, IconName.Refresh, Strings.Menu.ShortcutShiftF5, Tag: "scan"),
             new(Strings.Menu.VerifyNow, IconName.ShieldCheck, Tag: "verify"),
             PopupItem.Separator,
+            new(Strings.Menu.OpenFile, IconName.Open, Tag: "open"),
             new(Strings.Menu.ShowInFolder, IconName.Folder, Strings.Menu.ShortcutAltEnter, Tag: "show"),
             new(Strings.Menu.CopyPath, IconName.Copy, Strings.Menu.ShortcutCtrlC, Tag: "copy"),
-        ];
+        ]);
         KitMenu.Show(_table, screen, items, item =>
         {
             switch (item.Tag)
             {
                 case "details":
                     OpenDetails(index);
+                    break;
+                case "fix" when fix is not null:
+                    UiTask.Run(RunAndReloadAsync([row.Id], fix));
+                    break;
+                case "open":
+                    ShellActions.OpenFile(PathOf(row));
                     break;
                 case "scan":
                     UiTask.Run(ScanFilesAsync([row], verify: false));

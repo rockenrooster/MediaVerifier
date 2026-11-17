@@ -311,6 +311,9 @@ internal sealed class ShellBinder : IDisposable
         };
     }
 
+    /// <summary>The tray's Scan now: a scan of every Library folder at the default depth.</summary>
+    internal void StartDefaultScan() => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
+
     /// <summary>Header Scan and its menu; the launcher says why when a scan cannot start.</summary>
     private async void StartScan(ScanDepth depth, ScanOptions? options)
     {

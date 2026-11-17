@@ -1,11 +1,16 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace MediaVerifier.UI;
 
-/// <summary>Hand-offs to Windows Explorer and the clipboard (no shell: arguments go through ArgumentList).</summary>
+/// <summary>Hand-offs to Windows Explorer and the clipboard (no command shell: arguments go through ArgumentList).</summary>
 internal static class ShellActions
 {
-    /// <summary>Opens Explorer with the file selected.</summary>
+    /// <summary>
+    /// Opens Explorer on the file's folder with the file selected, through the shell API. A command line
+    /// <c>explorer /select,…</c> fails for paths with spaces once the whole argument is quoted. A file that is
+    /// gone opens its folder.
+    /// </summary>
     public static void ShowInFolder(string? path)
     {
         if (string.IsNullOrEmpty(path))
@@ -13,9 +18,30 @@ internal static class ShellActions
             return;
         }
 
-        ProcessStartInfo start = new("explorer.exe") { UseShellExecute = false };
-        start.ArgumentList.Add("/select," + path);
-        Start(start);
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            OpenFolder(Path.GetDirectoryName(path));
+            return;
+        }
+
+        if (SHParseDisplayName(path, IntPtr.Zero, out IntPtr item, 0, out _) < 0 || item == IntPtr.Zero)
+        {
+            OpenFolder(Path.GetDirectoryName(path));
+            return;
+        }
+
+        try
+        {
+            // With no child items, the one item list names the item to select in its parent folder.
+            if (SHOpenFolderAndSelectItems(item, 0, null, 0) < 0)
+            {
+                OpenFolder(Path.GetDirectoryName(path));
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(item);
+        }
     }
 
     /// <summary>Opens a file in the program Windows has for its type (Explorer hands it on); nothing when it is gone.</summary>
@@ -98,4 +124,12 @@ internal static class ShellActions
             // Explorer missing or refused: nothing to show.
         }
     }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr item, uint attributesIn, out uint attributesOut);
+
+    [DllImport("shell32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr[]? items, uint flags);
 }

@@ -118,7 +118,8 @@ internal static class KitToolTip
 
         protected override Size ContentSize => Measure();
 
-        public Size Measure() => new(Dpi.Scale(MeasureWidth(Text, PaintDpi), PaintDpi), Dpi.Scale(Height, PaintDpi));
+        // KitToolTip.Height: unqualified, Height is this window's own height, which grew each time the tip was painted.
+        public Size Measure() => new(Dpi.Scale(MeasureWidth(Text, PaintDpi), PaintDpi), Dpi.Scale(KitToolTip.Height, PaintDpi));
 
         protected override void PaintContent(Graphics g, Rectangle bounds, int dpi) => KitToolTip.Paint(g, bounds, Text, dpi);
     }

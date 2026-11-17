@@ -74,6 +74,24 @@ internal sealed class PopupList : LayeredPopup, IMessageFilter
     }
 
     /// <summary>Paints the list surface and items (shadow excluded) into <paramref name="bounds"/>.</summary>
+    /// <summary>The logical width a drop-down list needs to show its longest item in full (at most 560).</summary>
+    public static int DropDownWidth(IReadOnlyList<PopupItem> items, int dpi)
+    {
+        Font font = TypeRamp.For(dpi).BodyStrong;
+        int widest = 0;
+        foreach (PopupItem item in items)
+        {
+            if (!item.IsSeparator)
+            {
+                widest = Math.Max(widest, KitPaint.MeasureWidth(item.Text, font));
+            }
+        }
+
+        // Text 12 px into the row, 36 px kept for the check mark, the list's padding on both sides.
+        int logical = (int)Math.Ceiling(widest * 96.0 / dpi) + 12 + 36 + (2 * PaddingSize) + 4;
+        return Math.Min(logical, 560);
+    }
+
     public static void PaintList(Graphics g, Rectangle bounds, IReadOnlyList<PopupItem> items, PopupStyle style, int current, int hover, int dpi)
     {
         ThemeTokens t = ThemeService.Tokens;

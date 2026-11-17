@@ -138,7 +138,9 @@ internal sealed class ToastHost : IDisposable
             _timer.Tick += (_, _) => Tick();
         }
 
-        protected override Size ContentSize => new(Dpi.Scale(Width, PaintDpi), Dpi.Scale(Height, PaintDpi));
+        // ToastHost's constants: unqualified, Width and Height are this window's own size, which grew by the shadow's
+        // margin each time the toast was painted (the toast that kept expanding).
+        protected override Size ContentSize => new(Dpi.Scale(ToastHost.Width, PaintDpi), Dpi.Scale(ToastHost.Height, PaintDpi));
 
         public void Start(Form owner)
         {

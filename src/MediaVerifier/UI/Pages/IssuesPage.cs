@@ -35,10 +35,12 @@ internal sealed class IssuesPage : PageBase
     private readonly SelectionBar _selectionBar = new() { Visible = false };
     private readonly IssuesSource _source;
     private readonly FileDetailView _detail = new();
+    private readonly DrawerActions _drawer;
     private readonly ScrollPanel _detailScroll;
     private IssuesQuery _query = new(new FindingFilter());
     private IssuesData? _data;
     private IReadOnlyList<(long RootId, string Name)> _roots = [];
+    private string[] _ruleIds = [];
     private bool _updating;
     private long? _firstRun;
     private bool _narrow;
@@ -56,9 +58,11 @@ internal sealed class IssuesPage : PageBase
         _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
         _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
-        _detail.FindingAction += (_, action) => UiTask.Run(OnFindingActionAsync(action.FindingId, action.Ignore));
-        _detail.ShowInFolderRequested += (_, _) => ShowInFolder(_detail.Detail?.FullPath);
-        _detail.MoreRequested += (_, screen) => ShowDetailMenu(screen);
+        _drawer = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
+        {
+            Reload();
+            UiTask.Run(LoadDetailAsync(fileId));
+        });
 
         _all.Toggled += (_, _) => OnAllChip();
         foreach (Chip chip in _tierChips.Concat(_kindChips))
@@ -120,7 +124,9 @@ internal sealed class IssuesPage : PageBase
 
         _list.ItemActivated += (_, index) => OpenDetail(index);
 
-        // Owner request: a double-click opens the file itself; Enter and Details open the drawer.
+        // Owner request: a click shows the details, a double-click opens the file in its program.
+        _list.ItemClicked += (_, index) => OpenDetail(index);
+
         _list.ItemDoubleClicked += (_, index) => ShellActions.OpenFile(_source.RowAt(index)?.FullPath);
         _list.DetailsClicked += (_, index) => OpenDetail(index);
         _list.MoreRequested += (_, args) => ShowRowMenu(args.Index, args.Screen);
@@ -135,13 +141,6 @@ internal sealed class IssuesPage : PageBase
             Button(Strings.Issues.ScanAgain, ButtonKind.Secondary, IconName.Refresh, (_, _) => ScanSelected()),
             Button(Strings.Issues.Quarantine, ButtonKind.Secondary, IconName.Quarantine, (_, _) => UiTask.Run(RunOnSelectedAsync(ActionIds.Quarantine))),
         ]);
-        _detail.PrimaryRequested += (_, _) =>
-        {
-            if (_detail.Detail is { RecommendedActionId.Length: > 0 } shown)
-            {
-                UiTask.Run(RunAndReloadAsync([shown.FileId], shown.RecommendedActionId));
-            }
-        };
         KitButton fix = _selectionBar.Buttons[0];
         fix.Enabled = false;
         KitToolTip.Set(fix, Strings.Issues.NeedDifferentFixes);
@@ -293,13 +292,17 @@ internal sealed class IssuesPage : PageBase
             _tierChips[i].Count = issues.TierCounts[Tiers[i]];
         }
 
-        if (_rule.Items.Count == 1 && issues.RuleCounts.Count > 0)
+        // The problems by name with their counts, rebuilt with the data; the chosen one stays chosen.
+        string? chosenRule = _rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null;
+        _ruleIds = [.. issues.RuleCounts.Keys.OrderBy(RuleName, StringComparer.CurrentCultureIgnoreCase)];
+        _rule.Items.Clear();
+        _rule.Items.Add(Strings.Issues.Rule);
+        foreach (string rule in _ruleIds)
         {
-            foreach ((string rule, int count) in issues.RuleCounts.OrderBy(r => r.Key, StringComparer.Ordinal))
-            {
-                _rule.Items.Add(string.Create(CultureInfo.CurrentCulture, $"{rule} ({count})"));
-            }
+            _rule.Items.Add(string.Create(CultureInfo.CurrentCulture, $"{RuleName(rule)} ({UiFormat.Count(issues.RuleCounts[rule])})"));
         }
+
+        _rule.SelectedIndex = chosenRule is null ? 0 : Array.IndexOf(_ruleIds, chosenRule) + 1;
 
         _roots = issues.Roots;
         if (_folder.Items.Count == 1)
@@ -501,7 +504,7 @@ internal sealed class IssuesPage : PageBase
             5 => [FindingCategory.Structure],
             _ => null,
         };
-        string? rule = _rule.SelectedIndex > 0 && _data is not null ? _data.RuleCounts.Keys.OrderBy(k => k, StringComparer.Ordinal).ElementAtOrDefault(_rule.SelectedIndex - 1) : null;
+        string? rule = _rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null;
         long? root = _folder.SelectedIndex > 0 && _folder.SelectedIndex - 1 < _roots.Count ? _roots[_folder.SelectedIndex - 1].RootId : null;
         FindingFilter filter = new()
         {
@@ -672,8 +675,16 @@ internal sealed class IssuesPage : PageBase
                 CopySelectedPaths();
                 e.Handled = true;
                 break;
+            case Keys.Enter when e.Control:
+                if (_source.RowAt(_list.FocusedIndex) is IssueRow focusedRow && FixFor(focusedRow) is (IReadOnlyList<IssueRow> targets, string fix))
+                {
+                    UiTask.Run(RunAndReloadAsync([.. targets.Select(t => t.FileId).Distinct()], fix));
+                }
+
+                e.Handled = true;
+                break;
             case Keys.Enter when e.Alt:
-                ShowInFolder(_source.RowAt(_list.FocusedIndex)?.FullPath);
+                ShellActions.ShowInFolder(_source.RowAt(_list.FocusedIndex)?.FullPath);
                 e.Handled = true;
                 break;
             case Keys.F5 when e.Shift:
@@ -694,9 +705,18 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
-        PopupItem[] items =
+        (IReadOnlyList<IssueRow> targets, string? fix) = FixFor(row);
+        List<PopupItem> items =
         [
             new(Strings.Menu.Details, IconName.Info, Strings.Menu.ShortcutEnter, Tag: "details"),
+        ];
+        if (fix is not null)
+        {
+            items.Add(new(LiveUiData.ActionName(fix), IconName.Tools, Strings.Menu.ShortcutCtrlEnter, Tag: "fix"));
+        }
+
+        items.AddRange(
+        [
             new(Strings.Menu.ScanAgain, IconName.Refresh, Strings.Menu.ShortcutShiftF5, Tag: "rescan"),
             PopupItem.Separator,
             new(Strings.Menu.Ignore, IconName.Ignore, Strings.Menu.ShortcutCtrlI, Tag: "ignore"),
@@ -707,13 +727,16 @@ internal sealed class IssuesPage : PageBase
             new(Strings.Menu.CopyPath, IconName.Copy, Strings.Menu.ShortcutCtrlC, Tag: "copy"),
             PopupItem.Separator,
             new(Strings.Menu.MoveToQuarantine, IconName.Quarantine, Strings.Menu.ShortcutDel, Enabled: Services.Operations is not null, Tag: "quarantine"),
-        ];
+        ]);
         KitMenu.Show(_list, screen, items, item =>
         {
             switch (item.Tag as string)
             {
                 case "details":
                     OpenDetail(index);
+                    break;
+                case "fix" when fix is not null:
+                    UiTask.Run(RunAndReloadAsync([.. targets.Select(t => t.FileId).Distinct()], fix));
                     break;
                 case "rescan":
                     ScanSelected();
@@ -728,7 +751,7 @@ internal sealed class IssuesPage : PageBase
                     ShellActions.OpenFile(row.FullPath);
                     break;
                 case "show":
-                    ShowInFolder(row.FullPath);
+                    ShellActions.ShowInFolder(row.FullPath);
                     break;
                 case "copy":
                     CopySelectedPaths();
@@ -782,28 +805,6 @@ internal sealed class IssuesPage : PageBase
         Reload();
     }
 
-    private async Task OnFindingActionAsync(long findingId, bool ignore)
-    {
-        if (Services.IsDemo)
-        {
-            return;
-        }
-
-        if (ignore)
-        {
-            await Services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
-            Reload();
-            if (_detail.Detail is FileDetail d)
-            {
-                UiTask.Run(LoadDetailAsync(d.FileId));
-            }
-        }
-        else if (_detail.Detail is FileDetail detail)
-        {
-            await RescanFilesAsync([detail.FileId]).ConfigureAwait(true);
-        }
-    }
-
     private void ScanSelected()
     {
         List<long> files = [];
@@ -823,18 +824,7 @@ internal sealed class IssuesPage : PageBase
         UiTask.Run(RescanFilesAsync(files));
     }
 
-    /// <summary>Scan again: through the services' start, which shows the strip at once or says why nothing started.</summary>
-    private async Task RescanFilesAsync(IReadOnlyList<long> fileIds)
-    {
-        if (fileIds.Count == 0 || Services.IsDemo)
-        {
-            return;
-        }
-
-        List<FileRecord> files = await Task.Run(() => Services.Database.Files.GetMany([.. fileIds])).ConfigureAwait(true);
-        ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(f => f.Id)]))];
-        _ = await Services.StartScanAsync(scopes, ScanDepth.Standard, string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(fileIds.Count))).ConfigureAwait(true);
-    }
+    private Task RescanFilesAsync(IReadOnlyList<long> fileIds) => DrawerActions.RescanAsync(Services, fileIds);
 
     private void CopySelectedPaths()
     {
@@ -858,52 +848,18 @@ internal sealed class IssuesPage : PageBase
         }
     }
 
-    /// <summary>The drawer's More menu (subplan 09, Detail drawer): the file's remaining actions.</summary>
-    private void ShowDetailMenu(Point screen)
+    /// <summary>A rule's name as the Rule filter lists it (its title; the id when it is not in the catalog).</summary>
+    private static string RuleName(string ruleId) => Core.Rules.RuleCatalog.TryGet(ruleId, out Core.Rules.RuleDefinition rule) ? rule.Title : ruleId;
+
+    /// <summary>
+    /// The fix the app can run for a row: for the selection when the row is part of one (when all its rows share a
+    /// fix), otherwise for the row alone. Null without operations (the render harness) or without a fix.
+    /// </summary>
+    private (IReadOnlyList<IssueRow> Targets, string? Fix) FixFor(IssueRow row)
     {
-        if (_detail.Detail is not FileDetail shown)
-        {
-            return;
-        }
-
-        PopupItem[] items =
-        [
-            new(Strings.Menu.OpenFile, IconName.Open, Tag: "open"),
-            new(Strings.Menu.ScanAgain, IconName.Refresh, Tag: "rescan"),
-            new(Strings.Menu.CopyPath, IconName.Copy, Tag: "copy"),
-            PopupItem.Separator,
-            new(Strings.Menu.MoveToQuarantine, IconName.Quarantine, Enabled: Services.Operations is not null, Tag: "quarantine"),
-        ];
-        KitMenu.Show(_detail, screen, items, item =>
-        {
-            switch (item.Tag as string)
-            {
-                case "open":
-                    ShellActions.OpenFile(shown.FullPath);
-                    break;
-                case "rescan":
-                    UiTask.Run(RescanFilesAsync([shown.FileId]));
-                    break;
-                case "copy":
-                    Clipboard.SetText(shown.FullPath);
-                    break;
-                case "quarantine":
-                    UiTask.Run(RunAndReloadAsync([shown.FileId], ActionIds.Quarantine));
-                    break;
-            }
-        });
-    }
-
-    private static void ShowInFolder(string? path)
-    {
-        if (path is null || !File.Exists(path))
-        {
-            return;
-        }
-
-        System.Diagnostics.ProcessStartInfo start = new("explorer.exe") { UseShellExecute = false };
-        start.ArgumentList.Add("/select," + path);
-        using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(start);
+        List<IssueRow> selected = SelectedRows();
+        IReadOnlyList<IssueRow> targets = selected.Count > 1 && selected.Any(r => r.Id == row.Id) ? selected : [row];
+        return (targets, Services.Operations is null ? null : Remediator.CommonFix(targets.Select(t => t.RuleId)));
     }
 
     /// <summary>Maps list positions to group headers, the summary row and finding rows.</summary>
@@ -1010,6 +966,7 @@ internal sealed class IssuesPage : PageBase
             row.Severity = issue.Severity;
             row.Line1 = issue.Name;
             row.Line2 = issue.Line2;
+            row.Column = issue.Problem;
             row.Folder = ShowFolder ? issue.Folder : null;
             row.Size = UiFormat.Size(issue.Size);
         }

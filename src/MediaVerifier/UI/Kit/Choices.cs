@@ -116,7 +116,10 @@ internal sealed class DropDown : KitControl
         }
 
         PopupItem[] items = [.. _items.Select(i => new PopupItem(i))];
-        _open = new PopupList(items, PopupStyle.DropDown, (int)Math.Round(Width / (DeviceDpi / 96f)), _selected);
+
+        // At least as wide as the control, and wide enough for the longest item (the Issues filters are narrow).
+        int width = Math.Max((int)Math.Round(Width / (DeviceDpi / 96f)), PopupList.DropDownWidth(items, DeviceDpi));
+        _open = new PopupList(items, PopupStyle.DropDown, width, _selected);
         _open.Chosen += (_, index) => SelectedIndex = index;
         _open.Dismissed += (_, _) =>
         {

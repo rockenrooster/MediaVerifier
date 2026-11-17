@@ -47,6 +47,9 @@ internal sealed class ListRow
     public Severity? PillTier;
     public string Line1 = string.Empty;
     public string? Line2;
+
+    /// <summary>A two-line row's column between the text and the folder (Issues: the finding's title).</summary>
+    public string? Column;
     public string? Size;
     public string? Folder;
     public string? Count;
@@ -69,6 +72,7 @@ internal sealed class ListRow
         PillTier = null;
         Line1 = string.Empty;
         Line2 = null;
+        Column = null;
         Size = null;
         Folder = null;
         Count = null;
@@ -140,8 +144,11 @@ internal sealed class VirtualList : KitControl
     /// <summary>Enter or double-click on an item row (double-click raises <see cref="ItemDoubleClicked"/> instead when a page handles it).</summary>
     public event EventHandler<int>? ItemActivated;
 
-    /// <summary>A double-click on an item row, when it means something else than Enter (Issues opens the file).</summary>
+    /// <summary>A double-click on an item row, when it means something else than Enter (Issues and Library open the file).</summary>
     public event EventHandler<int>? ItemDoubleClicked;
+
+    /// <summary>A plain left click on an item row (Issues and Library show its details).</summary>
+    public event EventHandler<int>? ItemClicked;
 
     /// <summary>The Details hover button of a two-line row.</summary>
     public event EventHandler<int>? DetailsClicked;
@@ -343,6 +350,9 @@ internal sealed class VirtualList : KitControl
         return index < _source.Count ? index : -1;
     }
 
+    /// <summary>Width of a two-line row's column (<see cref="ListRow.Column"/>), logical pixels.</summary>
+    public const int TwoLineColumnWidth = 220;
+
     /// <summary>Paints a two-line row (the harness renders the reference rows through this).</summary>
     public static void DrawTwoLineRow(Graphics g, Rectangle row, ListRow data, bool selected, bool hover, bool focused, int dpi)
     {
@@ -362,10 +372,19 @@ internal sealed class VirtualList : KitControl
 
         int right = row.Right - Dpi.Scale(16, dpi);
         int folderRight = row.Right - Dpi.Scale(hover ? 100 + 132 : 100, dpi);
+        int textX = row.X + Dpi.Scale(44, dpi);
+
+        // With a column, the folder gives up width (down to 120 px) before the name keeps less than 200 px.
+        int folderMax = Dpi.Scale(264, dpi);
+        if (data.Column is not null)
+        {
+            folderMax = Math.Clamp(folderRight - textX - Dpi.Scale(TwoLineColumnWidth + 16 + 16 + 200, dpi), Dpi.Scale(120, dpi), folderMax);
+        }
+
         int folderWidth = 0;
         if (data.Folder is not null)
         {
-            folderWidth = Math.Min(KitPaint.MeasureWidth(data.Folder, type.Body), Dpi.Scale(264, dpi));
+            folderWidth = Math.Min(KitPaint.MeasureWidth(data.Folder, type.Body), folderMax);
             KitPaint.DrawText(g, data.Folder, type.Body, t.Text3, folderRight - folderWidth, row.Y + Dpi.Scale(22, dpi), folderWidth + 1, TextFormatFlags.Right);
         }
 
@@ -379,8 +398,16 @@ internal sealed class VirtualList : KitControl
             KitPaint.DrawText(g, data.Size, type.Body, t.Text2, right - sizeWidth, row.Y + Dpi.Scale(22, dpi), sizeWidth + 1, TextFormatFlags.Right);
         }
 
-        int textX = row.X + Dpi.Scale(44, dpi);
         int textRight = data.Folder is null ? right - Dpi.Scale(80, dpi) : folderRight - folderWidth - Dpi.Scale(16, dpi);
+        if (data.Column is not null)
+        {
+            // At the same place in every row, so it reads as a column.
+            int columnRight = data.Folder is null ? folderRight : folderRight - folderMax - Dpi.Scale(16, dpi);
+            int columnX = columnRight - Dpi.Scale(TwoLineColumnWidth, dpi);
+            KitPaint.DrawText(g, data.Column, type.Body, t.Text, columnX, row.Y + Dpi.Scale(22, dpi), columnRight - columnX);
+            textRight = columnX - Dpi.Scale(16, dpi);
+        }
+
         KitPaint.DrawText(g, data.Line1, type.BodyStrong, t.Text, textX, row.Y + Dpi.Scale(13, dpi), textRight - textX);
         if (data.Line2 is not null)
         {
@@ -620,8 +647,7 @@ internal sealed class VirtualList : KitControl
             g.SetClip(Rectangle.FromLTRB(0, top, Width, Height), System.Drawing.Drawing2D.CombineMode.Intersect);
             for (int i = first; i < _source.Count && y < Height; i++)
             {
-                _row.Clear();
-                _source.Fill(i, _row);
+                FillRow(i);
                 int height = S(_row.IsGroup ? GroupHeight : RowHeight);
                 Rectangle rowBounds = new(0, y, Width, height);
                 bool focused = i == _focus && KeyboardFocused;
@@ -761,7 +787,7 @@ internal sealed class VirtualList : KitControl
             return;
         }
 
-        _source.Fill(index, _row);
+        FillRow(index);
         if (_row.IsGroup)
         {
             if (e.Button == MouseButtons.Left)
@@ -790,6 +816,13 @@ internal sealed class VirtualList : KitControl
         ApplyClickSelection(index, ModifierKeys);
     }
 
+    /// <summary>Fills the shared row from the source, cleared first: a row never keeps another row's fields.</summary>
+    private void FillRow(int index)
+    {
+        _row.Clear();
+        _source!.Fill(index, _row);
+    }
+
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
@@ -801,12 +834,12 @@ internal sealed class VirtualList : KitControl
             return;
         }
 
-        if (e.Button != MouseButtons.Left || Mode != ListMode.TwoLine || _hover < 0)
+        if (e.Button != MouseButtons.Left)
         {
             return;
         }
 
-        HoverPart part = HoverPartAt(_hover, e.Location);
+        HoverPart part = Mode == ListMode.TwoLine && _hover >= 0 ? HoverPartAt(_hover, e.Location) : HoverPart.None;
         if (part == HoverPart.Details)
         {
             DetailsClicked?.Invoke(this, _hover);
@@ -816,6 +849,15 @@ internal sealed class VirtualList : KitControl
             Rectangle row = RowBounds(_hover);
             MoreRequested?.Invoke(this, (_hover, PointToScreen(new Point(row.Right - S(16 + 28), row.Y + S(36)))));
         }
+        else if (ModifierKeys == Keys.None && _source is not null && IndexAt(e.Location) is int index && index >= 0 && index == _focus)
+        {
+            // A plain click on an item (not a group, not part of a Ctrl or Shift selection).
+            FillRow(index);
+            if (!_row.IsGroup)
+            {
+                ItemClicked?.Invoke(this, index);
+            }
+        }
     }
 
     protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -824,7 +866,7 @@ internal sealed class VirtualList : KitControl
         int index = IndexAt(e.Location);
         if (index >= 0 && e.Button == MouseButtons.Left && _source is not null)
         {
-            _source.Fill(index, _row);
+            FillRow(index);
             if (!_row.IsGroup)
             {
                 (ItemDoubleClicked ?? ItemActivated)?.Invoke(this, index);
@@ -842,7 +884,9 @@ internal sealed class VirtualList : KitControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (_source is null || _source.Count == 0)
+
+        // A key the page handled (Alt+Enter, Ctrl+Enter in Issues) is not also an Enter here.
+        if (e.Handled || _source is null || _source.Count == 0)
         {
             return;
         }
@@ -877,7 +921,7 @@ internal sealed class VirtualList : KitControl
             case Keys.Right:
                 if (_focus >= 0)
                 {
-                    _source.Fill(_focus, _row);
+                    FillRow(_focus);
                     if (_row.IsGroup && _row.Collapsed == (e.KeyCode == Keys.Right))
                     {
                         _source.SetCollapsed(_focus, e.KeyCode == Keys.Left);
@@ -908,7 +952,7 @@ internal sealed class VirtualList : KitControl
             case Keys.Enter:
                 if (_focus >= 0)
                 {
-                    _source.Fill(_focus, _row);
+                    FillRow(_focus);
                     if (_row.IsGroup)
                     {
                         _source.SetCollapsed(_focus, !_row.Collapsed);
@@ -1025,7 +1069,7 @@ internal sealed class VirtualList : KitControl
         HoverPart part = HoverPart.None;
         if (index >= 0 && _source is not null)
         {
-            _source.Fill(index, _row);
+            FillRow(index);
             if (_row.IsGroup)
             {
                 index = -1;
@@ -1247,7 +1291,7 @@ internal sealed class VirtualList : KitControl
                 ListRow row = new();
                 list._source?.Fill(index, row);
                 string tier = row.Severity is Severity s ? BadgePainter.TierWord(s) : string.Empty;
-                return string.Join(", ", new[] { row.Line1, tier, row.Line2 ?? string.Empty }.Where(p => p.Length > 0));
+                return string.Join(", ", new[] { row.Line1, tier, row.Column ?? string.Empty, row.Line2 ?? string.Empty }.Where(p => p.Length > 0));
             }
         }
 

@@ -46,7 +46,7 @@ public sealed class AppFlowTests
             {
                 StartInstaller = path => started = File.Exists(path) ? path : null,
             };
-            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), updates, startupMaintenance: false);
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), updates, startupMaintenance: false, engineMutexName: OwnEngine());
             using MainForm form = new(services);
             form.FormClosed += (_, _) => closed = true;
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
@@ -91,7 +91,7 @@ public sealed class AppFlowTests
             File.SetLastWriteTimeUtc(broken, DateTime.UtcNow.AddHours(-1));
             using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
             state.Settings.CheckForUpdatesOnStartup = false;
-            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false);
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: OwnEngine());
             using MainForm form = new(services);
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
             form.Navigate(PageId.Library);
@@ -128,6 +128,18 @@ public sealed class AppFlowTests
             report = string.Join("; ", files.Select(f => $"{f.Name} {f.State} {f.SkipReason} [{string.Join(" ", services.Database.Findings.ForFile(f.Id).Select(x => x.RuleId + "/" + x.Status))}]"))
                 + " | runs: " + string.Join(", ", services.Database.Runs.List(10).Select(r => $"{r.Status} {r.Depth}"));
 
+            if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
+            {
+                // The pages as they show real findings (not the demo data of the render harness).
+                foreach (PageId page in new[] { PageId.Issues, PageId.Library, PageId.Dashboard })
+                {
+                    form.Navigate(page);
+                    Settle(() => form.CurrentPageLoading.IsCompleted);
+                    Pump(TimeSpan.FromMilliseconds(500));
+                    ScreenRenderer.Save(form, Path.Combine(folder, "live-" + page.ToString().ToLowerInvariant() + ".png"));
+                }
+            }
+
             form.Close();
         });
 
@@ -147,7 +159,7 @@ public sealed class AppFlowTests
             string folder = Directory.CreateDirectory(temp.Combine("Reports")).FullName;
             using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
             state.Settings.CheckForUpdatesOnStartup = false;
-            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false);
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
             using MainForm form = new(services);
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
 
@@ -203,6 +215,9 @@ public sealed class AppFlowTests
             }
         }
     }
+
+    /// <summary>An engine mutex of the test's own: a MediaVerifier scanning on this machine does not block the test.</summary>
+    private static string OwnEngine() => @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N");
 
     private static void Settle(Func<bool> done, TimeSpan? limit = null)
     {

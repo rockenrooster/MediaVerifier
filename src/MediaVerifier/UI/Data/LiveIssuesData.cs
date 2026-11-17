@@ -15,7 +15,8 @@ internal sealed partial class LiveUiData
         // The list and its counts are independent reads; at a million findings each takes up to a few
         // hundred milliseconds, so the counts run beside the list on the reader pool.
         Task<SeverityCounts> tiers = Task.Run(() => database.Queries.SeverityCounts(query.Filter));
-        Task<Dictionary<string, int>> rules = Task.Run(() => database.Queries.CountsByRule(query.Filter));
+        // Every problem the other filters leave, so the Rule list keeps its choices while one is chosen.
+        Task<Dictionary<string, int>> rules = Task.Run(() => database.Queries.CountsByRule(query.Filter with { RuleIds = null }));
         // Without filters beyond the tiers, the tier counts are already the totals.
         FindingFilter filter = query.Filter;
         bool narrowed = filter.Kinds is not null || filter.Categories is not null || filter.RuleIds is not null || filter.RootId is not null
@@ -68,7 +69,7 @@ internal sealed partial class LiveUiData
         foreach (FindingRow row in rows)
         {
             string folder = row.RelDir.Length == 0 ? row.RootPath : Path.Combine(row.RootPath, row.RelDir);
-            result.Add(new IssueRow(row.Id, row.FileId, row.RuleId, row.Severity, row.Confidence, row.FileName, Line2(row.RuleId, row.Confidence, row.Summary), folder, row.Size, row.Kind, Path.Combine(folder, row.FileName)));
+            result.Add(new IssueRow(row.Id, row.FileId, row.RuleId, row.Severity, row.Confidence, row.FileName, row.Summary, folder, row.Size, row.Kind, Path.Combine(folder, row.FileName), Title(row.RuleId, row.Confidence)));
         }
 
         return result;
@@ -126,12 +127,27 @@ internal sealed partial class LiveUiData
         }
 
         List<(string, DateTimeOffset)> history = [.. database.Events.ForFile(fileId).OrderByDescending(e => e.Utc).Select(e => (EventText(e), Ticks(e.Utc)))];
+        // The primary button: the first finding, most serious first, that the app can fix; the More menu: every fix.
         string? recommended = null;
+        List<string> fixes = [];
         if (findings.Count > 0 && root is not null && file.State != FileState.Missing)
         {
             bool healthy = MediaVerifier.Core.Remediation.ActionCatalog.HasHealthyCopy(database, MediaVerifier.Core.Engine.WindowsFileSystem.Instance, file);
             bool clean = !findings.Any(f => f.RuleId is "COR-DECODE" or "COR-TRUNCATED" or "COR-CONCEALED");
-            recommended = MediaVerifier.Core.Remediation.ActionCatalog.Recommended(MediaVerifier.Core.Remediation.ActionCatalog.ForFinding(findings[0].RuleId, file, root, healthy, clean));
+            foreach (FindingDetail finding in findings)
+            {
+                IReadOnlyList<string> actions = MediaVerifier.Core.Remediation.ActionCatalog.ForFinding(finding.RuleId, file, root, healthy, clean);
+                recommended ??= MediaVerifier.Core.Remediation.ActionCatalog.Recommended(actions);
+                foreach (string action in actions)
+                {
+                    if (MediaVerifier.Core.Remediation.ActionCatalog.Runnable.Contains(action)
+                        && action is not (MediaVerifier.Core.Rules.ActionIds.Quarantine or MediaVerifier.Core.Rules.ActionIds.Recycle)
+                        && !fixes.Contains(action))
+                    {
+                        fixes.Add(action);
+                    }
+                }
+            }
         }
 
         FingerprintState fingerprint = file.Hash is null ? FingerprintState.None
@@ -154,7 +170,8 @@ internal sealed partial class LiveUiData
             file.Size,
             zeroRuns,
             recommended is null ? string.Empty : ActionName(recommended),
-            recommended ?? string.Empty);
+            recommended ?? string.Empty,
+            fixes);
     }
 
     public AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token)
@@ -253,13 +270,9 @@ internal sealed partial class LiveUiData
             ? list.Select(v => Convert.ToDouble(v, CultureInfo.InvariantCulture))
             : [];
 
-    /// <summary>Row line 2: the rule title with its confidence wording, then the evidence phrase.</summary>
-    internal static string Line2(string ruleId, float confidence, string summary)
-    {
-        string title = RuleCatalog.TryGet(ruleId, out RuleDefinition rule) ? rule.Title : ruleId;
-        string phrase = summary.Length > 1 && char.IsUpper(summary[0]) && char.IsLower(summary[1]) ? char.ToLowerInvariant(summary[0]) + summary[1..] : summary;
-        return SeverityPolicy.Hedge(title, confidence) + Strings.Separator + phrase;
-    }
+    /// <summary>The rule's title, hedged by the finding's confidence (the Issues column, Browse's Problem).</summary>
+    internal static string Title(string ruleId, float confidence) =>
+        SeverityPolicy.Hedge(RuleCatalog.TryGet(ruleId, out RuleDefinition rule) ? rule.Title : ruleId, confidence);
 
     /// <summary>The format line of the drawer header (subplan 09, Detail drawer).</summary>
     internal static string FormatLine(FileRecord file)

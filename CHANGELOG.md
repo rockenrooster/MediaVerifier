@@ -5,6 +5,22 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: the toast after adding a folder grew each time it was drawn and slowed MediaVerifier down;
+  tooltips had the same fault. Its Scan now button works again.
+- Fixed: Show in folder did nothing for files whose path has spaces.
+- Fixed: the Category, Rule and Folder filters in Issues cut their items off; their lists are as
+  wide as their longest item. The Rule filter lists problems by name with their counts.
+- Fixed: in Library, the detail panel's fix button, More button and each finding's Ignore and Scan
+  again did nothing. The tray icon's Scan now was always greyed out.
+- Decoder errors say where in the file they are, for example "Decoder reported 14 errors, around
+  1:23, 4:05 and 12:40". Files whose errors were found by an earlier version are decoded once more
+  at the next scan to place them.
+- Fixes the app can make itself, such as rebuilding a missing seek index, are in the right-click
+  menu of Issues (Ctrl+Enter), in the detail panel's More menu, and on the detail panel's main
+  button whichever finding of the file they fix.
+- Issues has a Problem column, with the details under the file name. In Issues and Library a click
+  shows a file's details and a double-click opens the file; Library's right-click menu has Open
+  file.
 
 ## 0.1.0.5 - 2026-11-17
 
