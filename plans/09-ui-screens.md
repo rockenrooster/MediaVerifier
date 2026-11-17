@@ -290,7 +290,7 @@ Reference `schedule`, `schedule-edit`. Behaviour in subplan 13.
 | Summary | Box with the `clock` icon | `{when phrase}, {depth} scan of {folders}.` and `Next run: {weekday} {day} {month}, {time}` |
 | Buttons | | `Save` (primary), `Cancel` |
 
-Errors appear under the field: `Give the schedule a name`, `Choose at least one day`, `Choose at least one folder`. If Windows refuses to register the task: Critical info bar above the buttons `Windows would not accept this schedule: {system message}` and the schedule is saved switched off.
+While the form is not valid, Save is disabled and the summary box shows why in place of the summary: the Critical shape and the message in `CritText`, `Give the schedule a name`, `Choose at least one day`, `Choose at least one folder` or `Enter a time such as 03:00 or 21:30` (a time is read as `H:mm` or `HH:mm`; the day of the month goes up to 28). If Windows refuses to register the task: Critical info bar above the buttons `Windows would not accept this schedule: {system message}` and the schedule is saved switched off.
 
 ## Tools
 
@@ -357,13 +357,13 @@ Reference `dialogs` (letters refer to that sheet).
 | A. Confirm a repair | `{Action verb} {n} {things}?` for example `Rebuild the index of 38 videos?` | One paragraph from the action (subplan 12); four fact lines with icons: what and total size; `About {time}`; `Originals go to quarantine for {n} days` (or `Originals go to the Recycle Bin`); `You can undo this` (or `This cannot be undone here`); optional Medium info bar `{n} changed {things} will be skipped.` with `Show`; while a scan runs, the check box `Pause the running scan while this happens` (on) | Action verb (primary, focused), `Cancel` |
 | B. Permanent deletion | `Delete {n} files for good?` | `These are the originals kept in quarantine, {size}. This cannot be undone.` | `Delete for good` (danger), `Keep them` (focused) |
 | Accept a changed file | `Accept this file as it is now?` | `MediaVerifier will treat the current content as correct and stop reporting the change.` Check box `I changed this file myself` (must be ticked to enable the button) | `Accept`, `Cancel` |
-| Ignore a rule in a folder | `Ignore "{rule title}" in {folder}?` | `Existing and future findings of this kind in this folder and its subfolders are hidden. You can undo this in Settings → Rules.` | `Ignore`, `Cancel` |
+| Ignore a rule in a folder | `Ignore "{rule title}" in {folder}?` | `Existing and future findings of this kind in this folder and its subfolders are hidden. To show them again, set Status to Ignored and choose Stop ignoring.` | `Ignore`, `Cancel` |
 | Install an update during a scan | `Install the update now?` | `A scan is running. It will be interrupted and can continue after the update.` | `Install`, `Not now` |
 | Unhandled error (once per session) | `Something went wrong` | `MediaVerifier will keep running. Details were saved to the log.` | `Open log`, `Close` |
 
 | Surface | Wording |
 |---------|---------|
-| C. Row menu (Issues) | `Details` (Enter), the recommended action (Ctrl+Enter), `Scan again` (Shift+F5), separator, `Ignore` (Ctrl+I), `Ignore this rule for this folder`, separator, `Open file`, `Show in folder` (Alt+Enter), `Copy path` (Ctrl+C), separator, `Move to quarantine` (Del). The drawer's `more` menu: `Open file`, `Scan again`, `Copy path`, separator, `Move to quarantine` |
+| C. Row menu (Issues) | `Details` (Enter), the recommended action (Ctrl+Enter), `Scan again` (Shift+F5), separator, `Ignore` (Ctrl+I), `Ignore this rule for this folder`, separator, `Open file`, `Show in folder` (Alt+Enter), `Copy path` (Ctrl+C), separator, `Move to quarantine` (Del). With `Status: Ignored`, `Ignore` reads `Stop ignoring` (menu, Ctrl+I and the selection bar) and shows the findings again; a finding hidden by a folder ignore lifts that ignore. Ignore shows the success toast `Ignored for {n} problems` (a folder ignore: `Ignored` / `{rule title} in {folder}`) with `Undo`. The drawer's `more` menu: `Open file`, `Scan again`, `Copy path`, separator, `Move to quarantine` |
 | D. Toasts | Success: `{Result} for {n} {things}` with detail `{m} skipped · originals are in quarantine` and `Undo`. Failure (Critical bar): `{Action} failed for {n} {things}` with `Show`. Information: single line |
 | E. Tooltips | Full text of anything cut short; names for icon buttons |
 | H. Notifications flyout | Title `Notifications`; link `Mark all read`; items with tier shape, title, one line, time, and an `Accent` dot r 3 when unread; footer subtle button `Clear all`. Empty: `bell` icon 32 px, `No notifications` |

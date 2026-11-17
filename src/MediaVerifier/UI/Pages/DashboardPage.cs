@@ -88,6 +88,10 @@ internal sealed class DashboardPage : PageBase
             case "continue":
                 Services.Navigate?.Invoke(PageId.Scans, null);
                 break;
+            case not null when command.StartsWith("review:", StringComparison.Ordinal):
+                // Review the files the recommendation counts: Issues filtered to its rule, not every problem.
+                Services.Navigate?.Invoke(PageId.Issues, new IssuesFilterRequest(null, null, RuleId: command["review:".Length..]));
+                break;
             default:
                 Services.Navigate?.Invoke(PageId.Issues, null);
                 break;
@@ -583,7 +587,8 @@ internal sealed class DashboardPage : PageBase
 }
 
 /// <summary>Opens Issues filtered by tier and kind, or to the findings first raised in one run.</summary>
-internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long? FirstRun = null);
+/// <summary>Opens Issues with exactly this filter: the other filters go back to all (open findings).</summary>
+internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long? FirstRun = null, string? RuleId = null);
 
 /// <summary>Opens Issues with one finding's file in the drawer (a notification's link, subplan 13).</summary>
 internal sealed record IssueFindingRequest(long FindingId);

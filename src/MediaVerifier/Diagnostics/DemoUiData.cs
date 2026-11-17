@@ -62,10 +62,10 @@ internal sealed partial class DemoUiData : IUiData
         ],
         Recommendations:
         [
-            new RecommendationItem(Severity.Critical, "3 files changed on their own", "A healthy copy exists in Backup (E:) for all 3", "Review", "review-rot"),
+            new RecommendationItem(Severity.Critical, "3 files changed on their own", "A healthy copy exists in Backup (E:) for all 3", "Review", "review:INT-ROT"),
             new RecommendationItem(Severity.Medium, "38 videos have no seek index", "Rebuilding is lossless and takes about 4 minutes", "Fix all", "ACT-REMUX"),
-            new RecommendationItem(Severity.High, "41 albums look converted from MP3", "They cannot be repaired, only replaced", "Review", "review-fake"),
-            new RecommendationItem(Severity.Low, "18% of files not verified in 90 days", "At 2 h per night a full pass takes 41 days", "Verify now", "verify-now"),
+            new RecommendationItem(Severity.High, "41 albums look converted from MP3", "They cannot be repaired, only replaced", "Review", "review:AUD-FAKE-LOSSLESS"),
+            new RecommendationItem(Severity.Low, "18% of files not verified in 90 days", "At 2 h per night a full pass takes 41 days", "Verify now", "verify"),
         ],
         Activity:
         [

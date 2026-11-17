@@ -41,6 +41,9 @@ internal sealed class IssuesPage : PageBase
     private IssuesData? _data;
     private IReadOnlyList<(long RootId, string Name)> _roots = [];
     private string[] _ruleIds = [];
+
+    /// <summary>A rule asked for by a request before the Rule list has it (the first load); null once shown.</summary>
+    private string? _requestedRule;
     private bool _updating;
     private long? _firstRun;
     private bool _narrow;
@@ -101,6 +104,15 @@ internal sealed class IssuesPage : PageBase
         }
 
         _groupDrop.SelectedIndex = 0;
+
+        // A rule the user picks replaces one a request asked for (subscribed first: it runs before the reload).
+        _rule.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_updating)
+            {
+                _requestedRule = null;
+            }
+        };
         foreach (DropDown drop in new[] { _kindDrop, _category, _rule, _folder, _status })
         {
             drop.SelectedIndexChanged += (_, _) => OnFilterChanged();
@@ -177,6 +189,8 @@ internal sealed class IssuesPage : PageBase
 
         if (request is IssuesFilterRequest filter)
         {
+            // The request is the whole filter: what was chosen before (a rule, a folder, Ignored) would hide what it
+            // asks to show.
             _firstRun = filter.FirstRun;
             _updating = true;
             _all.On = filter.Tier is null;
@@ -185,11 +199,19 @@ internal sealed class IssuesPage : PageBase
                 _tierChips[i].On = filter.Tier == Tiers[i];
             }
 
+            int kind = -1;
             for (int i = 0; i < KindChips.Length; i++)
             {
                 _kindChips[i].On = filter.Kind == KindChips[i].Kind;
+                kind = filter.Kind == KindChips[i].Kind ? i : kind;
             }
 
+            _kindDrop.SelectedIndex = kind + 1;
+            _category.SelectedIndex = 0;
+            _folder.SelectedIndex = 0;
+            _status.SelectedIndex = 0;
+            _requestedRule = filter.RuleId;
+            _rule.SelectedIndex = filter.RuleId is null ? 0 : Array.IndexOf(_ruleIds, filter.RuleId) + 1;
             _updating = false;
             OnFilterChanged();
         }
@@ -252,6 +274,7 @@ internal sealed class IssuesPage : PageBase
     internal void ClearFilters()
     {
         _firstRun = null;
+        _requestedRule = null;
         _updating = true;
         _all.On = true;
         foreach (Chip chip in _tierChips.Concat(_kindChips))
@@ -293,7 +316,8 @@ internal sealed class IssuesPage : PageBase
         }
 
         // The problems by name with their counts, rebuilt with the data; the chosen one stays chosen.
-        string? chosenRule = _rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null;
+        string? chosenRule = _requestedRule ?? (_rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null);
+        _requestedRule = null;
         _ruleIds = [.. issues.RuleCounts.Keys.OrderBy(RuleName, StringComparer.CurrentCultureIgnoreCase)];
         _rule.Items.Clear();
         _rule.Items.Add(Strings.Issues.Rule);
@@ -504,7 +528,7 @@ internal sealed class IssuesPage : PageBase
             5 => [FindingCategory.Structure],
             _ => null,
         };
-        string? rule = _rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null;
+        string? rule = _requestedRule ?? (_rule.SelectedIndex > 0 ? _ruleIds.ElementAtOrDefault(_rule.SelectedIndex - 1) : null);
         long? root = _folder.SelectedIndex > 0 && _folder.SelectedIndex - 1 < _roots.Count ? _roots[_folder.SelectedIndex - 1].RootId : null;
         FindingFilter filter = new()
         {
@@ -590,6 +614,13 @@ internal sealed class IssuesPage : PageBase
             bool live = Services.Operations is not null;
             string? fix = live ? Remediator.CommonFix(SelectedRows().Select(r => r.RuleId)) : null;
             _selectionBar.Buttons[0].Enabled = fix is not null;
+            string ignore = IgnoredView ? Strings.Menu.StopIgnoring : Strings.Issues.Ignore;
+            if (_selectionBar.Buttons[1].Text != ignore)
+            {
+                _selectionBar.Buttons[1].Text = ignore;
+                _selectionBar.PerformLayout();
+            }
+
             _selectionBar.Buttons[3].Enabled = live;
             _selectionBar.Invalidate();
         }
@@ -728,8 +759,17 @@ internal sealed class IssuesPage : PageBase
         [
             new(Strings.Menu.ScanAgain, IconName.Refresh, Strings.Menu.ShortcutShiftF5, Tag: "rescan"),
             PopupItem.Separator,
-            new(Strings.Menu.Ignore, IconName.Ignore, Strings.Menu.ShortcutCtrlI, Tag: "ignore"),
-            new(Strings.Menu.IgnoreRuleHere, IconName.Ignore, Tag: "ignore-rule"),
+        ]);
+
+        // In the Ignored list the same item shows the findings again.
+        items.Add(new(IgnoredView ? Strings.Menu.StopIgnoring : Strings.Menu.Ignore, IconName.Ignore, Strings.Menu.ShortcutCtrlI, Tag: "ignore"));
+        if (!IgnoredView)
+        {
+            items.Add(new(Strings.Menu.IgnoreRuleHere, IconName.Ignore, Tag: "ignore-rule"));
+        }
+
+        items.AddRange(
+        [
             PopupItem.Separator,
             new(Strings.Menu.OpenFile, IconName.Open, Tag: "open"),
             new(Strings.Menu.ShowInFolder, IconName.Folder, Strings.Menu.ShortcutAltEnter, Tag: "show"),
@@ -796,10 +836,19 @@ internal sealed class IssuesPage : PageBase
         List<FileRecord> files = await Task.Run(() => Services.Database.Files.GetMany([row.FileId])).ConfigureAwait(true);
         if (files.FirstOrDefault() is FileRecord file)
         {
-            await Services.Database.Ignores.AddAsync(file.RootId, file.DirId, row.RuleId, null).ConfigureAwait(true);
+            long ignoreId = await Services.Database.Ignores.AddAsync(file.RootId, file.DirId, row.RuleId, null).ConfigureAwait(true);
             Reload();
+            Services.ShowToast?.Invoke(new ToastContent(
+                Severity.None,
+                Strings.Issues.Ignored,
+                string.Format(CultureInfo.CurrentCulture, Strings.Issues.IgnoredRuleIn, rule.Title, folder),
+                Strings.Dialogs.Undo,
+                () => UiTask.Run(DrawerActions.UndoAsync(Services, () => Services.Database.Ignores.RemoveAsync(ignoreId), Reload))));
         }
     }
+
+    /// <summary>Status: Ignored lists ignored findings; there Ignore (Ctrl+I, the menu, the bar) shows them again.</summary>
+    private bool IgnoredView => _status.SelectedIndex == (int)FindingStatus.Ignored;
 
     private async Task IgnoreSelectedAsync()
     {
@@ -809,9 +858,18 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
+        if (IgnoredView)
+        {
+            await Services.Database.Findings.ReopenAsync(ids).ConfigureAwait(true);
+            _list.ClearSelection();
+            Reload();
+            return;
+        }
+
         await Services.Database.Findings.SetStatusAsync(ids, FindingStatus.Ignored).ConfigureAwait(true);
         _list.ClearSelection();
         Reload();
+        DrawerActions.ShowIgnored(Services, ids, Reload);
     }
 
     private void ScanSelected()

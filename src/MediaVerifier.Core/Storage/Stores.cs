@@ -601,34 +601,39 @@ public sealed class IgnoreStore(Database database)
     /// <summary>Removes the ignore and reopens the findings it hid.</summary>
     public Task RemoveAsync(long ignoreId, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(
-            context =>
-            {
-                string marker = FindingStore.IgnoredScopePrefix + ignoreId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                SqliteCommand affected = context.Command("SELECT DISTINCT file_id FROM findings WHERE status = 1 AND resolution = $resolution");
-                affected.Add("$resolution", marker);
-                HashSet<long> files = [];
-                using (SqliteDataReader reader = affected.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        files.Add(reader.GetInt64(0));
-                    }
-                }
-
-                SqliteCommand reopen = context.Command("UPDATE findings SET status = 0, resolution = NULL WHERE status = 1 AND resolution = $resolution");
-                reopen.Add("$resolution", marker);
-                reopen.ExecuteNonQuery();
-
-                SqliteCommand delete = context.Command("DELETE FROM ignores WHERE id = $id");
-                delete.Add("$id", ignoreId);
-                delete.ExecuteNonQuery();
-                foreach (long fileId in files)
-                {
-                    FindingStore.RecomputeFileSummary(context, fileId);
-                }
-            },
+            context => Remove(context, ignoreId),
             ChangeFlags.Ignores | ChangeFlags.Findings | ChangeFlags.Files,
             cancellationToken);
+
+    /// <summary>Removes the ignore and reopens the findings it hid; returns how many reopened.</summary>
+    public static int Remove(WriteContext context, long ignoreId)
+    {
+        string marker = FindingStore.IgnoredScopePrefix + ignoreId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        SqliteCommand affected = context.Command("SELECT DISTINCT file_id FROM findings WHERE status = 1 AND resolution = $resolution");
+        affected.Add("$resolution", marker);
+        HashSet<long> files = [];
+        using (SqliteDataReader reader = affected.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                files.Add(reader.GetInt64(0));
+            }
+        }
+
+        SqliteCommand reopen = context.Command("UPDATE findings SET status = 0, resolution = NULL WHERE status = 1 AND resolution = $resolution");
+        reopen.Add("$resolution", marker);
+        int reopened = reopen.ExecuteNonQuery();
+
+        SqliteCommand delete = context.Command("DELETE FROM ignores WHERE id = $id");
+        delete.Add("$id", ignoreId);
+        delete.ExecuteNonQuery();
+        foreach (long fileId in files)
+        {
+            FindingStore.RecomputeFileSummary(context, fileId);
+        }
+
+        return reopened;
+    }
 
     public List<IgnoreRecord> List() => database.Read(connection =>
     {

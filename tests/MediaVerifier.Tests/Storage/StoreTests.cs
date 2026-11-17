@@ -193,6 +193,45 @@ public sealed class StoreTests
         Assert.Empty(db.Database.Ignores.List());
     }
 
+    /// <summary>
+    /// Undo of Ignore and Stop ignoring: an ignored finding opens again, and one hidden by a folder ignore removes the
+    /// ignore, so the next scan does not hide it again. Open findings are left alone.
+    /// </summary>
+    [Fact]
+    public async Task ReopenShowsIgnoredFindingsAgainAndLiftsTheirFolderIgnore()
+    {
+        using TestDatabase db = new();
+        long root = await db.Database.Roots.AddAsync(new RootRecord { Path = @"D:\Music" });
+        FileUpsertResult[] files = await db.Database.Files.UpsertAsync(
+        [
+            new(root, "Live", "a.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+            new(root, "Studio", "b.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+            new(root, "Studio", "c.flac", "flac", MediaKind.Audio, 1, 1, null, 1),
+        ]);
+        foreach (FileUpsertResult file in files)
+        {
+            await db.Database.Findings.ReplaceForFileAsync(file.FileId, 1, StandardRules, [Raise("AUD-CLIPPING", Severity.Medium)], false);
+        }
+
+        long one = Assert.Single(db.Database.Findings.ForFile(files[0].FileId)).Id;
+        long scoped = Assert.Single(db.Database.Findings.ForFile(files[1].FileId)).Id;
+        long open = Assert.Single(db.Database.Findings.ForFile(files[2].FileId)).Id;
+        await db.Database.Findings.SetStatusAsync([one], FindingStatus.Ignored);
+        await db.Database.Ignores.AddAsync(root, db.Database.Files.Get(files[1].FileId)!.DirId, "AUD-CLIPPING", null);
+        Assert.Equal(FindingStatus.Ignored, db.Database.Findings.ForFile(files[2].FileId).Single().Status);
+        await db.Database.Findings.SetStatusAsync([open], FindingStatus.Open);
+
+        // c.flac was reopened by hand above; b.flac's finding still hides under the folder ignore.
+        Assert.Equal(2, await db.Database.Findings.ReopenAsync([one, scoped, open]));
+
+        Assert.All(files, f => Assert.Equal(FindingStatus.Open, Assert.Single(db.Database.Findings.ForFile(f.FileId)).Status));
+        Assert.Empty(db.Database.Ignores.List());
+        Assert.Equal(1, db.Database.Files.Get(files[0].FileId)!.OpenFindings);
+
+        await db.Database.Findings.ReplaceForFileAsync(files[1].FileId, 2, StandardRules, [Raise("AUD-CLIPPING", Severity.High)], contentChanged: true);
+        Assert.Equal(FindingStatus.Open, Assert.Single(db.Database.Findings.ForFile(files[1].FileId)).Status);
+    }
+
     [Fact]
     public async Task RunsPlansJournalArtifactsNotificationsAndRuleSettingsRoundTrip()
     {

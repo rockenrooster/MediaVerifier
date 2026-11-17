@@ -1,6 +1,8 @@
 using MediaVerifier.Core.Model;
 using MediaVerifier.Tests.TestSupport;
+using MediaVerifier.UI;
 using MediaVerifier.UI.Data;
+using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
 
 namespace MediaVerifier.Tests.UI;
@@ -123,4 +125,45 @@ public sealed class ScheduleEditorTests
         Assert.Equal(weekly.ToJson(), dialog.Result.ToJson());
         dialog.Close();
     }
+
+    /// <summary>
+    /// Save is disabled only with a reason the summary box shows (subplan 09's wording), and a time typed without its
+    /// leading zero counts: before, "3:00" disabled Save without a word.
+    /// </summary>
+    [Fact]
+    public void The_editor_says_why_Save_is_disabled_and_reads_a_short_time()
+    {
+        MediaVerifier.Core.Scheduling.PlanDefinition weekly = MediaVerifier.Core.Scheduling.PlanDefinition.Templates[1].Definition;
+        using ScheduleEditorDialog dialog = ScheduleEditorDialog.Create("Weekly check", weekly, [], new DateOnly(2026, 11, 1));
+        using Form owner = DialogStage.Show(dialog);
+        KitTextBox name = Field<KitTextBox>(dialog, "_name");
+        KitTextBox time = Field<KitTextBox>(dialog, "_time");
+        KitButton save = Field<KitButton>(dialog, "_save");
+
+        time.Text = "3:00";
+        Assert.True(save.Enabled);
+        Assert.Null(Field<string>(dialog, "_problem"));
+        Assert.Equal("03:00", dialog.Result.Trigger.Time);
+
+        time.Text = "25:00";
+        Assert.False(save.Enabled);
+        Assert.Equal(Strings.Schedule.ErrorTime, Field<string>(dialog, "_problem"));
+
+        time.Text = "21:30";
+        name.Text = "  ";
+        Assert.False(save.Enabled);
+        Assert.Equal(Strings.Schedule.ErrorName, Field<string>(dialog, "_problem"));
+        if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
+        {
+            MediaVerifier.Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "schedule-edit-error.png"));
+        }
+
+        name.Text = "Nightly";
+        Assert.True(save.Enabled);
+        Assert.Equal("21:30", dialog.Result.Trigger.Time);
+        dialog.Close();
+    }
+
+    private static T Field<T>(object owner, string name) =>
+        (T)owner.GetType().GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(owner)!;
 }

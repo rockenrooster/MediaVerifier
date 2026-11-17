@@ -186,6 +186,52 @@ public sealed class FindingStore(Database database)
     public Task SetStatusAsync(IReadOnlyCollection<long> findingIds, FindingStatus status, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => SetStatus(context, findingIds, status), ChangeFlags.Findings | ChangeFlags.Files, cancellationToken);
 
+    /// <summary>
+    /// Shows ignored findings again (Undo of Ignore, Stop ignoring): each goes back to open, and one hidden by a
+    /// folder ignore removes that ignore, which reopens everything it hid and stops hiding future findings. Returns
+    /// how many findings reopened.
+    /// </summary>
+    public Task<int> ReopenAsync(IReadOnlyCollection<long> findingIds, CancellationToken cancellationToken = default) =>
+        database.Writer.ExecuteAsync(context => Reopen(context, findingIds), ChangeFlags.Findings | ChangeFlags.Files | ChangeFlags.Ignores, cancellationToken);
+
+    public static int Reopen(WriteContext context, IReadOnlyCollection<long> findingIds)
+    {
+        SqliteCommand select = context.Command("SELECT resolution FROM findings WHERE id = $id AND status = $ignored");
+        HashSet<long> scopes = [];
+        List<long> single = [];
+        foreach (long id in findingIds)
+        {
+            select.Parameters.Clear();
+            select.Add("$id", id);
+            select.Add("$ignored", (int)FindingStatus.Ignored);
+            object? resolution = select.ExecuteScalar();
+            if (resolution is null)
+            {
+                continue;
+            }
+
+            if (resolution is string marker
+                && marker.StartsWith(IgnoredScopePrefix, StringComparison.Ordinal)
+                && long.TryParse(marker.AsSpan(IgnoredScopePrefix.Length), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long scope))
+            {
+                scopes.Add(scope);
+            }
+            else
+            {
+                single.Add(id);
+            }
+        }
+
+        int reopened = single.Count;
+        foreach (long scope in scopes)
+        {
+            reopened += IgnoreStore.Remove(context, scope);
+        }
+
+        SetStatus(context, single, FindingStatus.Open);
+        return reopened;
+    }
+
     public static void SetStatus(WriteContext context, IReadOnlyCollection<long> findingIds, FindingStatus status)
     {
         HashSet<long> files = [];

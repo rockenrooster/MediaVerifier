@@ -26,7 +26,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
     private readonly SegmentedControl _repeat = new() { TabIndex = 3 };
     private readonly Chip[] _days;
     private readonly NumberBox _number = new() { Inset = true, Minimum = 1, Maximum = 365, TabIndex = 11 };
-    private readonly KitTextBox _time = new() { Inset = true, TabIndex = 12 };
+    private readonly KitTextBox _time = new() { Inset = true, MaxLength = 5, TabIndex = 12 };
     private readonly DropDown _limit = new() { TabIndex = 13 };
     private readonly KitCheckBox _plugged = new() { Text = Strings.Schedule.PluggedIn, TabIndex = 14 };
     private readonly KitCheckBox _fullScreen = new() { Text = Strings.Schedule.WaitFullScreen, TabIndex = 15 };
@@ -35,6 +35,9 @@ internal sealed class ScheduleEditorDialog : KitDialog
     private readonly KitButton _save;
     private readonly DateOnly _anchor;
     private readonly Func<string, PlanDefinition, Task<string?>>? _store;
+
+    /// <summary>Why Save is disabled, shown in the summary box; null when the form is valid.</summary>
+    private string? _problem;
 
     private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>>? store)
         : base(editing ? Strings.Schedule.EditSchedule : Strings.Schedule.NewSchedule, DialogWidth.Form, closeButton: true)
@@ -82,16 +85,27 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _wake.Checked = plan.Conditions.WakeComputer;
         Result = plan;
 
+        LimitNumber();
         _name.TextChanged += (_, _) => Changed();
         _folders.SelectedIndexChanged += (_, _) => Changed();
         _depth.SelectedIndexChanged += (_, _) => Changed();
         _repeat.SelectedIndexChanged += (_, _) =>
         {
+            LimitNumber();
             Relayout();
             Changed();
         };
         _number.ValueChanged += (_, _) => Changed();
         _time.TextChanged += (_, _) => Changed();
+
+        // "3:00" is taken as 03:00 and shown so when the box loses focus.
+        _time.Leave += (_, _) =>
+        {
+            if (NotificationPolicy.TryParseTime(_time.Text, out TimeOnly time))
+            {
+                _time.Text = time.ToString("HH:mm", CultureInfo.InvariantCulture);
+            }
+        };
         _limit.SelectedIndexChanged += (_, _) => Changed();
         Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake, _refused]);
         Body.Paint += (_, e) => PaintBody(e.Graphics);
@@ -190,7 +204,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         PlanTrigger trigger = new()
         {
             Kind = kind,
-            Time = _time.Text.Trim(),
+            Time = NotificationPolicy.TryParseTime(_time.Text, out TimeOnly time) ? time.ToString("HH:mm", CultureInfo.InvariantCulture) : _time.Text.Trim(),
             DaysOfWeek = kind == TriggerKind.Weekly ? [.. Week.Where((_, i) => _days[i].On)] : [],
             DayOfMonth = kind == TriggerKind.Monthly ? _number.Value : null,
             EveryDays = kind == TriggerKind.EveryDays ? _number.Value : null,
@@ -213,7 +227,14 @@ internal sealed class ScheduleEditorDialog : KitDialog
         }
 
         PlanDefinition plan = Build();
-        bool valid = plan.Validate().Count == 0 && PlanName.Length > 0;
+
+        // What keeps Save disabled, in the words of subplan 09; the summary box shows it instead of a stale summary.
+        _problem = PlanName.Length == 0 ? Strings.Schedule.ErrorName
+            : plan.Trigger.Kind == TriggerKind.Weekly && plan.Trigger.DaysOfWeek.Length == 0 ? Strings.Schedule.ErrorDays
+            : !NotificationPolicy.TryParseTime(plan.Trigger.Time, out _) ? Strings.Schedule.ErrorTime
+            : plan.Validate() is { Count: > 0 } problems ? problems[0].TrimEnd('.')
+            : null;
+        bool valid = _problem is null;
         if (valid)
         {
             Result = plan;
@@ -221,6 +242,16 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
         _save.Enabled = valid;
         Body.Invalidate();
+    }
+
+    /// <summary>A month has a day 1 to 28 here (no 29th to 31st in every month); every N days goes up to 365.</summary>
+    private void LimitNumber()
+    {
+        _number.Maximum = _repeat.SelectedIndex == 2 ? 28 : 365;
+        if (_number.Value > _number.Maximum)
+        {
+            _number.Value = (int)_number.Maximum;
+        }
     }
 
     private void PaintBody(Graphics g)
@@ -251,6 +282,15 @@ internal sealed class ScheduleEditorDialog : KitDialog
         Rectangle box = new(0, S(461), Body.Width, S(46));
         KitPaint.FillRoundedRect(g, box, SF(4), t.Bg);
         KitPaint.StrokeRoundedRect(g, box, SF(4), t.Stroke, SF(1));
+        if (_problem is not null)
+        {
+            // Why Save is disabled: the Critical shape with the message in its colour (never colour alone).
+            Color critical = t.ForSeverity(Severity.Critical).Text;
+            IconRenderer.DrawSeverity(g, Severity.Critical, SF(12), SF(476), 16, DeviceDpi, critical, t.Bg);
+            KitPaint.DrawText(g, _problem, type.Body, critical, S(36), S(484), Body.Width - S(48));
+            return;
+        }
+
         IconRenderer.Draw(g, IconName.Clock, S(12), S(476), 16, DeviceDpi, t.Text2);
         PlanDefinition plan = Result;
         string scope = plan.Roots is { Length: 1 } one && _roots.FirstOrDefault(r => r.Id == one[0]) is RootRecord root

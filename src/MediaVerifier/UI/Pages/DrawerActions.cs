@@ -57,6 +57,26 @@ internal sealed class DrawerActions
         _ = await services.StartScanAsync(scopes, ScanDepth.Standard, scope).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// The success toast after Ignore (subplan 09, D): <c>Ignored for {n} problems</c> with Undo, which shows them
+    /// again. Before, an ignored finding could not be brought back.
+    /// </summary>
+    public static void ShowIgnored(UiServices services, IReadOnlyCollection<long> findingIds, Action reload) =>
+        services.ShowToast?.Invoke(new ToastContent(
+            Severity.None,
+            string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Issues.Ignored, UiFormat.Plural(findingIds.Count, Strings.Dashboard.OneProblem, Strings.Dashboard.Problems)),
+            string.Empty,
+            Strings.Dialogs.Undo,
+            () => UiTask.Run(UndoAsync(services, () => services.Database.Findings.ReopenAsync(findingIds), reload))));
+
+    /// <summary>Runs an Undo, refreshes the page and says it is done.</summary>
+    public static async Task UndoAsync(UiServices services, Func<Task> undo, Action reload)
+    {
+        await undo().ConfigureAwait(true);
+        reload();
+        services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Repair.Undone, string.Empty));
+    }
+
     private async Task OnFindingActionAsync(long findingId, bool ignore)
     {
         if (_services.IsDemo || _view.Detail is not FileDetail shown)
@@ -68,6 +88,7 @@ internal sealed class DrawerActions
         {
             await _services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
             _findingIgnored(shown.FileId);
+            ShowIgnored(_services, [findingId], () => _findingIgnored(shown.FileId));
         }
         else
         {

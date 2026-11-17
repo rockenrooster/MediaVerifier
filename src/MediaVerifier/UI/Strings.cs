@@ -237,6 +237,7 @@ internal static class Strings
         public const string Status = "Status: {0}";
         public const string Open = "Open";
         public const string Ignored = "Ignored";
+        public const string IgnoredRuleIn = "{0} in {1}";
         public const string Resolved = "Resolved";
         public const string GroupBy = "Group by";
         public const string Kind = "Kind";
@@ -294,6 +295,7 @@ internal static class Strings
         public const string ScanAgain = "Scan again";
         public const string Ignore = "Ignore";
         public const string IgnoreRuleHere = "Ignore this rule for this folder";
+        public const string StopIgnoring = "Stop ignoring";
         public const string ShowInFolder = "Show in folder";
         public const string OpenFile = "Open file";
         public const string CopyPath = "Copy path";
@@ -581,6 +583,7 @@ internal static class Strings
         public const string ErrorName = "Give the schedule a name";
         public const string ErrorDays = "Choose at least one day";
         public const string ErrorFolders = "Choose at least one folder";
+        public const string ErrorTime = "Enter a time such as 03:00 or 21:30";
         public const string ErrorWindows = "Windows would not accept this schedule: {0}";
     }
 
@@ -821,7 +824,7 @@ internal static class Strings
         public const string AcceptCheck = "I changed this file myself";
         public const string Accept = "Accept";
         public const string IgnoreRuleTitle = "Ignore \"{0}\" in {1}?";
-        public const string IgnoreRuleText = "Existing and future findings of this kind in this folder and its subfolders are hidden. You can undo this in Settings → Rules.";
+        public const string IgnoreRuleText = "Existing and future findings of this kind in this folder and its subfolders are hidden. To show them again, set Status to Ignored and choose Stop ignoring.";
         public const string Ignore = "Ignore";
         public const string InstallTitle = "Install the update now?";
         public const string InstallText = "A scan is running. It will be interrupted and can continue after the update.";
