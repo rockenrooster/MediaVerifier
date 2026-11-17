@@ -421,7 +421,9 @@ internal sealed class ToolsPage : PageBase
                 string integrity = engine.Check.State switch { BundleState.Ok => Strings.Tools.IntegrityVerified, BundleState.Missing => Strings.Tools.IntegrityMissing, _ => Strings.Tools.IntegrityChanged };
                 _facts = [(Strings.Tools.FfmpegVersion, engine.Version), (Strings.Tools.Build, engine.Build), (Strings.Tools.Licence, engine.Licence), (Strings.Tools.Location, engine.Location.Directory), (Strings.Tools.Integrity, integrity)];
                 _changed.Visible = engine.Check.State is not (BundleState.Ok or BundleState.Missing);
-                _licence = ReadLicence(engine.Location.Directory);
+                // Read off the UI thread like every other file the window shows.
+                _licence = null;
+                UiTask.Run(LoadLicenceAsync(engine.Location.Directory));
                 AddButton(Strings.Tools.OpenLicencesFolder, null, ButtonKind.Secondary, () => ShellActions.OpenFolder(engine.Location.Directory));
                 AddButton(Strings.Tools.WhereSource, null, ButtonKind.Secondary, () => ShellActions.OpenFolder(FfmpegVersions.SourceUrl));
             }
@@ -517,6 +519,16 @@ internal sealed class ToolsPage : PageBase
                 {
                     KitPaint.DrawText(g, _captions[i], type.Body, t.Text2, S(156), _buttons[i].Top + S(16), Width - S(156));
                 }
+            }
+        }
+
+        private async Task LoadLicenceAsync(string directory)
+        {
+            string? text = await Task.Run(() => ReadLicence(directory)).ConfigureAwait(true);
+            if (!IsDisposed && _view == 3)
+            {
+                _licence = text;
+                Invalidate();
             }
         }
 

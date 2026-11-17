@@ -96,7 +96,7 @@ internal sealed class SchedulePage : PageBase
         int top = S(52);
         for (int i = 0; i < _rows.Count; i++)
         {
-            int rowTop = top + S(RowHeight * i);
+            int rowTop = top + S(RowPitch * i);
             (ToggleSwitch toggle, KitButton run, KitButton edit, IconButton more) = _rows[i];
             toggle.Bounds = new Rectangle(S(16), rowTop + S(24), S(40), S(20));
             run.Bounds = new Rectangle(w - S(180), rowTop + S(20), S(74), S(28));
@@ -121,6 +121,9 @@ internal sealed class SchedulePage : PageBase
     /// </summary>
     private bool Stacked => Width < S(980);
 
+    /// <summary>A plan row's height: on a narrow page the summary may take a second line (it was cut: "…no time li…").</summary>
+    private int RowPitch => Stacked ? 84 : RowHeight;
+
     private int VerificationHeight => S(Stacked ? 288 : 196);
 
     protected override void OnPaint(PaintEventArgs e)
@@ -138,19 +141,26 @@ internal sealed class SchedulePage : PageBase
 
         if (_data.Plans.Count > 0)
         {
-            int cardHeight = S((RowHeight * _data.Plans.Count) + 8);
+            int cardHeight = S((RowPitch * _data.Plans.Count) + 8);
             Card.Draw(g, new Rectangle(0, S(48), w, cardHeight), null, VisualState.Rest, false, DeviceDpi);
             for (int i = 0; i < _data.Plans.Count; i++)
             {
                 PlanRow plan = _data.Plans[i];
-                int rowTop = S(52) + S(RowHeight * i);
+                int rowTop = S(52) + S(RowPitch * i);
                 if (i > 0)
                 {
                     KitPaint.HorizontalLine(g, t.Stroke, S(16), w - S(16), rowTop, SF(1));
                 }
 
                 KitPaint.DrawText(g, plan.Name, type.BodyStrong, t.Text, S(72), rowTop + S(25), w - S(520));
-                KitPaint.DrawText(g, plan.Summary, type.Body, t.Text2, S(72), rowTop + S(46), w - S(520));
+                if (Stacked)
+                {
+                    TextWrap.Draw(g, plan.Summary, type.Body, t.Text2, S(72), rowTop + S(36), w - S(520), S(19), maxLines: 2);
+                }
+                else
+                {
+                    KitPaint.DrawText(g, plan.Summary, type.Body, t.Text2, S(72), rowTop + S(46), w - S(520));
+                }
                 KitPaint.DrawText(g, Strings.Schedule.NextRun, type.Caption, t.Text3, w - S(432), rowTop + S(25), S(120));
                 KitPaint.DrawText(g, plan.NextRun, type.Body, plan.Enabled ? t.Text : t.Text3, w - S(432), rowTop + S(46), S(124));
                 KitPaint.DrawText(g, Strings.Schedule.LastResult, type.Caption, t.Text3, w - S(302), rowTop + S(25), S(120));
@@ -216,7 +226,7 @@ internal sealed class SchedulePage : PageBase
         _pass.BackColor = Tokens.Surface;
     }
 
-    private int VerificationTop() => S(48) + (_data is { Plans.Count: > 0 } d ? S((RowHeight * d.Plans.Count) + 8) : S(200)) + S(12);
+    private int VerificationTop() => S(48) + (_data is { Plans.Count: > 0 } d ? S((RowPitch * d.Plans.Count) + 8) : S(200)) + S(12);
 
     private void UpdatePassText()
     {

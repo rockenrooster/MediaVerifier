@@ -52,6 +52,9 @@ internal static class ShellActions
     /// <summary>Opens a web page in the default browser.</summary>
     public static void OpenUrl(string url) => OffUiThread("Open page", () => Open(url));
 
+    /// <summary>Opens <paramref name="path"/> when it exists, otherwise <paramref name="fallback"/>; the check runs off the UI thread.</summary>
+    public static void OpenFileOr(string path, string fallback) => OffUiThread("Open", () => Open(File.Exists(path) ? path : fallback));
+
     public const string WebsiteUrl = "https://github.com/rockenrooster/MediaVerifier";
     public const string ReleasesUrl = "https://github.com/rockenrooster/MediaVerifier/releases";
     public const string NoticesUrl = "https://github.com/rockenrooster/MediaVerifier/blob/master/THIRD-PARTY-NOTICES.md";

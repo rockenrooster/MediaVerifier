@@ -984,7 +984,7 @@ internal sealed class SettingsPage : PageBase
         private static void OpenLicences()
         {
             string notices = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.md");
-            ShellActions.OpenUrl(File.Exists(notices) ? notices : ShellActions.NoticesUrl);
+            ShellActions.OpenFileOr(notices, ShellActions.NoticesUrl);
         }
     }
 }

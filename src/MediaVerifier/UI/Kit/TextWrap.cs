@@ -48,4 +48,30 @@ internal static class TextWrap
 
     /// <summary>Height of wrapped text at a line pitch.</summary>
     public static int Measure(string text, Font font, int width, int pitch) => Lines(text, font, width).Count * pitch;
+
+    /// <summary>At most <paramref name="maxLines"/> lines: the last takes the rest, cut with an ellipsis when drawn.</summary>
+    public static List<string> Lines(string text, Font font, int width, int maxLines)
+    {
+        List<string> lines = Lines(text, font, width);
+        if (lines.Count <= maxLines)
+        {
+            return lines;
+        }
+
+        List<string> kept = lines.GetRange(0, maxLines - 1);
+        kept.Add(string.Join(' ', lines.Skip(maxLines - 1)));
+        return kept;
+    }
+
+    /// <summary>Draws at most <paramref name="maxLines"/> wrapped lines from (x, top); returns the height used.</summary>
+    public static int Draw(Graphics g, string text, Font font, Color color, int x, int top, int width, int pitch, int maxLines)
+    {
+        List<string> lines = Lines(text, font, width, maxLines);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            KitPaint.DrawText(g, lines[i], font, color, x, top + (pitch / 2) + (i * pitch), width);
+        }
+
+        return lines.Count * pitch;
+    }
 }

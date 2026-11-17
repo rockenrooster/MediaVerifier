@@ -357,7 +357,15 @@ internal sealed class RulesView : KitControl
                     (RuleParameter parameter, NumberBox box, _) = _parameters[i];
                     int centre = S(64 + 29 + (40 * i));
                     int unitX = box.Right + S(12);
-                    KitPaint.DrawText(g, parameter.Label, type.Body, t.Text, S(72), centre, _labelWidth);
+                    if (KitPaint.MeasureWidth(parameter.Label, type.Body) > _labelWidth)
+                    {
+                        // A narrow window: two lines centred on the row rather than a cut name.
+                        TextWrap.Draw(g, parameter.Label, type.Body, t.Text, S(72), centre - S(19), _labelWidth, S(19), maxLines: 2);
+                    }
+                    else
+                    {
+                        KitPaint.DrawText(g, parameter.Label, type.Body, t.Text, S(72), centre, _labelWidth);
+                    }
                     KitPaint.DrawText(g, parameter.Unit, type.Body, t.Text2, unitX, centre, _unitWidth + 1);
                     if (IsChanged(box))
                     {
