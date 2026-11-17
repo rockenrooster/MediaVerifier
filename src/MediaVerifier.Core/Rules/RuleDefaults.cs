@@ -93,6 +93,8 @@ public static class RuleDefaults
             new("AUD-SILENT", "peakDb", -60, -150, -10, "Silent when the peak stays below", "dBFS"),
             new("AUD-SILENT", "rmsDb", -70, -150, -10, "or the average level stays below", "dBFS"),
             new("AUD-LONG-SILENCE", "seconds", 10, 1, 600, "Report silence at the start or end from", "seconds"),
+            new("COR-CLICKS", "lowClicks", 3, 1, 1000, "Report from", "clicks"),
+            new("COR-CLICKS", "mediumClicks", 21, 2, 10000, "Medium from", "clicks"),
         ];
         ByKey = All.ToDictionary(p => p.Key, StringComparer.Ordinal);
     }

@@ -363,7 +363,7 @@ internal sealed class SearchBox : KitTextBox
 /// <summary>A number box (subplan 08): right-aligned digits, Up/Down change by one step, non-digits rejected.</summary>
 internal sealed class NumberBox : KitTextBox
 {
-    private int _value;
+    private double _value;
 
     public NumberBox()
     {
@@ -373,25 +373,36 @@ internal sealed class NumberBox : KitTextBox
 
     public event EventHandler? ValueChanged;
 
-    public int Minimum { get; set; }
+    public double Minimum { get; set; }
 
-    public int Maximum { get; set; } = int.MaxValue;
+    public double Maximum { get; set; } = int.MaxValue;
 
-    public int Step { get; set; } = 1;
+    /// <summary>Digits after the decimal separator; 0 accepts whole numbers only.</summary>
+    public int Decimals { get; set; }
 
+    public double Step { get; set; } = 1;
+
+    /// <summary>The value rounded to a whole number.</summary>
     public int Value
+    {
+        get => (int)Math.Round(_value);
+        set => Number = value;
+    }
+
+    /// <summary>The value with <see cref="Decimals"/> digits after the separator, kept within the limits.</summary>
+    public double Number
     {
         get => _value;
         set
         {
-            int clamped = Math.Clamp(value, Minimum, Maximum);
-            string text = clamped.ToString(CultureInfo.CurrentCulture);
+            double clamped = Math.Round(Math.Clamp(value, Minimum, Math.Max(Minimum, Maximum)), Decimals);
+            string text = clamped.ToString("F" + Decimals.ToString(CultureInfo.InvariantCulture), CultureInfo.CurrentCulture);
             if (Text != text)
             {
                 Text = text;
             }
 
-            if (clamped != _value)
+            if (Differs(clamped))
             {
                 _value = clamped;
                 ValueChanged?.Invoke(this, EventArgs.Empty);
@@ -404,7 +415,7 @@ internal sealed class NumberBox : KitTextBox
     protected override void OnTextChanged(EventArgs e)
     {
         base.OnTextChanged(e);
-        if (int.TryParse(Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out int parsed) && parsed >= Minimum && parsed <= Maximum && parsed != _value)
+        if (TryParse(out double parsed) && parsed >= Minimum && parsed <= Maximum && Differs(parsed))
         {
             _value = parsed;
             ValueChanged?.Invoke(this, EventArgs.Empty);
@@ -414,7 +425,7 @@ internal sealed class NumberBox : KitTextBox
     protected override void OnLostFocus(EventArgs e)
     {
         base.OnLostFocus(e);
-        Value = int.TryParse(Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out int parsed) ? parsed : _value;
+        Number = TryParse(out double parsed) ? parsed : _value;
     }
 
     protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down || base.IsInputKey(keyData);
@@ -423,7 +434,7 @@ internal sealed class NumberBox : KitTextBox
     {
         if (e.KeyCode is Keys.Up or Keys.Down)
         {
-            Value = _value + (e.KeyCode == Keys.Up ? Step : -Step);
+            Number = _value + (e.KeyCode == Keys.Up ? Step : -Step);
             SelectAll();
             e.Handled = true;
             e.SuppressKeyPress = true;
@@ -435,10 +446,21 @@ internal sealed class NumberBox : KitTextBox
 
     protected override void OnEditKeyPress(KeyPressEventArgs e)
     {
-        if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
+        string separator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+        bool decimalPoint = Decimals > 0 && separator.Length == 1 && e.KeyChar == separator[0];
+        if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && !decimalPoint)
         {
             e.Handled = true;
         }
+    }
+
+    private bool Differs(double value) => Math.Abs(value - _value) > 0.5 * Math.Pow(10, -Decimals - 1);
+
+    private bool TryParse(out double value)
+    {
+        bool ok = double.TryParse(Text, Decimals > 0 ? NumberStyles.Float : NumberStyles.Integer, CultureInfo.CurrentCulture, out value);
+        value = ok ? Math.Round(value, Decimals) : 0;
+        return ok;
     }
 }
 

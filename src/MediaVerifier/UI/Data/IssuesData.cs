@@ -1,3 +1,4 @@
+using MediaVerifier.Core.Analysis.Audio;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Storage;
 
@@ -51,6 +52,7 @@ internal enum EvidenceView
     ByteMap,
     Spectrogram,
     FrameStrip,
+    Waveform,
 }
 
 /// <summary>A finding in the drawer, with the rule's three paragraphs.</summary>
@@ -104,4 +106,10 @@ internal interface IIssuesData
     IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids);
 
     FileDetail? LoadFileDetail(long fileId);
+
+    /// <summary>
+    /// The spectrogram and waveform behind a file's audio findings (subplan 10, Evidence views); null when
+    /// they cannot be rendered. Decodes the file on a cache miss, so it never runs on the UI thread.
+    /// </summary>
+    AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token);
 }

@@ -191,6 +191,9 @@ public static class FixtureFactory
         Add("clipatt.flac", "-i clip.flac -af \"volume=-3dB\" -sample_fmt s16 -f flac {out}", "clip.flac");
         Add("clip320.mp3", "-i clip.flac -c:a libmp3lame -b:a 320k -f mp3 {out}", "clip.flac");
         Add("natural.flac", "-i src16.flac -af \"lowpass=f=9000:poles=1\" -sample_fmt s16 -f flac {out}", "src16.flac");
+        Add("clicks.flac", "-i src16.flac -af \"volume=0.25,aeval='val(ch)+0.5*(eq(n,88200)+eq(n,264600)+eq(n,441000)+eq(n,617400)+eq(n,793800))':c=same\" -sample_fmt s16 -f flac {out}", "src16.flac");
+        Add("drums.flac", "-f lavfi -i \"aevalsrc='0.8*sin(2*PI*55*t)*exp(-mod(t,0.5)*12)+0.5*(random(0)*2-1)*exp(-mod(t+0.25,0.5)*40)':s=44100:d=20\" -ac 2 -sample_fmt s16 -f flac {out}");
+        Add("long5m.flac", "-f lavfi -i \"anoisesrc=d=300:c=pink:r=44100:a=0.3:seed=3\" -ac 2 -sample_fmt s16 -f flac {out}");
         Add("dull.flac", "-i src16.flac -af \"highshelf=f=6000:g=-30,lowpass=f=15000:poles=2\" -sample_fmt s16 -f flac {out}", "src16.flac");
 
         Add("cover.mp3", "-i m128.mp3 -i img.jpg -map 0:a -map 1:v -c copy -id3v2_version 3 -disposition:v:0 attached_pic -f mp3 {out}", "m128.mp3", "img.jpg");

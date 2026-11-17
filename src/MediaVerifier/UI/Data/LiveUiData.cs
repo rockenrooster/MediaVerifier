@@ -1,4 +1,5 @@
 using MediaVerifier.Core;
+using MediaVerifier.Core.Analysis.Audio;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Settings;
 using MediaVerifier.Core.Storage;
@@ -6,7 +7,7 @@ using MediaVerifier.Core.Storage;
 namespace MediaVerifier.UI.Data;
 
 /// <summary>Page snapshots from the library database. Every method runs off the UI thread.</summary>
-internal sealed partial class LiveUiData(Database database, Func<ScanSettings> settings, IClock clock) : IUiData
+internal sealed partial class LiveUiData(Database database, Func<ScanSettings> settings, IClock clock, EvidenceRenderer? evidenceRenderer = null) : IUiData
 {
     public ShellCounts LoadShell()
     {

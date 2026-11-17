@@ -1,3 +1,4 @@
+using MediaVerifier.Core.Analysis.Audio;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
 using MediaVerifier.Core.Storage;
@@ -87,6 +88,52 @@ internal sealed partial class DemoUiData
             (long)(31.2 * 1024 * 1024),
             [],
             UI.Strings.Actions.ExportList);
+    }
+
+    /// <summary>
+    /// The spectrogram of the issues-detail reference: the level falls from the bottom through the palette's
+    /// stops to black at 16.6 kHz, and each column is a little darker or lighter, as in the mockup.
+    /// </summary>
+    public AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token)
+    {
+        const int columns = 125;
+        const double knee = 16_600.0 / 22_050;
+        (double At, double Level)[] stops = [(0, 1), (0.12, 0.9), (0.3, 0.75), (0.5, 0.5), (0.72, 0.25), (knee, 0)];
+        Random random = new(41);
+        byte[] spectrogram = new byte[columns * AudioEvidence.Rows];
+        for (int c = 0; c < columns; c++)
+        {
+            double shade = 1 - (0.01 + (random.NextDouble() * 0.19));
+            for (int r = 0; r < AudioEvidence.Rows; r++)
+            {
+                double h = (r + 0.5) / AudioEvidence.Rows;
+                double level = 0;
+                for (int i = 1; i < stops.Length; i++)
+                {
+                    if (h <= stops[i].At)
+                    {
+                        double f = (h - stops[i - 1].At) / (stops[i].At - stops[i - 1].At);
+                        level = stops[i - 1].Level + ((stops[i].Level - stops[i - 1].Level) * f);
+                        break;
+                    }
+                }
+
+                spectrogram[(c * AudioEvidence.Rows) + r] = (byte)Math.Round(level * shade * 255);
+            }
+        }
+
+        return new AudioEvidence
+        {
+            SampleRate = 44_100,
+            Channels = 2,
+            Seconds = 252,
+            Spectrogram = spectrogram,
+            WaveMin = [],
+            WaveMax = [],
+            Marks = [],
+            MarkWindows = [],
+            WindowChannels = 2,
+        };
     }
 
     private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind) =>

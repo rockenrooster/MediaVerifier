@@ -66,6 +66,7 @@ internal sealed class LibraryPage : PageBase
         _source = new FileSource(this);
         _detailScroll = new ScrollPanel(_detail);
         _detail.CloseRequested += (_, _) => Services.ShowDrawer?.Invoke(null);
+        _detail.EvidenceLoader = (detail, token) => Services.Data.LoadAudioEvidence(detail, token);
         _detail.ShowInFolderRequested += (_, _) => ShellActions.ShowInFolder(_detail.Detail?.FullPath);
         _view.Segments.Add(Strings.Library.Folders);
         _view.Segments.Add(Strings.Library.Browse);

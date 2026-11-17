@@ -216,14 +216,14 @@ internal sealed class RulesView : KitControl
             Controls.AddRange([_enabled, _cap, _expand, _effect]);
             foreach (RuleParameter parameter in RuleDefaults.ForRule(rule.Id))
             {
-                NumberBox box = new() { Minimum = (int)Math.Ceiling(parameter.Min), Maximum = (int)Math.Floor(parameter.Max), Value = (int)Math.Round(settings.Value(rule.Id, parameter.Name)), AccessibleName = parameter.Label, Inset = true, Visible = false };
+                NumberBox box = new() { Minimum = parameter.Min, Maximum = parameter.Max, Decimals = parameter.Decimals, Step = Math.Pow(10, -parameter.Decimals), Number = settings.Value(rule.Id, parameter.Name), AccessibleName = parameter.Label, Inset = true, Visible = false };
                 KitButton reset = new() { Kind = ButtonKind.Subtle, Text = Strings.Kit.Reset, Visible = false };
                 RuleParameter p = parameter;
                 box.ValueChanged += (_, _) =>
                 {
                     if (!_binding)
                     {
-                        _debounce.Tag = (p, box.Value);
+                        _debounce.Tag = (p, box.Number);
                         _debounce.Stop();
                         _debounce.Start();
                     }
@@ -237,7 +237,7 @@ internal sealed class RulesView : KitControl
             _debounce.Tick += (_, _) =>
             {
                 _debounce.Stop();
-                if (_debounce.Tag is (RuleParameter parameter, int value))
+                if (_debounce.Tag is (RuleParameter parameter, double value))
                 {
                     _ = SetParameterAsync(parameter.Name, value);
                 }
@@ -279,7 +279,7 @@ internal sealed class RulesView : KitControl
             {
                 if (p.Name == name)
                 {
-                    box.Value = (int)Math.Round(clamped);
+                    box.Number = clamped;
                 }
             }
 
@@ -360,7 +360,7 @@ internal sealed class RulesView : KitControl
             {
                 if (ReferenceEquals(b, box))
                 {
-                    return Math.Abs(box.Value - parameter.Default) > 1e-9;
+                    return Math.Abs(box.Number - parameter.Default) > 1e-9;
                 }
             }
 

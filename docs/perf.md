@@ -24,3 +24,30 @@ library of 1,000,000 files in 4 roots (100 files per folder, 2 % with an open fi
 Finding: reading an `INSERT … RETURNING` row inside the writer's per-operation savepoint was about
 20 times slower than `ExecuteNonQuery` plus `last_insert_rowid()`, and got slower as the batch grew
 (160,000 rows: 27.4 s against 1.2 s). The writer never uses `RETURNING`.
+
+## Audio analysis (subplan 10, tasks A-09 and A-11)
+
+`dotnet test -c Release --filter "Category=Perf&FullyQualifiedName~AudioPerfTests"`, 2026-11-16, FFmpeg
+8.0.1, fixture `long5m.flac` (5 minutes of 44.1 kHz 16-bit stereo pink noise, generated). Best of
+three runs; one core.
+
+| Measurement | Result | Target |
+|-------------|--------|--------|
+| FFmpeg decode of the FLAC to the WAV pipe, counted only | 140–165 ms (about 2,000 × real time) | — |
+| All analyzers over the same samples (levels, bit depth, clipping, stereo, spectrum, dropouts, clicks) | 253 ms (about 1,200 × real time) | under 500 ms |
+| Evidence for the drawer (decode, spectrogram, waveform, three 20 ms windows) | 350–610 ms | under 1 s |
+| Three hours of stereo through the analyzers: bytes allocated after the first 10 minutes | 0 | flat |
+
+Per analyzer (5 minutes, one run each): spectrum 107 ms, clipping 38 ms, stereo 35 ms, clicks 34 ms,
+dropouts 18 ms, bit depth 17 ms, levels 12 ms.
+
+What made the difference (712 ms before): SIMD butterflies in the FFT for stages at least one vector
+wide; whole-chunk fast paths in the clipping, dropout and click analyzers (a vectorised test rules a
+chunk out, and the exact per-sample code runs only where a run, a gap or a click is possible); per-lane
+SIMD sums in the level analyzer; a click median from every sixteenth step. The level analyzer also
+stopped keeping one value per second (it now counts positive and negative windows), which was the
+only allocation that grew with the length.
+
+Subplan 10 asked for analysis under 25 % of the FLAC decode time. FFmpeg 8.0.1 decodes FLAC at about
+2,000 times real time, which leaves about 35 ms for 5 minutes, less than the FFT of the long-term
+spectrum alone; the target is restated as above (deviations log).

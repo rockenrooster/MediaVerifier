@@ -156,7 +156,7 @@ public static class RuleCatalog
                 "Gaps like these come from read errors while ripping a CD or from damaged data. Music does not stop that way on its own.",
                 "Replace it from a healthy copy or a fresh rip.",
                 damage),
-            new("COR-CLICKS", "Clicks or discontinuities", FindingCategory.Corruption, Audio, ScanDepth.Standard, Severity.Low, Severity.Medium, 1, true, Milestone.M3, true,
+            new("COR-CLICKS", "Clicks or discontinuities", FindingCategory.Corruption, Audio, ScanDepth.Standard, Severity.Low, Severity.Medium, 1, false, Milestone.M3, true,
                 "There are isolated, sudden jumps in the waveform far above the surrounding sound. They are heard as clicks.",
                 "They often come from small read or transfer errors. This check is experimental and can mistake sharp sounds for clicks.",
                 "Listen to the marked spots. If you hear clicks, replace the file from a healthy copy.",

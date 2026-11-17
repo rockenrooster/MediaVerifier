@@ -1,4 +1,7 @@
+using System.Drawing.Imaging;
 using System.Globalization;
+using MediaVerifier.Core.Analysis.Audio;
+using MediaVerifier.Core.Analysis.Detectors;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
 using MediaVerifier.UI.Data;
@@ -25,10 +28,16 @@ internal sealed class FileDetailView : KitControl
     private readonly List<Rectangle> _findingHeaders = [];
     private Rectangle _historyRow;
     private Rectangle _technicalRow;
+    private readonly List<(Rectangle Hit, long FindingId, int Mark)> _markHits = [];
     private bool _historyOpen;
     private bool _technicalOpen;
     private FileDetail? _detail;
     private DateTimeOffset _now;
+    private CancellationTokenSource? _evidenceCancel;
+    private AudioEvidence? _evidence;
+    private bool _evidenceLoading;
+    private Bitmap? _spectrogramImage;
+    private (long FindingId, int Mark)? _zoom;
 
     public FileDetailView()
     {
@@ -56,6 +65,12 @@ internal sealed class FileDetailView : KitControl
 
     public FileDetail? Detail => _detail;
 
+    /// <summary>Renders a file's spectrogram and waveform; called on a pool thread when a file with such evidence is shown.</summary>
+    public Func<FileDetail, CancellationToken, AudioEvidence?>? EvidenceLoader { get; set; }
+
+    /// <summary>The evidence load started by the last <see cref="Bind"/> (the render harness waits for it).</summary>
+    public Task EvidenceLoading { get; private set; } = Task.CompletedTask;
+
     /// <summary>Shows a file; the first finding is expanded.</summary>
     public void Bind(FileDetail detail, DateTimeOffset now, string primaryAction)
     {
@@ -65,6 +80,7 @@ internal sealed class FileDetailView : KitControl
         _expanded.Add(0);
         _historyOpen = false;
         _technicalOpen = false;
+        StartEvidence(detail);
         _primary.Text = primaryAction;
         _primary.Visible = primaryAction.Length > 0;
         foreach ((KitButton ignore, KitButton rescan) in _findingButtons)
@@ -119,6 +135,20 @@ internal sealed class FileDetailView : KitControl
         Invalidate();
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _evidenceCancel?.Cancel();
+            _evidenceCancel?.Dispose();
+            _evidenceCancel = null;
+            _spectrogramImage?.Dispose();
+            _spectrogramImage = null;
+        }
+
+        base.Dispose(disposing);
+    }
+
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
@@ -163,6 +193,16 @@ internal sealed class FileDetailView : KitControl
             return;
         }
 
+        foreach ((Rectangle hit, long findingId, int mark) in _markHits)
+        {
+            if (hit.Contains(e.Location))
+            {
+                _zoom = _zoom == (findingId, mark) || mark < 0 ? null : (findingId, mark);
+                Invalidate();
+                return;
+            }
+        }
+
         for (int i = 0; i < _findingHeaders.Count; i++)
         {
             if (_findingHeaders[i].Contains(e.Location))
@@ -187,6 +227,18 @@ internal sealed class FileDetailView : KitControl
             _technicalOpen = !_technicalOpen;
             Relayout();
         }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        bool overMark = false;
+        foreach ((Rectangle hit, _, _) in _markHits)
+        {
+            overMark |= hit.Contains(e.Location);
+        }
+
+        Cursor = overMark ? Cursors.Hand : Cursors.Default;
     }
 
     protected override void OnThemeChanged()
@@ -263,6 +315,11 @@ internal sealed class FileDetailView : KitControl
         int inner = width - S(24);
         int y = S(212);
         _findingHeaders.Clear();
+        if (g is not null)
+        {
+            _markHits.Clear();
+        }
+
         for (int i = 0; i < d.Findings.Count; i++)
         {
             FindingDetail f = d.Findings[i];
@@ -318,9 +375,10 @@ internal sealed class FileDetailView : KitControl
                         KitPaint.DrawText(g, Strings.Drawer.Evidence, type.CaptionStrong, t.Text3, x + S(12), by - S(6), inner);
                         Rectangle view = new(x + S(12), by + S(7), inner, EvidenceHeight(f));
                         DrawEvidence(g, f, view, d, t, type);
-                        if (f.EvidenceCaption.Length > 0)
+                        string caption = ZoomCaption(f) ?? f.EvidenceCaption;
+                        if (caption.Length > 0)
                         {
-                            KitPaint.DrawText(g, f.EvidenceCaption, type.Caption, t.Text2, x + S(12), view.Bottom + S(29), inner);
+                            KitPaint.DrawText(g, caption, type.Caption, t.Text2, x + S(12), view.Bottom + S(29), inner);
                         }
                     }
                 }
@@ -385,8 +443,11 @@ internal sealed class FileDetailView : KitControl
             case EvidenceView.ByteMap:
                 DrawByteMap(g, view, d, t);
                 break;
-            default:
-                DrawSpectrogramPlaceholder(g, f, view, t, type);
+            case EvidenceView.Waveform:
+                DrawWaveform(g, f, view, d, t);
+                break;
+            case EvidenceView.Spectrogram:
+                DrawSpectrogram(g, f, view, t, type);
                 break;
         }
     }
@@ -435,41 +496,310 @@ internal sealed class FileDetailView : KitControl
         }
     }
 
-    /// <summary>The spectrogram frame with its cutoff marker until subplan 10's rendered image is available.</summary>
-    private void DrawSpectrogramPlaceholder(Graphics g, FindingDetail f, Rectangle view, ThemeTokens t, TypeRamp type)
+    /// <summary>
+    /// The spectrogram (subplan 08, Spectrogram): the rendered image through the palette, the cutoff marker,
+    /// for inflated bitrates the knee the stated bitrate would give, and the axis captions. While the image
+    /// renders the frame shows the skeleton fill.
+    /// </summary>
+    private void DrawSpectrogram(Graphics g, FindingDetail f, Rectangle view, ThemeTokens t, TypeRamp type)
     {
-        Color[] palette = [ThemeTokens.Hex(0x000004), ThemeTokens.Hex(0x3B0F70), ThemeTokens.Hex(0x8C2981), ThemeTokens.Hex(0xDE4968), ThemeTokens.Hex(0xFE9F6D), ThemeTokens.Hex(0xFCFDBF)];
-        double cutoff = f.Evidence.TryGetValue("kneeHz", out object? knee) ? Convert.ToDouble(knee, CultureInfo.InvariantCulture)
-            : f.Evidence.TryGetValue("cutoffHz", out object? hz) ? Convert.ToDouble(hz, CultureInfo.InvariantCulture) : 0;
-        double nyquist = f.Evidence.TryGetValue("sampleRateHz", out object? rate) ? Convert.ToDouble(rate, CultureInfo.InvariantCulture) / 2 : 22050;
-        int cutoffY = cutoff > 0 ? view.Bottom - (int)(view.Height * cutoff / nyquist) : view.Y;
-        for (int y = view.Y; y < view.Bottom; y++)
+        double nyquist = _evidence is { SampleRate: > 0 } e ? e.SampleRate / 2.0
+            : f.Evidence.TryGetValue("sampleRateHz", out object? rate) ? Convert.ToDouble(rate, CultureInfo.InvariantCulture) / 2 : 22050;
+        if (_evidence is { Spectrogram.Length: > 0 } evidence)
         {
-            double level = y < cutoffY ? 0 : 0.35 + (0.6 * (y - cutoffY) / Math.Max(1.0, view.Bottom - cutoffY));
-            int index = Math.Clamp((int)(level * 5), 0, 4);
-            double frac = (level * 5) - index;
-            Color a = palette[index];
-            Color b = palette[index + 1];
-            Color c = Color.FromArgb((int)(a.R + ((b.R - a.R) * frac)), (int)(a.G + ((b.G - a.G) * frac)), (int)(a.B + ((b.B - a.B) * frac)));
-            g.FillRectangle(GdiCache.Brush(c), view.X, y, view.Width, 1);
+            if (_spectrogramImage is null || _spectrogramImage.Size != view.Size)
+            {
+                _spectrogramImage?.Dispose();
+                _spectrogramImage = RenderSpectrogram(evidence, view.Size, SF(4));
+            }
+
+            g.DrawImageUnscaled(_spectrogramImage, view.Location);
+        }
+        else if (_evidenceLoading)
+        {
+            KitPaint.FillRoundedRect(g, view, SF(4), t.Hover);
         }
 
         KitPaint.StrokeRoundedRect(g, view, SF(4), t.Stroke, SF(1));
+        if (f.Evidence.TryGetValue("expectedKneeHz", out object? expected))
+        {
+            double hz = Convert.ToDouble(expected, CultureInfo.InvariantCulture);
+            string label = string.Format(CultureInfo.CurrentCulture, Strings.Drawer.ExpectedKilohertz, (hz / 1000).ToString("0.0", CultureInfo.CurrentCulture));
+            DrawFrequencyMarker(g, view, hz, nyquist, label, t.Text3, t.Bg, type, left: true);
+        }
+
+        double cutoff = f.Evidence.TryGetValue("kneeHz", out object? knee) ? Convert.ToDouble(knee, CultureInfo.InvariantCulture)
+            : f.Evidence.TryGetValue("cutoffHz", out object? hzValue) ? Convert.ToDouble(hzValue, CultureInfo.InvariantCulture) : 0;
         if (cutoff > 0)
         {
-            using Pen dashed = new(t.Accent, SF(1)) { DashPattern = [4, 3] };
-            g.DrawLine(dashed, view.X, cutoffY, view.Right, cutoffY);
             string label = string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Kilohertz, (cutoff / 1000).ToString("0.0", CultureInfo.CurrentCulture));
-            int w = KitPaint.MeasureWidth(label, type.CaptionStrong) + S(12);
-            Rectangle chip = new(view.Right - S(6) - w, cutoffY - S(3) - S(18), w, S(18));
-            KitPaint.FillRoundedRect(g, chip, SF(3), t.Accent);
-            KitPaint.DrawTextCentred(g, label, type.CaptionStrong, t.OnAccent, chip.X + (chip.Width / 2), chip.Y + (chip.Height / 2));
+            DrawFrequencyMarker(g, view, cutoff, nyquist, label, t.Accent, t.OnAccent, type, left: false);
         }
 
         KitPaint.DrawText(g, Strings.Drawer.ZeroHz, type.Caption, t.Text3, view.X, view.Bottom + S(11), S(80));
         string top = string.Format(CultureInfo.CurrentCulture, Strings.Drawer.TopOfScale, (nyquist / 1000).ToString("0.##", CultureInfo.CurrentCulture));
         int topWidth = KitPaint.MeasureWidth(top, type.Caption);
         KitPaint.DrawText(g, top, type.Caption, t.Text3, view.Right - topWidth, view.Bottom + S(11), topWidth + 1);
+    }
+
+    /// <summary>A 1 px dashed line (4 on, 3 off) at a frequency with its label chip 3 px above, 6 px from the right (or left) edge.</summary>
+    private void DrawFrequencyMarker(Graphics g, Rectangle view, double hz, double nyquist, string label, Color line, Color text, TypeRamp type, bool left)
+    {
+        int y = view.Bottom - (int)Math.Round(view.Height * Math.Min(1, hz / nyquist));
+        using Pen dashed = new(line, SF(1)) { DashPattern = [4, 3] };
+        g.DrawLine(dashed, view.X, y + 0.5f, view.Right, y + 0.5f);
+        int w = KitPaint.MeasureWidth(label, type.CaptionStrong) + S(12);
+        int chipY = Math.Max(view.Y + S(3), y - S(3) - S(18));
+        Rectangle chip = new(left ? view.X + S(6) : view.Right - S(6) - w, chipY, w, S(18));
+        KitPaint.FillRoundedRect(g, chip, SF(3), line);
+        KitPaint.DrawTextCentred(g, label, type.CaptionStrong, text, chip.X + (chip.Width / 2), chip.Y + (chip.Height / 2));
+    }
+
+    /// <summary>
+    /// The spectrogram at the frame's pixel size: each pixel takes the highest level of the columns and bands
+    /// it covers, through the palette (−120 to 0 dB); the frame's rounded corners stay transparent.
+    /// </summary>
+    internal static Bitmap RenderSpectrogram(AudioEvidence evidence, Size size, float radius)
+    {
+        int width = Math.Max(1, size.Width);
+        int height = Math.Max(1, size.Height);
+        int columns = evidence.SpectrogramColumns;
+        const int rows = AudioEvidence.Rows;
+        int[] palette = Palette.Value;
+        int[] pixels = new int[width * height];
+        byte[] column = new byte[rows];
+        for (int x = 0; x < width; x++)
+        {
+            int c0 = (int)((long)x * columns / width);
+            int c1 = Math.Max(c0 + 1, (int)((long)(x + 1) * columns / width));
+            Array.Clear(column);
+            for (int c = c0; c < c1; c++)
+            {
+                System.Numerics.Tensors.TensorPrimitives.Max<byte>(column, evidence.Spectrogram.AsSpan(c * rows, rows), column);
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                int fromBottom = height - 1 - y;
+                int r0 = fromBottom * rows / height;
+                int r1 = Math.Max(r0 + 1, (fromBottom + 1) * rows / height);
+                byte level = 0;
+                for (int r = r0; r < r1; r++)
+                {
+                    level = Math.Max(level, column[r]);
+                }
+
+                pixels[(y * width) + x] = palette[level];
+            }
+        }
+
+        // Clear the four corners outside the frame's radius.
+        int rad = (int)Math.Ceiling(radius);
+        for (int y = 0; y < Math.Min(rad, height); y++)
+        {
+            for (int x = 0; x < Math.Min(rad, width); x++)
+            {
+                double dx = rad - x - 0.5;
+                double dy = rad - y - 0.5;
+                if ((dx * dx) + (dy * dy) > radius * radius)
+                {
+                    pixels[(y * width) + x] = 0;
+                    pixels[(y * width) + (width - 1 - x)] = 0;
+                    pixels[((height - 1 - y) * width) + x] = 0;
+                    pixels[((height - 1 - y) * width) + (width - 1 - x)] = 0;
+                }
+            }
+        }
+
+        Bitmap bitmap = new(width, height, PixelFormat.Format32bppPArgb);
+        BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+        try
+        {
+            for (int y = 0; y < height; y++)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(pixels, y * width, data.Scan0 + (y * data.Stride), width);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+
+        return bitmap;
+    }
+
+    /// <summary>The spectrogram palette of subplan 08 for each level byte, as opaque ARGB.</summary>
+    private static readonly Lazy<int[]> Palette = new(() =>
+    {
+        (double At, int Rgb)[] stops = [(0, 0x000004), (0.25, 0x3B0F70), (0.5, 0x8C2981), (0.75, 0xDE4968), (0.9, 0xFE9F6D), (1, 0xFCFDBF)];
+        int[] table = new int[256];
+        for (int i = 0; i < 256; i++)
+        {
+            double v = i / 255.0;
+            int s = 1;
+            while (s < stops.Length - 1 && v > stops[s].At)
+            {
+                s++;
+            }
+
+            double f = (v - stops[s - 1].At) / (stops[s].At - stops[s - 1].At);
+            int a = stops[s - 1].Rgb;
+            int b = stops[s].Rgb;
+            int Channel(int shift) => (int)Math.Round(((a >> shift) & 0xFF) + ((((b >> shift) & 0xFF) - ((a >> shift) & 0xFF)) * f));
+            table[i] = unchecked((int)0xFF000000) | (Channel(16) << 16) | (Channel(8) << 8) | Channel(0);
+        }
+
+        return table;
+    });
+
+    /// <summary>
+    /// The waveform (subplan 08, Waveform): the envelope in <c>Text3</c> about a <c>Stroke</c> centre line,
+    /// clipped runs as <c>CritFill</c> ticks at the top edge and dropouts as <c>HighFill</c> ticks at the
+    /// bottom. A tick opens the 20 ms around it; a click in the zoomed view goes back.
+    /// </summary>
+    private void DrawWaveform(Graphics g, FindingDetail f, Rectangle view, FileDetail d, ThemeTokens t)
+    {
+        AudioEvidence? evidence = _evidence;
+        int centre = view.Y + (view.Height / 2);
+        float half = (view.Height / 2f) - SF(1);
+        if (_zoom is (long zoomId, int mark) && zoomId == f.Id && evidence is not null && mark < evidence.MarkWindows.Length)
+        {
+            float[] window = evidence.MarkWindows[mark];
+            DrawEnvelope(g, view, window, window, Math.Max(1, evidence.WindowChannels), centre, half, t.Text2);
+            KitPaint.HorizontalLine(g, t.Stroke, view.X, view.Right, centre, SF(1));
+            using Pen dashed = new(t.Accent, SF(1)) { DashPattern = [4, 3] };
+            float mid = view.X + (view.Width / 2f);
+            g.DrawLine(dashed, mid, view.Y, mid, view.Bottom);
+            KitPaint.StrokeRoundedRect(g, view, SF(4), t.Stroke, SF(1));
+            _markHits.Add((view, f.Id, -1));
+            return;
+        }
+
+        if (evidence is { WaveMin.Length: > 0 })
+        {
+            DrawEnvelope(g, view, evidence.WaveMin, evidence.WaveMax, 1, centre, half, t.Text3);
+        }
+        else if (_evidenceLoading)
+        {
+            KitPaint.FillRoundedRect(g, view, SF(4), t.Hover);
+        }
+
+        KitPaint.HorizontalLine(g, t.Stroke, view.X, view.Right, centre, SF(1));
+        KitPaint.StrokeRoundedRect(g, view, SF(4), t.Stroke, SF(1));
+        if (evidence is not { Seconds: > 0 })
+        {
+            return;
+        }
+
+        foreach (FindingDetail other in d.Findings)
+        {
+            bool clip = other.RuleId == "AUD-CLIPPING";
+            if (!clip && other.RuleId != "COR-DROPOUT")
+            {
+                continue;
+            }
+
+            if (!other.Evidence.TryGetValue("positionsSeconds", out object? positions) || positions is not object[] list)
+            {
+                continue;
+            }
+
+            foreach (object position in list)
+            {
+                double seconds = Convert.ToDouble(position, CultureInfo.InvariantCulture);
+                int x = view.X + (int)Math.Round(view.Width * Math.Clamp(seconds / evidence.Seconds, 0, 1));
+                int tickY = clip ? view.Y + S(1) : view.Bottom - S(1) - S(6);
+                g.FillRectangle(GdiCache.Brush(clip ? t.Critical.Fill : t.High.Fill), x - S(1), tickY, S(2), S(6));
+                int index = IndexOfMark(evidence.Marks, seconds);
+                if (index >= 0)
+                {
+                    _markHits.Add((new Rectangle(x - S(4), view.Y, S(8), view.Height), f.Id, index));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fills one 1 px column per pixel from the minimum to the maximum of the values it covers; values are
+    /// <paramref name="stride"/> apart per position (interleaved channels share a column).
+    /// </summary>
+    private static void DrawEnvelope(Graphics g, Rectangle view, float[] lows, float[] highs, int stride, int centre, float half, Color color)
+    {
+        Brush brush = GdiCache.Brush(color);
+        int count = lows.Length / stride;
+        for (int x = 0; x < view.Width && count > 0; x++)
+        {
+            int from = (int)((long)x * count / view.Width);
+            int to = Math.Min(count, Math.Max(from + 1, (int)((long)(x + 1) * count / view.Width)));
+            float low = System.Numerics.Tensors.TensorPrimitives.Min(lows.AsSpan(from * stride, (to - from) * stride));
+            float high = System.Numerics.Tensors.TensorPrimitives.Max(highs.AsSpan(from * stride, (to - from) * stride));
+            float top = centre - (Math.Clamp(high, -1, 1) * half);
+            float bottom = centre - (Math.Clamp(low, -1, 1) * half);
+            g.FillRectangle(brush, view.X + x, top, 1, Math.Max(1, bottom - top));
+        }
+    }
+
+    private static int IndexOfMark(double[] marks, double seconds)
+    {
+        for (int i = 0; i < marks.Length; i++)
+        {
+            if (Math.Abs(marks[i] - seconds) < 1e-6)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>The caption of a zoomed waveform: the mark's position and how to go back.</summary>
+    private string? ZoomCaption(FindingDetail f) =>
+        _zoom is (long id, int mark) && id == f.Id && _evidence is { } e && mark < e.Marks.Length
+            ? string.Format(CultureInfo.CurrentCulture, Strings.Drawer.ZoomCaption, EvidenceText.MediaTime(e.Marks[mark]))
+            : null;
+
+    /// <summary>Starts rendering the spectrogram and waveform when one of the findings shows them.</summary>
+    private void StartEvidence(FileDetail detail)
+    {
+        _evidenceCancel?.Cancel();
+        _evidenceCancel?.Dispose();
+        _evidenceCancel = null;
+        _spectrogramImage?.Dispose();
+        _spectrogramImage = null;
+        _evidence = null;
+        _zoom = null;
+        _evidenceLoading = false;
+        EvidenceLoading = Task.CompletedTask;
+        if (EvidenceLoader is not { } loader || !detail.Findings.Any(f => f.View is EvidenceView.Spectrogram or EvidenceView.Waveform))
+        {
+            return;
+        }
+
+        _evidenceCancel = new CancellationTokenSource();
+        _evidenceLoading = true;
+        EvidenceLoading = LoadEvidenceAsync(detail, loader, _evidenceCancel.Token);
+    }
+
+    private async Task LoadEvidenceAsync(FileDetail detail, Func<FileDetail, CancellationToken, AudioEvidence?> loader, CancellationToken token)
+    {
+        AudioEvidence? evidence;
+        try
+        {
+            evidence = await Task.Run(() => loader(detail, token), token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (token.IsCancellationRequested || IsDisposed || !ReferenceEquals(_detail, detail))
+        {
+            return;
+        }
+
+        _evidence = evidence;
+        _evidenceLoading = false;
+        Invalidate();
     }
 
     private void PlaceButtons(int index, int x, int y)

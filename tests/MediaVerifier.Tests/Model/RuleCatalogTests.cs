@@ -82,7 +82,7 @@ public sealed class RuleCatalogTests
     public void DisabledByDefaultMatchesSubplan02()
     {
         string[] off = [.. RuleCatalog.All.Where(r => !r.EnabledByDefault).Select(r => r.Id)];
-        Assert.Equal(["AUD-DUAL-MONO", "AUD-DYNAMICS", "VID-BLACK", "IMG-LOW-RES"], off);
+        Assert.Equal(["COR-CLICKS", "AUD-DUAL-MONO", "AUD-DYNAMICS", "VID-BLACK", "IMG-LOW-RES"], off);
     }
 
     [Fact]

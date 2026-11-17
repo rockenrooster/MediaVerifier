@@ -158,7 +158,7 @@ Run-level alerts (not per-file findings; shown in the run summary and notificati
 | COR-STREAM-LENGTH | Audio and video lengths differ | Low – Medium | Quick | M2 | Stream durations differ by more than max(2 s, 2 %) |
 | COR-TRAILING | Unexpected data after the end | Low | Quick | M3 | Bytes after the logical end that are not a known trailer format |
 | COR-DROPOUT | Audio dropouts | Low – High | Standard | M2 | Runs of exact digital silence inside programme material with abrupt edges; confidence rises when the gap length is a whole number of codec frames or CD sectors |
-| COR-CLICKS | Clicks or discontinuities | Low – Medium | Standard | M3 | Isolated sample-level jumps far above the local signal (experimental) |
+| COR-CLICKS | Clicks or discontinuities | Low – Medium | Standard | M3 | Isolated sample-level jumps far above the local signal (experimental). Disabled by default until calibrated (subplan 10) |
 | COR-VISUAL | Possible visual corruption | Medium | Standard | backlog | Block-aligned discontinuity in a photo with no decoder error (experimental) |
 
 ### Audio authenticity and quality — subplan 10

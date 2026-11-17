@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using MediaVerifier.Core.Analysis.Audio;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
 using MediaVerifier.Core.Storage;
@@ -139,6 +140,34 @@ internal sealed partial class LiveUiData
             zeroRuns);
     }
 
+    public AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token)
+    {
+        if (evidenceRenderer is null || detail.Kind != MediaKind.Audio || database.Files.Get(detail.FileId) is not FileRecord file)
+        {
+            return null;
+        }
+
+        string key = EvidenceRenderer.CacheKey(file.Id, file.Hash, file.Size, file.MtimeUtc);
+        try
+        {
+            return evidenceRenderer.RenderAsync(detail.FullPath, key, EvidenceMarks(detail), token).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // An offline drive, a file in use or a missing media engine: the drawer shows the frame without a picture.
+            return null;
+        }
+    }
+
+    /// <summary>The positions marked on the waveform: clipped runs and dropouts, in time order.</summary>
+    internal static double[] EvidenceMarks(FileDetail detail) =>
+        [.. detail.Findings.Where(f => f.View == EvidenceView.Waveform).SelectMany(f => Positions(f.Evidence)).Distinct().Order().Take(MarkWindowCollector.MaxMarks)];
+
+    internal static IEnumerable<double> Positions(IReadOnlyDictionary<string, object> evidence) =>
+        evidence.TryGetValue("positionsSeconds", out object? value) && value is object[] list
+            ? list.Select(v => Convert.ToDouble(v, CultureInfo.InvariantCulture))
+            : [];
+
     /// <summary>Row line 2: the rule title with its confidence wording, then the evidence phrase.</summary>
     internal static string Line2(string ruleId, float confidence, string summary)
     {
@@ -196,6 +225,7 @@ internal sealed partial class LiveUiData
     {
         "GEN-ZEROFILL" or "INT-ROT" => EvidenceView.ByteMap,
         "AUD-FAKE-LOSSLESS" or "AUD-UPSAMPLED" or "AUD-BITRATE-INFLATED" when evidence.ContainsKey("kneeHz") => EvidenceView.Spectrogram,
+        "AUD-CLIPPING" or "AUD-OVERS" or "COR-DROPOUT" or "COR-CLICKS" or "AUD-SILENT" or "AUD-LONG-SILENCE" => EvidenceView.Waveform,
         _ when evidence.ContainsKey("messages") => EvidenceView.Messages,
         _ => EvidenceView.None,
     };

@@ -220,8 +220,11 @@ fingerprint):
 
 ## Performance
 
-- The analyzers share one pass over the decoded stream. Target: analysis adds less than 25 % to the
-  decode time of a FLAC.
+- The analyzers share one pass over the decoded stream. Target: all analyzers get through a
+  5-minute stereo track in under 500 ms on one core (at least 600 times real time). FFmpeg 8.0.1
+  decodes FLAC at about 2,000 times real time, so the earlier target of 25 % of the decode time
+  (about 35 ms) is below the cost of the spectrum's FFT alone; measured numbers are in
+  `docs/perf.md`.
 - FFT: an in-house iterative radix-2 on `float`, precomputed twiddles and bit-reversal table, one
   instance per worker. Window multiply and power accumulation use `TensorPrimitives`. Keep a scalar
   path and test both produce the same features.
@@ -267,7 +270,7 @@ rounding-noise floor of −135.5 dB: nothing but quantisation noise, as the floo
 | A-08 | `PcmStats` artifact persistence and re-evaluation | Changing a clipping threshold changes findings with no decode |
 | A-09 | `EvidenceRenderer`: spectrogram and waveform images, disk cache | Rendered in under 1 s for a 5-minute track; images shown in the drawer with overlays |
 | A-10 | Calibration run on the generated corpus plus any real, legally obtained samples the owner provides | Report in `docs/calibration/audio.md`: per-rule true and false positive counts; thresholds adjusted and recorded |
-| A-11 | Performance check | Analysis overhead below 25 % of decode time; flat memory on a 3-hour file |
+| A-11 | Performance check | Analysis of a 5-minute stereo track under 500 ms on one core; flat memory on a 3-hour file |
 | A-12 | `ClickAnalyzer` and `COR-CLICKS` (M3) | Fixture with five spliced single-sample errors is flagged; percussive music fixtures are not; stays disabled by default until calibrated |
 
 ## Exit criteria

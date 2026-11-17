@@ -1,4 +1,6 @@
+using System.Globalization;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
 using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
@@ -16,6 +18,31 @@ public sealed class KitControlTests
     ];
 
     public static TheoryData<int, string> DpiAndTheme => new() { { 96, "Dark" }, { 96, "Light" }, { 144, "Dark" }, { 96, "HighContrast" } };
+
+    [Fact]
+    public void Number_box_keeps_decimals_and_limits_below_one()
+    {
+        using NumberBox box = new() { Minimum = 0.001, Maximum = 0.5, Decimals = 3, Step = 0.001 };
+        box.Number = 0.01;
+        Assert.Equal(0.01, box.Number, 6);
+        box.Number = 2;
+        Assert.Equal(0.5, box.Number, 6);
+        box.Text = 0.25.ToString("F3", CultureInfo.CurrentCulture);
+        Assert.Equal(0.25, box.Number, 6);
+    }
+
+    [Fact]
+    public void Every_rule_parameter_fits_its_number_box()
+    {
+        foreach (RuleDefinition rule in RuleCatalog.All)
+        {
+            foreach (RuleParameter parameter in RuleDefaults.ForRule(rule.Id))
+            {
+                using NumberBox box = new() { Minimum = parameter.Min, Maximum = parameter.Max, Decimals = parameter.Decimals, Number = parameter.Default };
+                Assert.True(Math.Abs(box.Number - parameter.Default) < Math.Pow(10, -parameter.Decimals), $"{parameter.Key}: shows {box.Number}, default {parameter.Default}");
+            }
+        }
+    }
 
     [Theory]
     [MemberData(nameof(DpiAndTheme))]

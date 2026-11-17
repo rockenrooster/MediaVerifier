@@ -69,7 +69,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 | `COR-HANG` | Decoder stalled | High | Standard | all | yes | M1 |
 | `COR-PARTIAL-IMAGE` | Image decodes only partly | High | Standard | photo | yes | M1 |
 | `COR-DROPOUT` | Audio dropouts | Low – High | Standard | audio | yes | M2 |
-| `COR-CLICKS` | Clicks or discontinuities | Low – Medium | Standard | audio | yes | M3 |
+| `COR-CLICKS` | Clicks or discontinuities | Low – Medium | Standard | audio | no | M3 |
 | `COR-VISUAL` | Possible visual corruption | Medium | Standard | photo | yes | backlog |
 | `AUD-SILENT` | Track is silent | High | Standard | audio | yes | M2 |
 
@@ -145,6 +145,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** They often come from small read or transfer errors. This check is experimental and can mistake sharp sounds for clicks.
 - **What you can do:** Listen to the marked spots. If you hear clicks, replace the file from a healthy copy.
 - **Actions:** `ACT-RESTORE-COPY`, `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `lowClicks` 3 clicks (1–1000); `mediumClicks` 21 clicks (2–10000)
 
 ### `COR-VISUAL` Possible visual corruption
 

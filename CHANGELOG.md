@@ -8,7 +8,11 @@ All notable changes to MediaVerifier are documented here.
 - Audio quality checks: lossless files made from MP3, AAC or Opus; hi-res files upsampled from CD
   rates; padded bit depth; MP3s re-encoded at a higher bitrate; low bitrates; clipping and samples
   above full scale; DC offset, silent or out-of-phase channels, silent tracks, long silences and
-  dropouts. The drawer shows the cutoff on the spectrum.
+  dropouts. The drawer shows the file's spectrogram with the cutoff marked, and a waveform with the
+  clipped spots and dropouts; click a mark to see the 20 ms around it.
+- Experimental click detection (off by default; turn it on in Settings → Rules).
+- Fixed: Settings did not open after the audio rules were added. Rule settings with decimals (for
+  example 0.5 seconds) keep their decimals when edited.
 - MediaVerifier uses the .NET 10 Desktop Runtime (x64) installed on the PC instead of carrying its
   own copy: the download is much smaller, and setup asks for the runtime when it is missing.
 - Scans check every photo, video and music file for damage: broken or truncated containers, decoder

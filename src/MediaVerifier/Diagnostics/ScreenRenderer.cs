@@ -129,6 +129,17 @@ internal static class ScreenRenderer
         catch (Exception ex)
         {
             ErrorLog.Write("Render screens", ex);
+
+            // The harness's own log folder is deleted below; keep the failure beside the renders.
+            try
+            {
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, "render-error.txt"), ex.ToString());
+            }
+            catch (Exception write) when (write is IOException or UnauthorizedAccessException)
+            {
+            }
+
             return 1;
         }
         finally

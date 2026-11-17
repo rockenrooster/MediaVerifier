@@ -79,7 +79,8 @@ public sealed record PcmStats(
     SpectrumStats Spectrum,
     DropoutStats Dropouts,
     double LeadingSilenceSeconds,
-    double TrailingSilenceSeconds)
+    double TrailingSilenceSeconds,
+    ClickStats? Clicks = null)
 {
     /// <summary>Level above the knee relative to the rounding-noise floor (NaN when unknown).</summary>
     [JsonIgnore]

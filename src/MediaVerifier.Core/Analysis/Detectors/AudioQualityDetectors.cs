@@ -19,7 +19,7 @@ public sealed class AudioQualityDetector : IDetector
     public IReadOnlyList<string> RuleIds { get; } =
     [
         "AUD-FAKE-LOSSLESS", "AUD-UPSAMPLED", "AUD-BITRATE-INFLATED", "AUD-PADDED-BITS", "AUD-CLIPPING", "AUD-OVERS", "AUD-DC",
-        "AUD-DEAD-CHANNEL", "AUD-PHASE", "AUD-DUAL-MONO", "AUD-SILENT", "AUD-LONG-SILENCE", "COR-DROPOUT",
+        "AUD-DEAD-CHANNEL", "AUD-PHASE", "AUD-DUAL-MONO", "AUD-SILENT", "AUD-LONG-SILENCE", "COR-DROPOUT", "COR-CLICKS",
     ];
 
     public IReadOnlyList<Type> Needs { get; } = [typeof(AudioDecodeArtifact)];
@@ -57,6 +57,7 @@ public sealed class AudioQualityDetector : IDetector
 
         Clipping(stats, lossless, rules, sink);
         Dropouts(stats, sink);
+        Clicks(stats, rules, sink);
     }
 
     /// <summary>A codec as people name it in a sentence: FLAC, ALAC, WAV.</summary>
@@ -460,6 +461,23 @@ public sealed class AudioQualityDetector : IDetector
         {
             sink.Raise("COR-DROPOUT", Severity.Low, 0.5f, summary, evidence);
         }
+    }
+
+    /// <summary>COR-CLICKS (experimental, disabled by default): isolated sample-level jumps.</summary>
+    private static void Clicks(PcmStats stats, RuleSettings rules, FindingSink sink)
+    {
+        if (stats.Clicks is not { } clicks || clicks.Clicks < rules.Value("COR-CLICKS", "lowClicks"))
+        {
+            return;
+        }
+
+        Dictionary<string, object> evidence = new(StringComparer.Ordinal)
+        {
+            ["clicks"] = clicks.Clicks,
+            ["positionsSeconds"] = clicks.Positions,
+        };
+        Severity severity = clicks.Clicks >= rules.Value("COR-CLICKS", "mediumClicks") ? Severity.Medium : Severity.Low;
+        sink.Raise("COR-CLICKS", severity, 0.5f, EvidenceText.Plural(clicks.Clicks, "click", "clicks") + " far above the surrounding sound", evidence);
     }
 }
 

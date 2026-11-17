@@ -51,6 +51,7 @@ internal sealed class IssuesPage : PageBase
         _list.Source = _source;
         _detailScroll = new ScrollPanel(_detail);
         _detail.CloseRequested += (_, _) => CloseDetail();
+        _detail.EvidenceLoader = (detail, token) => Services.Data.LoadAudioEvidence(detail, token);
         _detail.FindingAction += (_, action) => _ = OnFindingActionAsync(action.FindingId, action.Ignore);
         _detail.ShowInFolderRequested += (_, _) => ShowInFolder(_detail.Detail?.FullPath);
 
@@ -177,7 +178,7 @@ internal sealed class IssuesPage : PageBase
     public override string? HelpRule => _source.RowAt(_list.FocusedIndex)?.RuleId;
 
     /// <summary>The render harness's issues-detail state: the Night Drive row selected, its drawer open.</summary>
-    internal Task ShowDemoDetailAsync()
+    internal async Task ShowDemoDetailAsync()
     {
         for (int i = 0; i < _source.Count; i++)
         {
@@ -185,11 +186,11 @@ internal sealed class IssuesPage : PageBase
             {
                 _list.ApplyClickSelection(i, Keys.None);
                 UpdateSelectionBar();
-                return LoadDetailAsync(row.FileId);
+                await LoadDetailAsync(row.FileId).ConfigureAwait(true);
+                await _detail.EvidenceLoading.ConfigureAwait(true);
+                return;
             }
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>The render harness's issues-selection state: three rows selected and the selection bar.</summary>

@@ -173,8 +173,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
     /// <summary>Samples per block handed to the analyzers (about 46 ms of stereo audio at 44.1 kHz).</summary>
     private const int BlockSamples = 4096;
 
-    /// <summary>Version 2 adds the signal features of subplan 10 (<see cref="Audio.PcmStats"/>).</summary>
-    public override int Version => 2;
+    /// <summary>Version 2 adds the signal features of subplan 10 (<see cref="Audio.PcmStats"/>); version 3 the clicks.</summary>
+    public override int Version => 3;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -192,7 +192,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
         Audio.StereoAnalyzer stereo = new();
         Audio.SpectrumAnalyzer spectrum = new();
         Audio.DropoutAnalyzer dropouts = new();
-        List<IPcmAnalyzer> analyzers = [counter, levels, bits, clipping, stereo, spectrum, dropouts];
+        Audio.ClickAnalyzer clicks = new();
+        List<IPcmAnalyzer> analyzers = [counter, levels, bits, clipping, stereo, spectrum, dropouts, clicks];
         if (md5 is not null)
         {
             analyzers.Add(md5);
@@ -252,7 +253,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
                 spectrum.Result,
                 dropouts.Result,
                 levels.LeadingSilenceSeconds,
-                levels.TrailingSilenceSeconds)
+                levels.TrailingSilenceSeconds,
+                clicks.Result)
             : null;
         return new AudioDecodeArtifact(
             OutcomeMapping.From(result.Outcome),

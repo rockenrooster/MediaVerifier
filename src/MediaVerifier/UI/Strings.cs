@@ -344,6 +344,8 @@ internal static class Strings
         public const string Dimensions = "{0} × {1}";
         public const string ZeroHz = "0 Hz";
         public const string TopOfScale = "Top of scale: {0} kHz";
+        public const string ExpectedKilohertz = "{0} kHz expected";
+        public const string ZoomCaption = "{0} · 20 ms around the mark · click to go back";
         public const string FileFingerprint = "File fingerprint (XXH3-128)  ";
         public const string StreamFingerprint = "Stream fingerprint (MD5)  ";
     }

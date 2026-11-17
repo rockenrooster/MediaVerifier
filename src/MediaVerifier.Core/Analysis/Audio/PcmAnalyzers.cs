@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Numerics.Tensors;
 using MediaVerifier.Core.Analysis.Providers;
 using MediaVerifier.Core.Ffmpeg;
@@ -20,7 +21,9 @@ public sealed class LevelAnalyzer : IPcmAnalyzer
     private double[] _sum = [];
     private long[] _overs = [];
     private double[] _windowSum = [];
-    private List<double>[] _windowMeans = [];
+    private long[] _positiveWindows = [];
+    private long[] _negativeWindows = [];
+    private long _windows;
     private int _windowFill;
     private long _frames;
     private long _firstSound = -1;
@@ -41,58 +44,135 @@ public sealed class LevelAnalyzer : IPcmAnalyzer
         _sum = new double[_channels];
         _overs = new long[_channels];
         _windowSum = new double[_channels];
-        _windowMeans = [.. Enumerable.Range(0, _channels).Select(_ => new List<double>(256))];
+        _positiveWindows = new long[_channels];
+        _negativeWindows = new long[_channels];
     }
 
     public void Process(ReadOnlySpan<float> interleaved)
     {
         int frames = interleaved.Length / _channels;
-        for (int f = 0; f < frames; f++)
+        int f = 0;
+        while (f < frames)
         {
-            bool sound = false;
-            int offset = f * _channels;
-            for (int c = 0; c < _channels; c++)
+            // Runs end at the 1 s window boundaries.
+            int take = Math.Min(frames - f, _rate - _windowFill);
+            ReadOnlySpan<float> run = interleaved.Slice(f * _channels, take * _channels);
+            if (Lanes.Fit(_channels))
             {
-                float v = interleaved[offset + c];
-                float a = Math.Abs(v);
-                if (a > _peak[c])
-                {
-                    _peak[c] = a;
-                }
-
-                if (a > 1f)
-                {
-                    _overs[c]++;
-                }
-
-                sound |= a >= SilenceLevel;
-                _sumSquares[c] += v * (double)v;
-                _sum[c] += v;
-                _windowSum[c] += v;
+                Vectorised(run);
+            }
+            else
+            {
+                Scalar(run);
             }
 
-            if (sound)
+            Sound(run, take);
+            _frames += take;
+            _windowFill += take;
+            f += take;
+            if (_windowFill == _rate)
             {
-                if (_firstSound < 0)
-                {
-                    _firstSound = _frames;
-                }
-
-                _lastSound = _frames;
-            }
-
-            _frames++;
-            if (++_windowFill == _rate)
-            {
-                for (int c = 0; c < _channels; c++)
-                {
-                    _windowMeans[c].Add(_windowSum[c] / _rate);
-                    _windowSum[c] = 0;
-                }
-
-                _windowFill = 0;
+                CloseWindow();
             }
         }
+    }
+
+    /// <summary>Sums per lane in float over the run (at most one second), then adds each lane to its channel in double.</summary>
+    private void Vectorised(ReadOnlySpan<float> run)
+    {
+        int width = Vector<float>.Count;
+        Vector<float> sum = Vector<float>.Zero;
+        Vector<float> squares = Vector<float>.Zero;
+        Vector<float> peak = Vector<float>.Zero;
+        Vector<int> overs = Vector<int>.Zero;
+        int i = 0;
+        for (; i <= run.Length - width; i += width)
+        {
+            Vector<float> v = new(run[i..]);
+            Vector<float> a = Vector.Abs(v);
+            sum += v;
+            squares += v * v;
+            peak = Vector.Max(peak, a);
+            overs -= Vector.GreaterThan(a, Vector<float>.One);
+        }
+
+        for (int lane = 0; lane < width; lane++)
+        {
+            int c = lane % _channels;
+            _sum[c] += sum[lane];
+            _windowSum[c] += sum[lane];
+            _sumSquares[c] += squares[lane];
+            _peak[c] = Math.Max(_peak[c], peak[lane]);
+            _overs[c] += overs[lane];
+        }
+
+        // The tail starts on a whole frame because the width is a multiple of the channel count.
+        Scalar(run[i..]);
+    }
+
+    private void Scalar(ReadOnlySpan<float> run)
+    {
+        for (int i = 0; i < run.Length; i++)
+        {
+            int c = i % _channels;
+            float v = run[i];
+            float a = Math.Abs(v);
+            if (a > _peak[c])
+            {
+                _peak[c] = a;
+            }
+
+            if (a > 1f)
+            {
+                _overs[c]++;
+            }
+
+            _sumSquares[c] += v * (double)v;
+            _sum[c] += v;
+            _windowSum[c] += v;
+        }
+    }
+
+    /// <summary>Tracks the first and last frame holding sound (any channel at or above <see cref="SilenceLevel"/>).</summary>
+    private void Sound(ReadOnlySpan<float> run, int frames)
+    {
+        if (Math.Abs(TensorPrimitives.MaxMagnitude(run)) < SilenceLevel)
+        {
+            return;
+        }
+
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < run.Length && first < 0; i++)
+        {
+            first = Math.Abs(run[i]) >= SilenceLevel ? i / _channels : -1;
+        }
+
+        for (int i = run.Length - 1; i >= 0 && last < 0; i--)
+        {
+            last = Math.Abs(run[i]) >= SilenceLevel ? i / _channels : -1;
+        }
+
+        if (_firstSound < 0)
+        {
+            _firstSound = _frames + first;
+        }
+
+        _lastSound = _frames + Math.Min(last, frames - 1);
+    }
+
+    private void CloseWindow()
+    {
+        for (int c = 0; c < _channels; c++)
+        {
+            double mean = _windowSum[c] / _rate;
+            _positiveWindows[c] += mean > 0 ? 1 : 0;
+            _negativeWindows[c] += mean < 0 ? 1 : 0;
+            _windowSum[c] = 0;
+        }
+
+        _windows++;
+        _windowFill = 0;
     }
 
     public void End()
@@ -102,9 +182,8 @@ public sealed class LevelAnalyzer : IPcmAnalyzer
         for (int c = 0; c < _channels; c++)
         {
             double mean = _sum[c] / frames;
-            List<double> windows = _windowMeans[c];
-            int same = windows.Count(w => Math.Sign(w) == Math.Sign(mean) && mean != 0);
-            Levels[c] = new ChannelLevels(_peak[c], Math.Sqrt(_sumSquares[c] / frames), mean, _overs[c], windows.Count == 0 ? 0 : (double)same / windows.Count);
+            long same = mean > 0 ? _positiveWindows[c] : mean < 0 ? _negativeWindows[c] : 0;
+            Levels[c] = new ChannelLevels(_peak[c], Math.Sqrt(_sumSquares[c] / frames), mean, _overs[c], _windows == 0 ? 0 : (double)same / _windows);
         }
 
         LeadingSilenceSeconds = _firstSound < 0 ? (double)_frames / _rate : (double)_firstSound / _rate;
@@ -189,6 +268,8 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
     private long _frames;
     private ChannelState[] _states = [];
     private readonly long[] _amplitude = new long[AmplitudeBins];
+    private const int Chunk = 64;
+    private const double Margin = 1.001;
     private long _samples;
     private double _peak;
 
@@ -204,25 +285,108 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
     public void Process(ReadOnlySpan<float> interleaved)
     {
         int frames = interleaved.Length / _channels;
-        for (int f = 0; f < frames; f++)
+        int f = 0;
+        while (f < frames)
         {
-            long position = _frames + f;
-            for (int c = 0; c < _channels; c++)
+            int take = Math.Min(frames - f, Chunk);
+            ReadOnlySpan<float> chunk = interleaved.Slice(f * _channels, take * _channels);
+            Histogram(chunk);
+            if (MayHoldRun(chunk))
             {
-                float x = interleaved[(f * _channels) + c];
-                double a = Math.Abs(x);
-                _amplitude[Math.Min(AmplitudeBins - 1, (int)(a * (AmplitudeBins / 2)))]++;
-                if (a > _peak)
+                for (int i = 0; i < take; i++)
                 {
-                    _peak = a;
+                    long position = _frames + f + i;
+                    for (int c = 0; c < _channels; c++)
+                    {
+                        _states[c].Next(chunk[(i * _channels) + c], position, this);
+                    }
                 }
-
-                _states[c].Next(x, position, this);
             }
+            else
+            {
+                for (int c = 0; c < _channels; c++)
+                {
+                    _states[c].Skip(chunk, c, _channels, _frames + f, this);
+                }
+            }
+
+            f += take;
         }
 
         _frames += frames;
         _samples += frames * (long)_channels;
+    }
+
+    /// <summary>
+    /// The amplitude histogram only needs samples that can reach 98 % of the final peak: those below the
+    /// bin of 98 % of the peak so far are skipped (the final peak is never lower), so the count is exact.
+    /// </summary>
+    private void Histogram(ReadOnlySpan<float> chunk)
+    {
+        float top = Math.Abs(TensorPrimitives.MaxMagnitude(chunk));
+        if (top > _peak)
+        {
+            _peak = top;
+        }
+
+        int floorBin = Math.Min(AmplitudeBins - 1, (int)(0.98 * _peak * (AmplitudeBins / 2)));
+        if (Math.Min(AmplitudeBins - 1, (int)(top * (double)(AmplitudeBins / 2))) < floorBin)
+        {
+            return;
+        }
+
+        foreach (float x in chunk)
+        {
+            int bin = Math.Min(AmplitudeBins - 1, (int)(Math.Abs((double)x) * (AmplitudeBins / 2)));
+            if (bin >= floorBin)
+            {
+                _amplitude[bin]++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// False when no sample in the chunk is within one 16-bit step of the previous sample of its channel at
+    /// 0.1 or more (no run can grow); then every channel only needs its last sample remembered.
+    /// </summary>
+    private bool MayHoldRun(ReadOnlySpan<float> chunk)
+    {
+        for (int c = 0; c < _channels; c++)
+        {
+            if (_states[c].Continues(chunk[c]))
+            {
+                return true;
+            }
+        }
+
+        int i = _channels;
+        if (Vector.IsHardwareAccelerated)
+        {
+            int width = Vector<float>.Count;
+            // Slightly wider limits than Next uses, so float rounding can only send a chunk to the exact path.
+            Vector<float> lsb = new((float)(Lsb * Margin));
+            Vector<float> loud = new((float)(0.1 / Margin));
+            for (; i <= chunk.Length - width; i += width)
+            {
+                Vector<float> x = new(chunk[i..]);
+                Vector<float> previous = new(chunk[(i - _channels)..]);
+                Vector<int> flat = Vector.LessThanOrEqual(Vector.Abs(x - previous), lsb) & Vector.GreaterThanOrEqual(Vector.Abs(x), loud);
+                if (flat != Vector<int>.Zero)
+                {
+                    return true;
+                }
+            }
+        }
+
+        for (; i < chunk.Length; i++)
+        {
+            if (Math.Abs((double)chunk[i] - chunk[i - _channels]) <= Lsb * Margin && Math.Abs((double)chunk[i]) >= 0.1 / Margin)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void End()
@@ -323,6 +487,49 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
             }
 
             _previous = x;
+        }
+
+        /// <summary>Whether the sample could extend the current run (the test of <see cref="Next"/>, without the run-length condition).</summary>
+        public bool Continues(float value) => Math.Abs((double)value - _previous) <= Lsb * Margin && Math.Abs(value) >= 0.1 / Margin;
+
+        /// <summary>
+        /// The state <see cref="Next"/> would reach over a chunk where no sample continues a run: a pending
+        /// run closes at the first sample, and only the last sample can start one.
+        /// </summary>
+        public void Skip(ReadOnlySpan<float> chunk, int channel, int channels, long position, ClippingAnalyzer owner)
+        {
+            int frames = chunk.Length / channels;
+            float first = chunk[channel];
+            if (_run >= 3)
+            {
+                Close(Math.Abs(first - _previous));
+            }
+
+            for (int i = channel; i < chunk.Length; i += channels)
+            {
+                double a = Math.Abs((double)chunk[i]);
+                if (a > _peak)
+                {
+                    _peak = a;
+                }
+            }
+
+            double last = chunk[((frames - 1) * channels) + channel];
+            double before = frames > 1 ? chunk[((frames - 2) * channels) + channel] : _previous;
+            if (Math.Abs(last) >= 0.1)
+            {
+                _run = 1;
+                _sign = last > 0 ? 1 : -1;
+                _jumpIn = Math.Abs(last - before);
+                _level = Math.Abs(last);
+                _start = position + frames - 1;
+            }
+            else
+            {
+                _run = 0;
+            }
+
+            _previous = last;
         }
 
         public void Finish(ClippingAnalyzer owner)
@@ -487,19 +694,41 @@ public sealed class SpectrumAnalyzer : IPcmAnalyzer
     public void Process(ReadOnlySpan<float> interleaved)
     {
         int frames = interleaved.Length / _channels;
-        int front = Math.Min(2, _channels);
-        for (int f = 0; f < frames; f++)
+        int f = 0;
+        while (f < frames)
         {
-            int offset = f * _channels;
-            float sum = 0;
-            for (int c = 0; c < front; c++)
+            // Fill the frame in one tight run, then transform it.
+            int take = Math.Min(frames - f, _size - _fill);
+            Span<float> mid = _mid.AsSpan(_fill, take);
+            Span<float> left = _left.AsSpan(_fill, take);
+            ReadOnlySpan<float> source = interleaved.Slice(f * _channels, take * _channels);
+            if (_channels == 1)
             {
-                sum += interleaved[offset + c];
+                source.CopyTo(mid);
+                source.CopyTo(left);
+            }
+            else if (_channels == 2)
+            {
+                for (int i = 0; i < take; i++)
+                {
+                    float l = source[2 * i];
+                    left[i] = l;
+                    mid[i] = (l + source[(2 * i) + 1]) / 2;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < take; i++)
+                {
+                    float l = source[i * _channels];
+                    left[i] = l;
+                    mid[i] = (l + source[(i * _channels) + 1]) / 2;
+                }
             }
 
-            _mid[_fill] = sum / front;
-            _left[_fill] = interleaved[offset];
-            if (++_fill == _size)
+            _fill += take;
+            f += take;
+            if (_fill == _size)
             {
                 Frame();
                 _fill = 0;
@@ -672,10 +901,11 @@ public sealed class DropoutAnalyzer : IPcmAnalyzer
     private int _channels = 1;
     private int _rate = 1;
     private int _window = 1;
-    private double[] _ring = [];
-    private int _ringIndex;
-    private int _ringCount;
-    private double _ringSum;
+    private const int Chunk = 256;
+    private float[] _history = [];
+    private int _historyIndex;
+    private int _historyFrames;
+    private int _active;
     private long _frame;
     private int _zeroRun;
     private long _runStart;
@@ -706,80 +936,124 @@ public sealed class DropoutAnalyzer : IPcmAnalyzer
         _channels = Math.Max(1, format.Channels);
         _rate = Math.Max(1, format.SampleRate);
         _window = Math.Max(1, _rate / 20);
-        _ring = new double[_window];
+        _history = new float[_window * _channels];
     }
 
     public void Process(ReadOnlySpan<float> interleaved)
     {
         int frames = interleaved.Length / _channels;
-        for (int f = 0; f < frames; f++, _frame++)
+        int f = 0;
+        while (f < frames)
         {
-            double max = 0;
-            double energy = 0;
-            for (int c = 0; c < _channels; c++)
-            {
-                double v = interleaved[(f * _channels) + c];
-                max = Math.Max(max, Math.Abs(v));
-                energy += v * v;
-            }
+            int take = Math.Min(frames - f, Chunk);
+            ReadOnlySpan<float> chunk = interleaved.Slice(f * _channels, take * _channels);
 
-            energy /= _channels;
-            if (max < LevelAnalyzer.SilenceLevel)
+            // Nearly every chunk has no sample near silence and nothing pending: only remember it.
+            if (_zeroRun == 0 && _active == 0 && Math.Abs(TensorPrimitives.MinMagnitude(chunk)) >= LevelAnalyzer.SilenceLevel)
             {
-                if (_zeroRun++ == 0)
-                {
-                    _runStart = _frame;
-                    _rmsBefore = _ringCount == _window ? Math.Sqrt(_ringSum / _ringCount) : 0;
-                    _edgeBefore = _previousMax;
-                }
+                Remember(chunk);
+                _previousMax = Math.Abs(TensorPrimitives.MaxMagnitude(chunk[^_channels..]));
+                _frame += take;
             }
             else
             {
-                if (_zeroRun > 0)
+                for (int i = 0; i < take; i++)
                 {
-                    int length = _zeroRun;
-                    bool sized = length >= _rate / 1000 && length <= _rate / 20;
-                    if (sized && _rmsBefore >= MinRms && _edgeBefore >= Edge && max >= Edge)
-                    {
-                        for (int i = 0; i < _pending.Length; i++)
-                        {
-                            if (!_pending[i].Active)
-                            {
-                                _pending[i] = new Pending { Active = true, Start = _runStart, Length = length };
-                                break;
-                            }
-                        }
-                    }
-
-                    _zeroRun = 0;
-                }
-
-                for (int i = 0; i < _pending.Length; i++)
-                {
-                    if (!_pending[i].Active)
-                    {
-                        continue;
-                    }
-
-                    _pending[i].Sum += energy;
-                    if (++_pending[i].Count == _window)
-                    {
-                        if (Math.Sqrt(_pending[i].Sum / _window) >= MinRms)
-                        {
-                            Confirm(_pending[i]);
-                        }
-
-                        _pending[i].Active = false;
-                    }
+                    Frame(chunk.Slice(i * _channels, _channels));
                 }
             }
 
-            _ringSum += energy - _ring[_ringIndex];
-            _ring[_ringIndex] = energy;
-            _ringIndex = (_ringIndex + 1) % _window;
-            _ringCount = Math.Min(_window, _ringCount + 1);
-            _previousMax = max;
+            f += take;
         }
+    }
+
+    private void Frame(ReadOnlySpan<float> frame)
+    {
+        double max = 0;
+        double energy = 0;
+        foreach (float sample in frame)
+        {
+            double v = sample;
+            max = Math.Max(max, Math.Abs(v));
+            energy += v * v;
+        }
+
+        energy /= _channels;
+        if (max < LevelAnalyzer.SilenceLevel)
+        {
+            if (_zeroRun++ == 0)
+            {
+                _runStart = _frame;
+                _rmsBefore = _historyFrames == _window ? Math.Sqrt(TensorPrimitives.SumOfSquares<float>(_history) / _history.Length) : 0;
+                _edgeBefore = _previousMax;
+            }
+        }
+        else
+        {
+            if (_zeroRun > 0)
+            {
+                int length = _zeroRun;
+                bool sized = length >= _rate / 1000 && length <= _rate / 20;
+                if (sized && _rmsBefore >= MinRms && _edgeBefore >= Edge && max >= Edge)
+                {
+                    for (int i = 0; i < _pending.Length; i++)
+                    {
+                        if (!_pending[i].Active)
+                        {
+                            _pending[i] = new Pending { Active = true, Start = _runStart, Length = length };
+                            _active++;
+                            break;
+                        }
+                    }
+                }
+
+                _zeroRun = 0;
+            }
+
+            for (int i = 0; i < _pending.Length && _active > 0; i++)
+            {
+                if (!_pending[i].Active)
+                {
+                    continue;
+                }
+
+                _pending[i].Sum += energy;
+                if (++_pending[i].Count == _window)
+                {
+                    if (Math.Sqrt(_pending[i].Sum / _window) >= MinRms)
+                    {
+                        Confirm(_pending[i]);
+                    }
+
+                    _pending[i].Active = false;
+                    _active--;
+                }
+            }
+        }
+
+        Remember(frame);
+        _previousMax = max;
+        _frame++;
+    }
+
+    /// <summary>Keeps the last 50 ms of samples for the level before a gap.</summary>
+    private void Remember(ReadOnlySpan<float> samples)
+    {
+        int length = _history.Length;
+        if (samples.Length >= length)
+        {
+            samples[^length..].CopyTo(_history);
+            _historyIndex = 0;
+        }
+        else
+        {
+            int first = Math.Min(samples.Length, length - _historyIndex);
+            samples[..first].CopyTo(_history.AsSpan(_historyIndex));
+            samples[first..].CopyTo(_history);
+            _historyIndex = (_historyIndex + samples.Length) % length;
+        }
+
+        _historyFrames = Math.Min(_window, _historyFrames + (samples.Length / _channels));
     }
 
     public void End() => Result = new DropoutStats(_gaps, _aligned, [.. _positions], [.. _lengths]);
@@ -807,4 +1081,10 @@ public sealed class DropoutAnalyzer : IPcmAnalyzer
         public double Sum;
         public int Count;
     }
+}
+
+/// <summary>SIMD over interleaved samples: when the vector width is a multiple of the channel count, lane <c>j</c> always holds channel <c>j % channels</c>.</summary>
+internal static class Lanes
+{
+    public static bool Fit(int channels) => Vector.IsHardwareAccelerated && channels > 0 && Vector<float>.Count % channels == 0;
 }
