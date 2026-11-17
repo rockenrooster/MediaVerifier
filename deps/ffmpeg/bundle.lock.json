@@ -1,8 +1,8 @@
 {
-  "release": "ffmpeg-bundle-9.0.2-mv1",
-  "asset": "mediaverifier-ffmpeg-9.0.2-mv1-win64.zip",
-  "sha256": "da824ce70a3900ddd471a63ba247f18067ff839e7168ac5670770eebe9e64cc1",
-  "sizeBytes": 12074152,
+  "release": "ffmpeg-bundle-9.0.2-mv2",
+  "asset": "mediaverifier-ffmpeg-9.0.2-mv2-win64.zip",
+  "sha256": "5da1f6ea383e483d1036d94aa098056e69033d4db8277000fa95288ba5f05003",
+  "sizeBytes": 12083399,
   "ffmpegVersion": "9.0.2",
   "sourceSha256": "84960df915059e8754fef2cd7c9afeb614062b1b5458ec471eecee619ee04e98",
   "buildImageDigest": "sha256:8f1fdba51cfbfc7b84472697503dd23407aa980e309c0f117a1a20694b118952"
