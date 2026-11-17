@@ -1,0 +1,12 @@
+[in#0 @ 000001aa22330000] [warning] filesize and duration do not match (growing file?)
+[in#0/ogg @ 000001cc44556670] [error] CRC mismatch!
+[in#0 @ 000001aa22330000] [error] moov atom not found
+[in#0/mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [warning] Packet corrupt (stream = 0, dts = 48128).
+[in#0/mov,mp4,m4a,3gp,3g2,mj2 @ 000001aa22334450] [warning] corrupt input packet in stream 0
+[in#0/matroska,webm @ 000001ee66778890] [error] File ended prematurely
+[in#0/webp_pipe @ 000002bb88990010] [warning] Could not find codec parameters for stream 0 (Video: webp, none): unspecified size
+[in#0 @ 000002cc99001120] [warning] Format mp3 detected only with low score of 1, misdetection possible!
+[in#0 @ 000002cc99001120] [error] Failed to find two consecutive MPEG audio frames.
+[in#0 @ 000002cc99001120] [warning] Format flac detected only with low score of 1, misdetection possible!
+[in#0/flac @ 000002cc99001130] [warning] Could not find codec parameters for stream 0 (Audio: flac, 0 channels): unspecified sample format
+[in#0 @ 000001aa22330000] [error] Error opening input: Invalid data found when processing input

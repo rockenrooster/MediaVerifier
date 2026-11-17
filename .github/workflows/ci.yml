@@ -115,11 +115,16 @@ jobs:
       - name: Appendix A report
         if: ${{ always() && inputs.appendix }}
         shell: pwsh
-        run: Get-Content -Raw -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'appendix-a.md')
+        run: |
+          # The engine's report, then the tooling build's on the same fixtures (when its version differs).
+          foreach ($name in 'appendix-a.md', 'appendix-a.tooling.md') {
+            $path = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path $path) { Get-Content -Raw -Encoding utf8 $path }
+          }
 
       - name: Keep the appendix A report
         if: ${{ always() && inputs.appendix }}
         uses: actions/upload-artifact@v4
         with:
           name: appendix-a-report
-          path: ${{ runner.temp }}/appendix-a.md
+          path: ${{ runner.temp }}/appendix-a*.md

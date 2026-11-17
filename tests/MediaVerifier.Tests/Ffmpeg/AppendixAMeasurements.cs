@@ -26,9 +26,28 @@ public sealed partial class AppendixAMeasurements
             return;
         }
 
+        FfmpegLocation engine = FfmpegEnvironment.Engine!;
+        string engineVersion = await MeasureAsync(engine, report);
+
+        // The same experiments with the tooling build, on the same fixtures, so that a difference between the two
+        // reports comes from the FFmpeg version and not from fixtures encoded on another machine.
+        string? tooling = Path.GetDirectoryName(FfmpegEnvironment.Tooling);
+        if (tooling is not null && File.Exists(Path.Combine(tooling, "ffprobe.exe")))
+        {
+            FfmpegLocation other = new(tooling, IsOverride: true);
+            if (await new Lab(other, Path.GetTempPath()).VersionAsync() != engineVersion)
+            {
+                await MeasureAsync(other, Path.ChangeExtension(report, ".tooling.md"));
+            }
+        }
+    }
+
+    /// <summary>Runs every experiment with one build, writes its report and returns its version line.</summary>
+    private static async Task<string> MeasureAsync(FfmpegLocation engine, string report)
+    {
         using TempDirectory temp = new("appendix");
-        Lab lab = new(FfmpegEnvironment.Engine!, temp.Path);
-        await lab.HeaderAsync();
+        Lab lab = new(engine, temp.Path);
+        string version = await lab.HeaderAsync();
         await lab.VisibilityAsync();
         await lab.MessagesAsync();
         await lab.StandardPassAsync();
@@ -38,6 +57,7 @@ public sealed partial class AppendixAMeasurements
         await lab.QualityFiltersAsync();
         await lab.DownUpSsimAsync();
         await File.WriteAllTextAsync(report, lab.Text);
+        return version;
     }
 
     [GeneratedRegex(@"(?<=@ |\()(?:0x)?[0-9A-Fa-f]{12,16}(?=[\])])", RegexOptions.CultureInvariant)]
@@ -48,7 +68,7 @@ public sealed partial class AppendixAMeasurements
 
     private sealed record Run(int ExitCode, byte[] Stdout, string[] Stderr, TimeSpan Elapsed)
     {
-        public string StdoutText => Encoding.UTF8.GetString(Stdout);
+        public string StdoutText => Encoding.UTF8.GetString(Stdout).ReplaceLineEndings("\n");
     }
 
     private sealed class Lab(FfmpegLocation engine, string work)
@@ -58,17 +78,21 @@ public sealed partial class AppendixAMeasurements
 
         public string Text => text.ToString();
 
-        public async Task HeaderAsync()
+        public async Task<string> VersionAsync() => (await RunAsync(true, "-hide_banner", "-version")).StdoutText.Split('\n')[0].Trim();
+
+        public async Task<string> HeaderAsync()
         {
             Run version = await RunAsync(true, "-hide_banner", "-version");
+            string endings = version.Stdout.AsSpan().IndexOf("\r\n"u8) >= 0 ? "CRLF" : "LF";
             string bundle = File.Exists(engine.BundleManifest) && JsonNode.Parse(File.ReadAllText(engine.BundleManifest)) is JsonObject manifest
                 ? string.Join(", ", manifest.Where(p => p.Value is JsonValue).Select(p => $"{p.Key} {p.Value}"))
                 : "none (not the bundle)";
             text.AppendLine("# Appendix A measurements")
                 .AppendLine()
                 .AppendLine(C, $"Engine: `{version.StdoutText.Split('\n')[0].Trim()}`; bundle: {bundle}; {DateTime.UtcNow:yyyy-MM-dd} UTC, {Environment.OSVersion}.")
-                .AppendLine("Pointers in log lines are replaced by `X`. Repeated lines are shown once with their count.")
+                .AppendLine(C, $"Text on stdout ends its lines with {endings}. Pointers in log lines are replaced by `X`. Repeated lines are shown once with their count.")
                 .AppendLine();
+            return version.StdoutText.Split('\n')[0].Trim();
         }
 
         // Section 2: what the log level and the error-detection flags let through.
