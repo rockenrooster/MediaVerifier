@@ -40,6 +40,12 @@ internal abstract class PageBase : KitControl
     /// <summary>Reloads the page's data off the UI thread, then applies it on the UI thread.</summary>
     public void Reload() => Loading = ReloadAsync();
 
+    /// <summary>The page's own filter box, focused by Ctrl+F or / (subplan 09, Keyboard); null uses the header search.</summary>
+    public virtual Control? FilterBox => null;
+
+    /// <summary>The rule F1 opens help for (the focused finding's), or null for the page's help.</summary>
+    public virtual string? HelpRule => null;
+
     /// <summary>A request from another page (a filter to apply, a dialog to open).</summary>
     public virtual void HandleRequest(object request)
     {

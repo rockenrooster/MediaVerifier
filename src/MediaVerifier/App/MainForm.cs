@@ -274,8 +274,35 @@ internal sealed class MainForm : Form
             return true;
         }
 
+        // The rest of the keyboard map (subplan 09, Keyboard); list keys are handled by the lists.
+        switch (keyData)
+        {
+            case Keys.Control | Keys.F:
+            case Keys.OemQuestion when ActiveControl is not (UI.Kit.KitTextBox or TextBox) && !IsTextInput(FromChildHandle(msg.HWnd)):
+                (_current?.FilterBox ?? _header.Search).Focus();
+                return true;
+            case Keys.F5:
+                _current?.Reload();
+                return true;
+            case Keys.Control | Keys.N:
+                Navigate(PageId.Library);
+                _current?.HandleRequest(new AddFolderRequest(null));
+                return true;
+            case Keys.Control | Keys.Shift | Keys.S:
+                _binder?.ScanNow();
+                return true;
+            case Keys.F1:
+                UI.ShellActions.OpenUrl(UI.ShellActions.HelpUrl(_current?.HelpRule));
+                return true;
+            case Keys.Escape when _shell.Drawer.IsOpen && !IsTextInput(FromChildHandle(msg.HWnd)):
+                SetDrawerContent(null);
+                return true;
+        }
+
         return base.ProcessCmdKey(ref msg, keyData);
     }
+
+    private static bool IsTextInput(Control? control) => control is TextBox or UI.Kit.KitTextBox;
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {

@@ -78,7 +78,7 @@ internal sealed class SettingsPage : PageBase
             [
                 Toggle(Strings.Settings.ShowWindowsNotifications, null, () => scan.ShowWindowsNotifications, v => scan.ShowWindowsNotifications = v),
                 Drop(Strings.Settings.NotifyAbout, null, [Strings.Settings.CriticalOnly, Strings.Settings.HighAndAbove, Strings.Settings.MediumAndAbove, Strings.Settings.Everything], () => (int)scan.NotifyAbout, i => scan.NotifyAbout = (NotifyThreshold)i),
-                Toggle(Strings.Settings.QuietHours, string.Format(CultureInfo.CurrentCulture, "{0} {1} · {2} {3}", Strings.Settings.From, scan.QuietFrom, Strings.Settings.To, scan.QuietTo), () => scan.QuietHours, v => scan.QuietHours = v),
+                Toggle(Strings.Settings.QuietHours, UiFormat.Facts(Strings.Settings.From + " " + scan.QuietFrom, Strings.Settings.To + " " + scan.QuietTo), () => scan.QuietHours, v => scan.QuietHours = v),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
@@ -91,7 +91,7 @@ internal sealed class SettingsPage : PageBase
                 Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
                 Button(Strings.Settings.Diagnostics, null, Strings.Settings.CopyReport, () => ShellActions.CopyText([AppInfo.WindowTitle, Environment.OSVersion.VersionString, ".NET " + Environment.Version])),
             ]),
-            Section(Strings.Settings.About, string.Format(CultureInfo.CurrentCulture, "{0} · {1}", AppInfo.ProductName, string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText)), []),
+            Section(Strings.Settings.About, UiFormat.Facts(AppInfo.ProductName, string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText)), []),
         ];
         Controls.Add(_nav);
         for (int i = 0; i < _sections.Length; i++)
@@ -102,6 +102,8 @@ internal sealed class SettingsPage : PageBase
     }
 
     public override PageId Id => PageId.Settings;
+
+    public override Control? FilterBox => _current == RulesSection ? _rules.Filter : null;
 
     internal int Current => _current;
 

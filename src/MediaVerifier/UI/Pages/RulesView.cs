@@ -61,6 +61,8 @@ internal sealed class RulesView : KitControl
 
     internal App.UiServices Services => _page.PageServices;
 
+    internal Control Filter => _filter;
+
     /// <summary>The settings-rules mockup: Clipping open, High from 300, and its effect reported.</summary>
     internal async Task ShowDemoAsync()
     {

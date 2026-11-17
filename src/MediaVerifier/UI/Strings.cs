@@ -88,6 +88,7 @@ internal static class Strings
     public static class Shell
     {
         public const string SearchPlaceholder = "Search files";
+        public const string Navigation = "Navigation";
         public const string Notifications = "Notifications";
         public const string Scan = "Scan";
         public const string Pause = "Pause";

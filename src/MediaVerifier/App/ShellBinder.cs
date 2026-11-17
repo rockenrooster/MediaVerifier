@@ -33,7 +33,7 @@ internal sealed class ShellBinder : IDisposable
         header.Scan.Click += (_, _) => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
         header.Scan.DropDownClick += (_, _) => ShowScanMenu();
         header.Search.KeyDown += OnSearchKey;
-        header.Bell.Click += (_, _) => _services.Navigate?.Invoke(PageId.Dashboard, null);
+        header.Bell.Click += (_, _) => _ = ShowNotificationsAsync();
         ScanStatusStrip strip = form.StatusStrip;
         strip.Pause.Click += (_, _) => TogglePause();
         strip.Stop.Click += (_, _) => AskStop();
@@ -44,10 +44,10 @@ internal sealed class ShellBinder : IDisposable
         Poll();
     }
 
-    /// <summary>Reloads the badge counts (after scans, repairs and settings changes).</summary>
     /// <summary>Reads the scan status now (the render harness switches the demo scan between pages).</summary>
     internal void PollNow() => Poll();
 
+    /// <summary>Reloads the badge counts (after scans, repairs and settings changes).</summary>
     public void Refresh()
     {
         if (_loading)
@@ -196,6 +196,35 @@ internal sealed class ShellBinder : IDisposable
                     break;
             }
         });
+    }
+
+    /// <summary>Ctrl+Shift+S: scan now at the default depth.</summary>
+    internal void ScanNow() => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
+
+    /// <summary>Opens the notifications flyout under the bell (subplan 09, H).</summary>
+    private async Task ShowNotificationsAsync()
+    {
+        List<NotificationRecord> items = await Task.Run(() => _services.Database.Notifications.List(50)).ConfigureAwait(true);
+        NotificationsFlyout flyout = NotificationsFlyout.Show(_form.Header.Bell, items, _services.Clock.UtcNow);
+        flyout.MarkAllRead += async (_, _) =>
+        {
+            await _services.Database.Notifications.MarkAllReadAsync().ConfigureAwait(true);
+            Refresh();
+        };
+        flyout.ClearAll += async (_, _) =>
+        {
+            await _services.Database.Notifications.ClearAllAsync().ConfigureAwait(true);
+            Refresh();
+        };
+        flyout.ItemClicked += async (_, item) =>
+        {
+            await _services.Database.Notifications.MarkReadAsync(item.Id).ConfigureAwait(true);
+            Refresh();
+            if (item.ActionUri is string uri && uri.StartsWith("page:", StringComparison.Ordinal) && Enum.TryParse(uri[5..], out PageId page))
+            {
+                _services.Navigate?.Invoke(page, null);
+            }
+        };
     }
 
     private async void StartScan(ScanDepth depth, ScanOptions? options)

@@ -31,6 +31,36 @@ internal static class ShellActions
         Start(start);
     }
 
+    /// <summary>Opens a web page in the default browser (Explorer hands the address on).</summary>
+    public static void OpenUrl(string url) => OpenFolder(url);
+
+    /// <summary>The help page for a rule (its section of docs/rules.md), or the help index.</summary>
+    public static string HelpUrl(string? ruleId)
+    {
+        const string Rules = "https://github.com/rockenrooster/MediaVerifier/blob/master/docs/rules.md";
+        if (ruleId is null || !Core.Rules.RuleCatalog.TryGet(ruleId, out Core.Rules.RuleDefinition rule))
+        {
+            return "https://github.com/rockenrooster/MediaVerifier#readme";
+        }
+
+        // GitHub's heading anchors: lower case, punctuation dropped, spaces to hyphens.
+        string heading = (rule.Id + " " + rule.Title).ToLowerInvariant();
+        System.Text.StringBuilder slug = new(heading.Length);
+        foreach (char c in heading)
+        {
+            if (char.IsLetterOrDigit(c) || c == '-')
+            {
+                slug.Append(c);
+            }
+            else if (c == ' ')
+            {
+                slug.Append('-');
+            }
+        }
+
+        return Rules + "#" + slug;
+    }
+
     public static void CopyText(IEnumerable<string> lines)
     {
         string text = string.Join(Environment.NewLine, lines);

@@ -61,7 +61,7 @@ internal sealed class NavigationRail : KitControl
     {
         TabStop = true;
         AccessibleRole = AccessibleRole.List;
-        AccessibleName = "Navigation";
+        AccessibleName = Strings.Shell.Navigation;
         _items =
         [
             Page(PageId.Dashboard),

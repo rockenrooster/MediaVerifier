@@ -25,3 +25,5 @@ All notable changes to MediaVerifier are documented here.
   Rules can be switched off, capped and tuned; findings are re-judged at once without a rescan.
 - Tools page: quarantine, operations journal, reports (web page, CSV or JSON), media engine with
   its licence and integrity, and database maintenance (back up, compact, check, reset).
+- Notifications flyout under the bell; keyboard shortcuts (Ctrl+F, /, F5, Ctrl+N, Ctrl+Shift+S, F1,
+  Esc); ignoring a rule for a folder from the Issues row menu.

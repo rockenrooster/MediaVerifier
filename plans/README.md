@@ -68,8 +68,8 @@ Update this table as phases progress (`Not started`, `In progress`, `Done`, `Blo
 | 5 | 05 Scan engine | Done | |
 | 6 | 06 Integrity and rot | Done | |
 | 7 | 07 Corruption detectors | Done | Corruption matrix (T-04) passes at every depth; the detection-rate benchmark (T-05) follows with phase 15 |
-| 8 | 08 UI design system | Not started | Can start after phase 1 |
-| 9 | 09 UI screens | Not started | Can start after phases 2 and 8 using fake data |
+| 8 | 08 UI design system | Done | Kit, theme service, render harness with reference comparison |
+| 9 | 09 UI screens | In progress | Dashboard, Issues, drawer, Library, Scans, Tools, Settings, flyout, keyboard map and string-table test done. UI-08 Schedule lands with phase 13; repair dialogs A/B, Accept and toasts with Undo with phase 12 |
 | 10 | 10 Audio quality detectors | Not started | |
 | 11 | 11 Video and photo quality detectors | Not started | |
 | 12 | 12 Remediation and recommendations | Not started | |

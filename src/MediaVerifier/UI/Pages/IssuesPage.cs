@@ -174,6 +174,8 @@ internal sealed class IssuesPage : PageBase
         }
     }
 
+    public override string? HelpRule => _source.RowAt(_list.FocusedIndex)?.RuleId;
+
     /// <summary>The render harness's issues-detail state: the Night Drive row selected, its drawer open.</summary>
     internal Task ShowDemoDetailAsync()
     {
@@ -655,6 +657,9 @@ internal sealed class IssuesPage : PageBase
                 case "ignore":
                     _ = IgnoreSelectedAsync();
                     break;
+                case "ignore-rule":
+                    _ = IgnoreRuleInFolderAsync(row);
+                    break;
                 case "show":
                     ShowInFolder(row.FullPath);
                     break;
@@ -663,6 +668,35 @@ internal sealed class IssuesPage : PageBase
                     break;
             }
         });
+    }
+
+    /// <summary>Ignore a rule in a folder (subplan 09, Dialogs): hides this rule's findings there and below.</summary>
+    private async Task IgnoreRuleInFolderAsync(IssueRow row)
+    {
+        if (FindForm() is not Form owner || !Core.Rules.RuleCatalog.TryGet(row.RuleId, out Core.Rules.RuleDefinition rule))
+        {
+            return;
+        }
+
+        string folder = Path.GetFileName(row.Folder.TrimEnd('\\')) is { Length: > 0 } leaf ? leaf : row.Folder;
+        bool ignore = MessageDialog.Confirm(
+            owner,
+            string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.IgnoreRuleTitle, rule.Title, folder),
+            Strings.Dialogs.IgnoreRuleText,
+            Strings.Kit.Cancel,
+            Strings.Menu.Ignore,
+            destructive: false);
+        if (!ignore || Services.IsDemo)
+        {
+            return;
+        }
+
+        List<FileRecord> files = await Task.Run(() => Services.Database.Files.GetMany([row.FileId])).ConfigureAwait(true);
+        if (files.FirstOrDefault() is FileRecord file)
+        {
+            await Services.Database.Ignores.AddAsync(file.RootId, file.DirId, row.RuleId, null).ConfigureAwait(true);
+            Reload();
+        }
     }
 
     private async Task IgnoreSelectedAsync()
