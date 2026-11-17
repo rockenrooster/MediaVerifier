@@ -569,6 +569,7 @@ internal static class Strings
         public const string WaitFullScreen = "Wait if a game or full-screen app is running";
         public const string Wake = "Wake the computer to run";
         public const string Summary = "{0}, {1} scan of {2}.";
+        public const string NextRunLine = "Next run: {0}";
         public const string SummaryNext = "Next run: {0}";
         public const string DayN = "Day {0}";
         public const string LastDay = "Last day";

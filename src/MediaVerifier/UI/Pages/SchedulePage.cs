@@ -31,7 +31,7 @@ internal sealed class SchedulePage : PageBase
     public SchedulePage(UiServices services)
         : base(services)
     {
-        _new.Click += (_, _) => ShowTemplates();
+        _new.Click += (_, _) => _ = EditAsync(null);
         _scrubDays.ValueChanged += (_, _) => SaveVerification();
         _budget.ValueChanged += (_, _) => SaveVerification();
         Controls.AddRange([_new, _empty, _scrubDays, _budget, _pass]);
@@ -77,7 +77,7 @@ internal sealed class SchedulePage : PageBase
             long id = plan.Id;
             toggle.CheckedChanged += (_, _) => _ = SetEnabledAsync(id, toggle.Checked);
             run.Click += (_, _) => _ = RunNowAsync(plan);
-            edit.Click += (_, _) => ShowEditMenu(plan, edit);
+            edit.Click += (_, _) => _ = EditAsync(plan);
             more.Click += (_, _) => ShowMoreMenu(plan, more);
             _rows.Add((toggle, run, edit, more));
             Controls.AddRange([toggle, run, edit, more]);
@@ -225,41 +225,25 @@ internal sealed class SchedulePage : PageBase
         UpdatePassText();
     }
 
-    private void ShowTemplates()
+    /// <summary>The plan editor: a new plan starts from the weekly template; saving writes the plan and updates the tasks.</summary>
+    private async Task EditAsync(PlanRow? plan)
     {
-        HashSet<string> existing = [.. _data?.Plans.Select(p => p.Name) ?? []];
-        PopupItem[] items = [.. PlanDefinition.Templates.Select(tp => new PopupItem(TemplateName(tp.Name), IconName.Schedule, Enabled: !existing.Contains(TemplateName(tp.Name)) && !Services.IsDemo, Tag: tp))];
-        KitMenu.ShowBelow(_new, items, item =>
+        if (Services.IsDemo || FindForm() is not Form owner)
         {
-            if (item.Tag is ValueTuple<string, PlanDefinition> template)
-            {
-                _ = AddPlanAsync(TemplateName(template.Item1), template.Item2);
-            }
-        });
-    }
+            return;
+        }
 
-    private static string TemplateName(string name) => name switch
-    {
-        "Nightly verification" => Strings.Schedule.Nightly,
-        "Weekly check" => Strings.Schedule.Weekly,
-        _ => Strings.Schedule.MonthlyDeep,
-    };
-
-    private void ShowEditMenu(PlanRow plan, Control anchor)
-    {
-        PopupItem[] items =
-        [
-            new(Strings.Schedule.Quick, plan.Definition.Depth == ScanDepth.Quick ? IconName.Check : null, Tag: ScanDepth.Quick),
-            new(Strings.Schedule.Standard, plan.Definition.Depth == ScanDepth.Standard ? IconName.Check : null, Tag: ScanDepth.Standard),
-            new(Strings.Schedule.Deep, plan.Definition.Depth == ScanDepth.Deep ? IconName.Check : null, Tag: ScanDepth.Deep),
-        ];
-        KitMenu.ShowBelow(anchor, items, item =>
+        List<RootRecord> roots = await Task.Run(Services.Database.Roots.List).ConfigureAwait(true);
+        PlanDefinition start = plan?.Definition ?? PlanDefinition.Templates[1].Definition;
+        if (ScheduleEditorDialog.Ask(owner, plan?.Name ?? Strings.Schedule.Weekly, start, roots, DateOnly.FromDateTime(DateTime.Now), plan is not null) is not (string name, PlanDefinition edited))
         {
-            if (item.Tag is ScanDepth depth && depth != plan.Definition.Depth)
-            {
-                _ = SaveDefinitionAsync(plan.Id, plan.Definition with { Depth = depth });
-            }
-        });
+            return;
+        }
+
+        long now = Services.Clock.UtcNow.UtcTicks;
+        await ChangePlansAsync(db => plan is not null && db.Plans.Get(plan.Id) is PlanRecord record
+            ? db.Plans.UpdateAsync(record with { Name = name, DefinitionJson = edited.ToJson(), UpdatedUtc = now })
+            : db.Plans.AddAsync(new PlanRecord { Name = name, DefinitionJson = edited.ToJson(), CreatedUtc = now, UpdatedUtc = now })).ConfigureAwait(true);
     }
 
     private void ShowMoreMenu(PlanRow plan, Control anchor)

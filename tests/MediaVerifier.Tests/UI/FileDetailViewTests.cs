@@ -108,3 +108,29 @@ public sealed class RepairDialogTests
         dialog.Close();
     }
 }
+
+/// <summary>The plan editor shows a plan and builds a valid definition from its controls (task SCH-07).</summary>
+[Collection(UiCollection.Name)]
+public sealed class ScheduleEditorTests
+{
+    [Fact]
+    public void The_editor_round_trips_a_weekly_plan()
+    {
+        MediaVerifier.Core.Scheduling.PlanDefinition weekly = MediaVerifier.Core.Scheduling.PlanDefinition.Templates[1].Definition;
+        using ScheduleEditorDialog dialog = ScheduleEditorDialog.Create("Weekly check", weekly, [new MediaVerifier.Core.Storage.RootRecord { Id = 1, Path = @"D:\Music", Label = "Music" }], new DateOnly(2026, 11, 1));
+        dialog.StartPosition = FormStartPosition.Manual;
+        dialog.Location = new Point(-32000, -32000);
+        dialog.Size = new Size(dialog.LogicalWidth, dialog.TotalLogicalHeight());
+        dialog.Show();
+        dialog.PerformLayout();
+        Application.DoEvents();
+        if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
+        {
+            MediaVerifier.Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "schedule-edit.png"));
+        }
+
+        Assert.Equal("Weekly check", dialog.PlanName);
+        Assert.Equal(weekly.ToJson(), dialog.Result.ToJson());
+        dialog.Close();
+    }
+}

@@ -13,6 +13,8 @@ All notable changes to MediaVerifier are documented here.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
 - Updates: Settings → Updates checks for a signed new version and installs it after verifying the
   download. Portable zip and installer builds (the installer checks for the .NET 10 Desktop Runtime).
+- Schedule editor: name, folders, depth, repeat, days, time, time limit and conditions, with a
+  summary of what will run and when.
 - Dashboard recommendations group what is worth doing (files that changed on their own, missing
   seek indexes, wrong extensions, lossless files made from MP3, upscaled video, overdue verification,
   no backup folder or schedule, read errors, an interrupted scan) with a button that does it.
