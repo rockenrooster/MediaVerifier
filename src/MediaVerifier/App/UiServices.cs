@@ -40,7 +40,11 @@ internal sealed class EngineScanControl(ScanEngine engine) : IScanControl, IDisp
 
     public string ScopeText => _scope;
 
-    public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => engine.ReevaluateAsync(ruleIds);
+    /// <summary>
+    /// On a pool thread: the engine's synchronous first part reads every file of the rule's kinds, which froze the
+    /// window at each change in Settings → Rules (and throws in a debug build, where the UI thread may not read).
+    /// </summary>
+    public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => Task.Run(() => engine.ReevaluateAsync(ruleIds));
 
     public event Action<RunSummary>? RunCompleted
     {
@@ -53,7 +57,10 @@ internal sealed class EngineScanControl(ScanEngine engine) : IScanControl, IDisp
     public async Task<long> StartAsync(ScanRequest request, string scopeText)
     {
         _scope = scopeText;
-        return await engine.StartAsync(request).ConfigureAwait(false);
+
+        // On a pool thread: starting reads the database before its first wait (the engine lock is held on a thread of
+        // its own, so any thread may take it).
+        return await Task.Run(() => engine.StartAsync(request)).ConfigureAwait(false);
     }
 
     public void Pause() => engine.Pause();

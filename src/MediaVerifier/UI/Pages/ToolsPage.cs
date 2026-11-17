@@ -27,7 +27,7 @@ internal sealed class ToolsPage : PageBase
     private readonly KitButton _delete = new() { Kind = ButtonKind.Secondary, Text = Strings.Tools.DeleteForGood, TabIndex = 5 };
     private readonly KitButton _openFolder = new() { Kind = ButtonKind.Secondary, Text = Strings.Tools.OpenFolder, TabIndex = 6 };
     private readonly KitButton _undo = new() { Kind = ButtonKind.Secondary, Icon = IconName.Undo, Text = Strings.Tools.Undo, TabIndex = 4 };
-    private List<OperationRecord> _kept = [];
+    private List<QuarantineEntry> _kept = [];
     private List<long> _batches = [];
     private ToolsData? _data;
     private int _view = -1;
@@ -55,7 +55,7 @@ internal sealed class ToolsPage : PageBase
         _table.SelectionChanged += (_, _) => UpdateViewButtons();
         _restore.Click += (_, _) => UiTask.Run(RestoreSelectedAsync());
         _delete.Click += (_, _) => UiTask.Run(DeleteSelectedAsync());
-        _openFolder.Click += (_, _) => ShellActions.ShowInFolder(SelectedKept()?.BackupPath);
+        _openFolder.Click += (_, _) => ShellActions.ShowInFolder(SelectedKept()?.Operation.BackupPath);
         _undo.Click += (_, _) => UiTask.Run(UndoSelectedAsync());
         Controls.AddRange([.. _cards, _back, _facts, _table, _empty, _restore, _delete, _openFolder, _undo]);
         ShowView(-1);
@@ -148,9 +148,9 @@ internal sealed class ToolsPage : PageBase
         {
             if (view == 0)
             {
-                List<OperationRecord> kept = [.. _data.Operations.Where(o => o.Status == OperationStatus.Done && o.BackupPath is not null)];
-                _kept = kept;
-                _source.Rows = [.. kept.Select(o => new[] { Path.GetFileName(o.SourcePath), Path.GetDirectoryName(o.SourcePath) ?? string.Empty, o.BackupPath is string b && File.Exists(b) ? UiFormat.Size(new FileInfo(b).Length) : Strings.Dash, UiFormat.RecentDay(LiveUiData.Ticks(o.Utc), Services.Clock.UtcNow), string.Format(CultureInfo.CurrentCulture, Strings.Tools.DaysValue, Math.Max(0, State.Settings.Scanning.EmptyQuarantineAfterDays - (int)(Services.Clock.UtcNow - LiveUiData.Ticks(o.Utc)).TotalDays)) })];
+                // Sizes come with the snapshot: looking at the files here froze the window for an offline network folder.
+                _kept = [.. _data.Quarantine ?? []];
+                _source.Rows = [.. _kept.Select(q => new[] { Path.GetFileName(q.Operation.SourcePath), Path.GetDirectoryName(q.Operation.SourcePath) ?? string.Empty, q.Size is long size ? UiFormat.Size(size) : Strings.Dash, UiFormat.RecentDay(LiveUiData.Ticks(q.Operation.Utc), Services.Clock.UtcNow), string.Format(CultureInfo.CurrentCulture, Strings.Tools.DaysValue, Math.Max(0, State.Settings.Scanning.EmptyQuarantineAfterDays - (int)(Services.Clock.UtcNow - LiveUiData.Ticks(q.Operation.Utc)).TotalDays)) })];
                 _table.Columns = [new(Strings.Tools.ColFile, 280, Sortable: false), new(Strings.Tools.ColWasIn, 300, Sortable: false), new(Strings.Tools.ColSize, 96, RightAligned: true, Sortable: false, Drop: 1), new(Strings.Tools.ColMoved, 120, Sortable: false, Drop: 2), new(Strings.Tools.ColRemovedIn, 0, Sortable: false, MinWidth: 120)];
                 _empty.Icon = IconName.Quarantine;
                 _empty.Headline = Strings.Tools.QuarantineEmpty;
@@ -186,13 +186,13 @@ internal sealed class ToolsPage : PageBase
         Invalidate();
     }
 
-    private OperationRecord? SelectedKept() => _view == 0 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _kept.Count ? _kept[_table.FocusedIndex] : null;
+    private QuarantineEntry? SelectedKept() => _view == 0 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _kept.Count ? _kept[_table.FocusedIndex] : null;
 
     private void UpdateViewButtons()
     {
         bool live = Services.Operations is not null && !Services.IsDemo;
         _restore.Enabled = _delete.Enabled = live && SelectedKept() is not null;
-        _openFolder.Enabled = SelectedKept()?.BackupPath is string path && File.Exists(path);
+        _openFolder.Enabled = SelectedKept() is { Size: not null };
         _undo.Enabled = live && _view == 1 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _batches.Count
             && _data?.Operations.Any(o => o.BatchId == _batches[_table.FocusedIndex] && o.Status == OperationStatus.Done && o.UndoJson is not null) == true;
     }
@@ -200,7 +200,7 @@ internal sealed class ToolsPage : PageBase
     /// <summary>Restore: the original comes back (the operation is undone).</summary>
     private async Task RestoreSelectedAsync()
     {
-        if (SelectedKept() is not OperationRecord kept || Services.Operations is not { } runner)
+        if (SelectedKept()?.Operation is not OperationRecord kept || Services.Operations is not { } runner)
         {
             return;
         }
@@ -215,12 +215,13 @@ internal sealed class ToolsPage : PageBase
     /// <summary>Delete for good after dialog B (subplan 09): the only permanent deletion.</summary>
     private async Task DeleteSelectedAsync()
     {
-        if (SelectedKept() is not OperationRecord kept || Services.Operations is not { } runner || FindForm() is not Form owner)
+        if (SelectedKept() is not QuarantineEntry entry || Services.Operations is not { } runner || FindForm() is not Form owner)
         {
             return;
         }
 
-        long size = kept.BackupPath is string path && File.Exists(path) ? new FileInfo(path).Length : 0;
+        OperationRecord kept = entry.Operation;
+        long size = entry.Size ?? 0;
         string title = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteTitle, UiFormat.Count(1));
         string text = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteText, UiFormat.Size(size));
         if (!MessageDialog.Confirm(owner, title, text, Strings.Dialogs.KeepThem, Strings.Dialogs.DeleteForGood, destructive: true))
@@ -351,6 +352,7 @@ internal sealed class ToolsPage : PageBase
         private IReadOnlyList<(string Label, string Value)> _facts = [];
         private string? _licence;
         private int _view;
+        private bool _busy;
 
         public FactsView(ToolsPage page)
         {
@@ -387,9 +389,25 @@ internal sealed class ToolsPage : PageBase
             {
                 _facts = [(Strings.Tools.Location, d.DatabaseLocation), (Strings.Tools.Size, UiFormat.Size(d.DatabaseBytes)), (Strings.Tools.FilesIndexed, UiFormat.Count(d.FilesIndexed)), (Strings.Tools.LastBackup, d.LastBackup is DateTimeOffset b ? UiFormat.RecentDay(b, services.Clock.UtcNow) : Strings.Tools.Never)];
                 _changed.Visible = false;
-                AddButton(Strings.Tools.BackUpNow, Strings.Tools.BackUpNowText, ButtonKind.Secondary, () => Run(() => services.Database.Maintenance.BackupAsync()));
-                AddButton(Strings.Tools.Compact, Strings.Tools.CompactText, ButtonKind.Secondary, () => Run(() => services.Database.Maintenance.CompactAsync()));
-                AddButton(Strings.Tools.Check, Strings.Tools.CheckText, ButtonKind.Secondary, () => Run(() => services.Database.Maintenance.CheckAsync()));
+                // Each says how it went: Check threw its answer away, so damage it found was never shown.
+                AddButton(Strings.Tools.BackUpNow, Strings.Tools.BackUpNowText, ButtonKind.Secondary, () => Run(Strings.Tools.BackUpNow, async () =>
+                {
+                    string file = await services.Database.Maintenance.BackupAsync().ConfigureAwait(true);
+                    return new ToastContent(Severity.None, Strings.Tools.BackupSaved, Path.GetFileName(file), Strings.Tools.Open, () => ShellActions.ShowInFolder(file));
+                }));
+                AddButton(Strings.Tools.Compact, Strings.Tools.CompactText, ButtonKind.Secondary, () => Run(Strings.Tools.Compact, async () =>
+                {
+                    await services.Database.Maintenance.CompactAsync().ConfigureAwait(true);
+                    long size = await Task.Run(services.Database.Maintenance.SizeBytes).ConfigureAwait(true);
+                    return new ToastContent(Severity.None, Strings.Tools.Compacted, UiFormat.Size(size));
+                }));
+                AddButton(Strings.Tools.Check, Strings.Tools.CheckText, ButtonKind.Secondary, () => Run(Strings.Tools.Check, async () =>
+                {
+                    List<string> problems = await services.Database.Maintenance.CheckAsync().ConfigureAwait(true);
+                    return problems.Count == 0
+                        ? new ToastContent(Severity.None, Strings.Tools.CheckPassed, string.Empty)
+                        : new ToastContent(Severity.Critical, Strings.Tools.CheckDamaged, problems[0]);
+                }));
                 AddButton(Strings.Tools.ResetEllipsis, Strings.Tools.ResetText, ButtonKind.Danger, ConfirmReset);
             }
 
@@ -484,20 +502,33 @@ internal sealed class ToolsPage : PageBase
             Controls.Add(button);
         }
 
-        private async void Run(Func<Task> work)
+        /// <summary>Runs one database action at a time and shows its result, or why it failed, in a toast.</summary>
+        private async void Run(string action, Func<Task<ToastContent?>> work)
         {
-            if (_page.Services.IsDemo)
+            if (_page.Services.IsDemo || _busy)
             {
                 return;
             }
 
+            _busy = true;
+            ToastContent? result;
             try
             {
-                await work().ConfigureAwait(true);
+                result = await work().ConfigureAwait(true);
             }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
             {
                 _page.State.Log.Warning("Database maintenance failed", ex);
+                result = new ToastContent(Severity.Critical, string.Format(CultureInfo.CurrentCulture, Strings.Tools.ActionFailed, action), ex.Message);
+            }
+            finally
+            {
+                _busy = false;
+            }
+
+            if (result is not null)
+            {
+                _page.Services.ShowToast?.Invoke(result);
             }
 
             _page.Reload();
@@ -507,7 +538,11 @@ internal sealed class ToolsPage : PageBase
         {
             if (FindForm() is Form owner && MessageDialog.Confirm(owner, Strings.Tools.ResetTitle, Strings.Tools.ResetBody, Strings.Kit.Cancel, Strings.Tools.Reset, destructive: true))
             {
-                Run(() => _page.Services.Database.Maintenance.ResetAsync());
+                Run(Strings.Tools.Reset, async () =>
+                {
+                    await _page.Services.Database.Maintenance.ResetAsync().ConfigureAwait(true);
+                    return null;
+                });
             }
         }
     }
@@ -578,7 +613,20 @@ internal sealed class CreateReportDialog : KitDialog
     {
         ReportFormat format = _formats[1].Checked ? ReportFormat.Csv : _formats[2].Checked ? ReportFormat.Json : ReportFormat.Html;
         string folder = _folder.Text.Trim();
-        if (!Directory.Exists(folder))
+
+        // Checked off the UI thread: a folder on an offline network share makes the check wait.
+        _create.Enabled = false;
+        bool exists;
+        try
+        {
+            exists = await Task.Run(() => Directory.Exists(folder)).ConfigureAwait(true);
+        }
+        finally
+        {
+            _create.Enabled = true;
+        }
+
+        if (!exists)
         {
             MessageDialog.Show(this, Strings.Tools.CreateReport, Strings.Library.ErrorMissing, Strings.Kit.Close);
             return;

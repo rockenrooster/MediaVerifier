@@ -141,10 +141,17 @@ internal sealed class ScansPage : PageBase
     {
         if (_data?.Interrupted is RunInfo run)
         {
-            UiTask.Run(Services.StartScanAsync([.. Services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id))], run.Depth, run.Folders));
+            UiTask.Run(ContinueAsync(run));
             _interrupted.Visible = false;
             PerformLayout();
         }
+    }
+
+    /// <summary>Continue: the library folders are read off the UI thread, then the scan starts.</summary>
+    private async Task ContinueAsync(RunInfo run)
+    {
+        List<ScanScope> scopes = await Task.Run(() => Services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id)).ToList()).ConfigureAwait(true);
+        await Services.StartScanAsync(scopes, run.Depth, run.Folders).ConfigureAwait(true);
     }
 
     private async void OpenRun(int index)

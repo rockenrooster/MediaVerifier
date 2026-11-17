@@ -1,9 +1,15 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using MediaVerifier.Core.Logging;
 
 namespace MediaVerifier.UI;
 
-/// <summary>Hand-offs to Windows Explorer and the clipboard (no command shell: arguments go through ArgumentList).</summary>
+/// <summary>
+/// Hand-offs to Windows Explorer, the default programs and the clipboard. Opening runs on a short-lived thread of its
+/// own: the existence checks and the shell wait for a disconnected network share or a sleeping disk, which froze the
+/// window when they ran on the UI thread. Files, folders and pages open through ShellExecute: explorer.exe splits its
+/// command line at commas, so a path such as <c>D:\Music\A,B</c> opened Documents instead.
+/// </summary>
 internal static class ShellActions
 {
     /// <summary>
@@ -13,65 +19,38 @@ internal static class ShellActions
     /// </summary>
     public static void ShowInFolder(string? path)
     {
-        if (string.IsNullOrEmpty(path))
+        if (!string.IsNullOrEmpty(path))
         {
-            return;
-        }
-
-        if (!File.Exists(path) && !Directory.Exists(path))
-        {
-            OpenFolder(Path.GetDirectoryName(path));
-            return;
-        }
-
-        if (SHParseDisplayName(path, IntPtr.Zero, out IntPtr item, 0, out _) < 0 || item == IntPtr.Zero)
-        {
-            OpenFolder(Path.GetDirectoryName(path));
-            return;
-        }
-
-        try
-        {
-            // With no child items, the one item list names the item to select in its parent folder.
-            if (SHOpenFolderAndSelectItems(item, 0, null, 0) < 0)
-            {
-                OpenFolder(Path.GetDirectoryName(path));
-            }
-        }
-        finally
-        {
-            Marshal.FreeCoTaskMem(item);
+            OffUiThread("Show in folder", () => ShowInFolderNow(path));
         }
     }
 
-    /// <summary>Opens a file in the program Windows has for its type (Explorer hands it on); nothing when it is gone.</summary>
+    /// <summary>Opens a file in the program Windows has for its type; nothing when it is gone.</summary>
     public static void OpenFile(string? path)
     {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        if (!string.IsNullOrEmpty(path))
         {
-            return;
+            OffUiThread("Open file", () =>
+            {
+                if (File.Exists(path))
+                {
+                    Open(path);
+                }
+            });
         }
-
-        ProcessStartInfo start = new("explorer.exe") { UseShellExecute = false };
-        start.ArgumentList.Add(path);
-        Start(start);
     }
 
     /// <summary>Opens a folder in Explorer.</summary>
     public static void OpenFolder(string? path)
     {
-        if (string.IsNullOrEmpty(path))
+        if (!string.IsNullOrEmpty(path))
         {
-            return;
+            OffUiThread("Open folder", () => Open(path));
         }
-
-        ProcessStartInfo start = new("explorer.exe") { UseShellExecute = false };
-        start.ArgumentList.Add(path);
-        Start(start);
     }
 
-    /// <summary>Opens a web page in the default browser (Explorer hands the address on).</summary>
-    public static void OpenUrl(string url) => OpenFolder(url);
+    /// <summary>Opens a web page in the default browser.</summary>
+    public static void OpenUrl(string url) => OffUiThread("Open page", () => Open(url));
 
     public const string WebsiteUrl = "https://github.com/rockenrooster/MediaVerifier";
     public const string ReleasesUrl = "https://github.com/rockenrooster/MediaVerifier/releases";
@@ -113,16 +92,78 @@ internal static class ShellActions
         }
     }
 
-    private static void Start(ProcessStartInfo start)
+    private static void ShowInFolderNow(string path)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            OpenParent(path);
+            return;
+        }
+
+        if (SHParseDisplayName(path, IntPtr.Zero, out IntPtr item, 0, out _) < 0 || item == IntPtr.Zero)
+        {
+            OpenParent(path);
+            return;
+        }
+
+        try
+        {
+            // With no child items, the one item list names the item to select in its parent folder.
+            if (SHOpenFolderAndSelectItems(item, 0, null, 0) < 0)
+            {
+                OpenParent(path);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(item);
+        }
+    }
+
+    private static void OpenParent(string path)
+    {
+        if (Path.GetDirectoryName(path) is { Length: > 0 } parent)
+        {
+            Open(parent);
+        }
+    }
+
+    /// <summary>
+    /// ShellExecute's default verb: the file's program, Explorer for a folder, the browser for a page. Windows shows its
+    /// own Open with dialog for a type without a program, as Explorer does.
+    /// </summary>
+    private static void Open(string target)
     {
         try
         {
-            using Process? process = Process.Start(start);
+            using Process? process = Process.Start(new ProcessStartInfo(target) { UseShellExecute = true, ErrorDialog = true });
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // Explorer missing or refused: nothing to show.
+            // No program, or Windows refused (and said so): nothing more to show.
         }
+    }
+
+    /// <summary>Runs a shell hand-off on its own STA thread; a failure is logged, the window never waits for it.</summary>
+    private static void OffUiThread(string what, Action action)
+    {
+        Thread thread = new(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write(what, ex);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = what,
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

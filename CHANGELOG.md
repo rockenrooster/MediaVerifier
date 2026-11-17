@@ -5,6 +5,15 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: Open file and Open folder opened Documents instead when the path held a comma and no
+  spaces (for example a folder named "Artist,Album").
+- Fixed: the window could freeze while it waited for a network folder that was offline: in Tools →
+  Quarantine, while typing a network path into Add folder, and on Show in folder or Open file.
+- Fixed: changing a rule in Settings → Rules paused the window on a large library.
+- Fixed: in Tools → Database, Check did not say what it found, even damage; Check, Back up now and
+  Compact now report how they went.
+- Settings → Advanced → Database location now has Open folder. Change… led to a page that cannot
+  move the database yet.
 
 ## 0.1.0.8 - 2026-11-17
 

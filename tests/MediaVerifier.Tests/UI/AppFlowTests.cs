@@ -104,11 +104,16 @@ public sealed class AppFlowTests
             string? title = Answer<AddFolderDialog>(add.PerformClick, dialog =>
             {
                 Find<PathBox>(dialog, _ => true).Text = library;
-                Find<KitButton>(dialog, b => b.Text == Strings.Library.AddFolder && b.Enabled).PerformClick();
+
+                // The folder is checked off the UI thread after a pause in typing; Add folder waits for the answer.
+                KitButton confirm = Find<KitButton>(dialog, b => b.Text == Strings.Library.AddFolder);
+                Assert.False(confirm.Enabled);
+                Settle(() => confirm.Enabled);
+                confirm.PerformClick();
             });
             Assert.Equal(Strings.Library.AddTitle, title);
-            Settle(() => services.Database.Roots.List().Count == 1);
-            Assert.Single(services.Database.Roots.List());
+            Settle(() => Db(services.Database.Roots.List).Count == 1);
+            Assert.Single(Db(services.Database.Roots.List));
 
             // The header's Scan button, which adding the first folder enables; the strip shows the scan at once.
             SplitButton scan = form.Header.Scan;
@@ -119,16 +124,16 @@ public sealed class AppFlowTests
 
             // Wait on Issues: when the scan ends, the page shows what it found without being opened again.
             form.Navigate(PageId.Issues);
-            Settle(() => services.Database.Runs.List(10).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
+            Settle(() => Db(() => services.Database.Runs.List(10)).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
             Settle(() => form.CurrentPageControl is IssuesPage { Rows.Count: > 0 }, TimeSpan.FromSeconds(10));
             issuesShown = form.CurrentPageControl is IssuesPage { Rows.Count: > 0 };
             Pump(TimeSpan.FromMilliseconds(300));
 
-            List<FileRecord> files = services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter()));
-            Assert.True(files.Count == 2, $"Files indexed: {files.Count}; runs: {string.Join(", ", services.Database.Runs.List(10).Select(r => $"{r.Status} ended {r.EndedUtc}"))}; engine {services.Scans.Status.Phase}");
+            List<FileRecord> files = Db(() => services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter())));
+            Assert.True(files.Count == 2, $"Files indexed: {files.Count}; runs: {string.Join(", ", Db(() => services.Database.Runs.List(10)).Select(r => $"{r.Status} ended {r.EndedUtc}"))}; engine {services.Scans.Status.Phase}");
             foreach (FileRecord file in files)
             {
-                bool hasDamage = services.Database.Findings.ForFile(file.Id).Any(f => f.Status == FindingStatus.Open && f.RuleId.StartsWith("COR-", StringComparison.Ordinal));
+                bool hasDamage = Db(() => services.Database.Findings.ForFile(file.Id)).Any(f => f.Status == FindingStatus.Open && f.RuleId.StartsWith("COR-", StringComparison.Ordinal));
                 (hasDamage ? damaged : healthy).Add(file.Name);
             }
 
@@ -138,8 +143,8 @@ public sealed class AppFlowTests
             Settle(() => form.CurrentPageControl is LibraryPage { Rows.Count: > 0 });
             found = form.CurrentPageControl is LibraryPage browse ? [.. browse.Rows.Values.Select(r => r.Name)] : [];
 
-            report = string.Join("; ", files.Select(f => $"{f.Name} {f.State} {f.SkipReason} [{string.Join(" ", services.Database.Findings.ForFile(f.Id).Select(x => x.RuleId + "/" + x.Status))}]"))
-                + " | runs: " + string.Join(", ", services.Database.Runs.List(10).Select(r => $"{r.Status} {r.Depth}"));
+            report = string.Join("; ", files.Select(f => $"{f.Name} {f.State} {f.SkipReason} [{string.Join(" ", Db(() => services.Database.Findings.ForFile(f.Id)).Select(x => x.RuleId + "/" + x.Status))}]"))
+                + " | runs: " + string.Join(", ", Db(() => services.Database.Runs.List(10)).Select(r => $"{r.Status} {r.Depth}"));
 
             if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
             {
@@ -195,6 +200,40 @@ public sealed class AppFlowTests
     }
 
     /// <summary>
+    /// Switching a rule off in Settings → Rules re-judges the library off the UI thread. It used to read every file of
+    /// the rule's kinds on the UI thread (a pause at each change, and an exception in a debug build): with the
+    /// database guard on, the change goes through and the effect bar has its answer.
+    /// </summary>
+    [Fact]
+    public void Changing_a_rule_rejudges_the_library_off_the_ui_thread()
+    {
+        string effect = string.Empty;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("rules-flow");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, null, startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            form.Navigate(PageId.Settings);
+            Settle(() => form.CurrentPageLoading.IsCompleted);
+            SettingsPage settings = (SettingsPage)form.CurrentPageControl!;
+            settings.ShowSection(2);
+            Pump(TimeSpan.FromMilliseconds(200));
+
+            string title = MediaVerifier.Core.Rules.RuleCatalog.Get("AUD-CLIPPING").Title;
+            ToggleSwitch clipping = Find<ToggleSwitch>(settings, t => t.AccessibleName == title);
+            clipping.Checked = !clipping.Checked;
+            Settle(() => Descendants(settings).OfType<InfoBar>().Any(b => b.Text == Strings.Settings.NoFindingsChanged));
+            effect = Descendants(settings).OfType<InfoBar>().FirstOrDefault(b => b.Text == Strings.Settings.NoFindingsChanged)?.Text ?? string.Empty;
+            form.Close();
+        });
+
+        Assert.Equal(Strings.Settings.NoFindingsChanged, effect);
+    }
+
+    /// <summary>
     /// The riskiest action through the app's own path: Move to quarantine asks first (dialog A), takes the file out of
     /// the library, and the toast's Undo puts back exactly the same bytes.
     /// </summary>
@@ -226,8 +265,8 @@ public sealed class AppFlowTests
             Task<bool> scan = services.StartScanAsync([new MediaVerifier.Core.Engine.ScanScope(add.Result)], ScanDepth.Standard, "My Music");
             Settle(() => scan.IsCompleted);
             Assert.True(scan.Result, "The scan did not start.");
-            Settle(() => services.Database.Runs.List(10).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
-            long fileId = services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter())).Single(f => f.Name == "broken.mp3").Id;
+            Settle(() => Db(() => services.Database.Runs.List(10)).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
+            long fileId = Db(() => services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter()))).Single(f => f.Name == "broken.mp3").Id;
 
             dialog = Answer<RepairDialog>(() => UiTask.Run(Remediator.RunAsync(services, form, [fileId], MediaVerifier.Core.Rules.ActionIds.Quarantine)), d => d.DialogResult = DialogResult.OK);
             Settle(() => toasts.Count > 0, TimeSpan.FromSeconds(30));
@@ -299,4 +338,7 @@ public sealed class AppFlowTests
     }
 
     private static void Pump(TimeSpan time) => Settle(() => false, time);
+
+    /// <summary>The test's own database reads, made on a pool thread: on the UI thread they would trip the guard that keeps the app off it.</summary>
+    private static T Db<T>(Func<T> read) => Task.Run(read).GetAwaiter().GetResult();
 }

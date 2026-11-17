@@ -20,6 +20,11 @@ public static class Sta
             WindowsFormsSynchronizationContext.AutoInstall = false;
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
             Application.ThreadException += (_, e) => uiFailure ??= ExceptionDispatchInfo.Capture(e.Exception);
+
+            // As in the app's debug build: a database read on this (UI) thread throws, so a page that waits on the
+            // database fails its test instead of freezing the window for the owner.
+            int self = Environment.CurrentManagedThreadId;
+            MediaVerifier.Core.Storage.Database.UiThreadId = self;
             try
             {
                 body();
@@ -30,6 +35,11 @@ public static class Sta
             }
             finally
             {
+                if (MediaVerifier.Core.Storage.Database.UiThreadId == self)
+                {
+                    MediaVerifier.Core.Storage.Database.UiThreadId = 0;
+                }
+
                 SynchronizationContext.SetSynchronizationContext(null);
                 WindowsFormsSynchronizationContext.AutoInstall = true;
             }

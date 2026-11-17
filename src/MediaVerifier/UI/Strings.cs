@@ -638,6 +638,11 @@ internal static class Strings
         public const string CompactText = "Reclaims unused space";
         public const string Check = "Check";
         public const string CheckText = "Looks for damage in the database itself";
+        public const string BackupSaved = "Backup saved";
+        public const string Compacted = "Database compacted";
+        public const string CheckPassed = "No damage found in the database";
+        public const string CheckDamaged = "The database is damaged";
+        public const string ActionFailed = "{0} failed";
         public const string Move = "Move…";
         public const string MoveText = "Use a different folder";
         public const string ResetEllipsis = "Reset…";

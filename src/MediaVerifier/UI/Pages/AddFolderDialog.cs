@@ -33,6 +33,13 @@ internal sealed class AddFolderDialog : KitDialog
     private CancellationTokenSource? _counting;
     private long? _counted;
     private string? _error;
+
+    /// <summary>The folder whose existence is known, and the answer; checked off the UI thread after a pause in typing.</summary>
+    private string? _existsFor;
+    private bool _exists;
+
+    /// <summary>The folder being checked now; a later one replaces it and the earlier answer is dropped.</summary>
+    private string? _checking;
     private bool _nameEdited;
     private string _autoName = string.Empty;
 
@@ -76,7 +83,7 @@ internal sealed class AddFolderDialog : KitDialog
         _debounce.Tick += (_, _) =>
         {
             _debounce.Stop();
-            StartCount();
+            CheckAndCount();
         };
         Body.Controls.AddRange([_folder, _name, _library, _backup, _photos, _videos, _music, _skip, _count]);
         Body.Paint += (_, e) => PaintLabels(e.Graphics);
@@ -166,6 +173,8 @@ internal sealed class AddFolderDialog : KitDialog
 
     private void OnFolderChanged()
     {
+        // Checked again after the pause in typing: the folder may have been created or connected meanwhile.
+        _existsFor = null;
         string path = _folder.Text.Trim();
         string name = path.Length == 0 ? string.Empty : Path.GetFileName(path.TrimEnd('\\')) is { Length: > 0 } leaf ? leaf : path;
         if (!_nameEdited)
@@ -191,10 +200,17 @@ internal sealed class AddFolderDialog : KitDialog
     {
         string path = _folder.Text.Trim();
         string? error = null;
+        bool known = true;
         if (path.Length > 0)
         {
             string full = Normalize(path);
-            if (!Directory.Exists(full))
+            if (_existsFor != full)
+            {
+                // Not checked yet (CheckAndCount): on the UI thread the check froze the dialog at every key while a
+                // network folder was offline or its name half typed.
+                known = false;
+            }
+            else if (!_exists)
             {
                 error = Strings.Library.ErrorMissing;
             }
@@ -230,7 +246,50 @@ internal sealed class AddFolderDialog : KitDialog
             Body.Invalidate();
         }
 
-        _ok.Enabled = path.Length > 0 && error is null && (_photos.Checked || _videos.Checked || _music.Checked);
+        _ok.Enabled = known && path.Length > 0 && error is null && (_photos.Checked || _videos.Checked || _music.Checked);
+    }
+
+    /// <summary>After a pause in typing: whether the folder exists, found off the UI thread, then the count of its files.</summary>
+    private void CheckAndCount()
+    {
+        string full = Normalize(_folder.Text.Trim());
+        if (full.Length == 0)
+        {
+            return;
+        }
+
+        if (_existsFor == full)
+        {
+            if (_error is null)
+            {
+                StartCount();
+            }
+
+            return;
+        }
+
+        _checking = full;
+        _ = Task.Run(() => Directory.Exists(full)).ContinueWith(
+            task =>
+            {
+                if (IsDisposed || _checking != full)
+                {
+                    return;
+                }
+
+                _checking = null;
+                _existsFor = full;
+                _exists = task.IsCompletedSuccessfully && task.Result;
+                ValidateForm();
+                _count.Visible = _error is null;
+                if (_error is null)
+                {
+                    StartCount();
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private static string Normalize(string path)

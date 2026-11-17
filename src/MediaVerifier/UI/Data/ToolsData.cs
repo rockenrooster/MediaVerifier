@@ -16,7 +16,15 @@ internal sealed record ToolsData(
     string DatabaseLocation,
     DateTimeOffset? LastBackup,
     long FilesIndexed,
-    IReadOnlyList<OperationRecord> Operations);
+    IReadOnlyList<OperationRecord> Operations,
+    IReadOnlyList<QuarantineEntry>? Quarantine = null);
+
+/// <summary>
+/// An original kept in quarantine, looked up with the rest of the snapshot off the UI thread (the quarantine of a
+/// network folder that is offline makes every look-up wait). <paramref name="Size"/> is null when the file is gone or
+/// out of reach.
+/// </summary>
+internal sealed record QuarantineEntry(OperationRecord Operation, long? Size);
 
 internal interface IToolsData
 {
@@ -32,9 +40,10 @@ internal sealed partial class LiveUiData
     public ToolsData LoadTools()
     {
         List<OperationRecord> operations = database.Journal.List(500);
-        List<OperationRecord> kept = [.. operations.Where(o => o.Status == OperationStatus.Done && o.BackupPath is not null && File.Exists(o.BackupPath))];
-        long keptBytes = kept.Sum(o => new FileInfo(o.BackupPath!).Length);
-        int? oldestIn = kept.Count == 0 ? null : Math.Max(0, settings().EmptyQuarantineAfterDays - (int)(clock.UtcNow - Ticks(kept.Min(o => o.Utc))).TotalDays);
+        List<QuarantineEntry> quarantine = [.. operations.Where(o => o.Status == OperationStatus.Done && o.BackupPath is not null).Select(o => new QuarantineEntry(o, SizeOf(o.BackupPath!)))];
+        List<QuarantineEntry> kept = [.. quarantine.Where(q => q.Size is not null)];
+        long keptBytes = kept.Sum(q => q.Size!.Value);
+        int? oldestIn = kept.Count == 0 ? null : Math.Max(0, settings().EmptyQuarantineAfterDays - (int)(clock.UtcNow - Ticks(kept.Min(q => q.Operation.Utc))).TotalDays);
         OperationRecord? last = operations.FirstOrDefault();
         long? lastReport = long.TryParse(database.Meta.Get(LastReportKey), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long ticks) ? ticks : null;
         string location = database.FilePath;
@@ -53,7 +62,22 @@ internal sealed partial class LiveUiData
             shown,
             database.Maintenance.LastBackupUtc(),
             database.Queries.Health(TimeSpan.FromDays(settings().ScrubPeriodDays), clock.UtcNow).FilesIndexed,
-            operations);
+            operations,
+            quarantine);
+    }
+
+    /// <summary>A kept file's size, or null when it is gone or cannot be reached.</summary>
+    private static long? SizeOf(string path)
+    {
+        try
+        {
+            FileInfo file = new(path);
+            return file.Exists ? file.Length : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     /// <summary>An action id as the journal names it (subplan 12 action catalog).</summary>

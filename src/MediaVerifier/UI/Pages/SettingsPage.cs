@@ -132,7 +132,9 @@ internal sealed class SettingsPage : PageBase
             ]),
             Section(Strings.Settings.Advanced, Strings.Settings.AdvancedIntro,
             [
-                Button(Strings.Settings.DatabaseLocation, State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath), Strings.Settings.Change, () => Services.Navigate?.Invoke(PageId.Tools, null)),
+                // Change… led to Tools, where the database cannot be moved yet (Move… waits for phase 16): the button
+                // shows where it is instead.
+                Button(Strings.Settings.DatabaseLocation, State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath), Strings.Tools.OpenFolder, () => ShellActions.ShowInFolder(State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath))),
                 Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
                 Buttons(Strings.Settings.Diagnostics, null,
                 [
