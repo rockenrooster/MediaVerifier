@@ -177,7 +177,8 @@ jobs:
           $filters = ([regex]::Match($script, '--enable-filter=([^\s\\]+)').Groups[1].Value -split ',')
           $required = @{
             '-decoders' = 'h264 hevc vvc vp8 vp9 libdav1d mpeg2video mpeg4 vc1 wmv3 prores dnxhd ffv1 theora mjpeg png apng gif bmp tiff webp jpeg2000 libjxl flac alac ape wavpack tak tta mp3float aac opus vorbis ac3 eac3 dca truehd wmalossless wmapro wmav2 dsd_lsbf dsd_msbf amrnb amrwb mpc7 mpc8' -split ' '
-            '-demuxers' = 'mov matroska avi asf flv mpegts mpegps ogg flac mp3 wav aiff w64 caf ape wv tta dsf iff image2 image_jpeg_pipe image_png_pipe image_webp_pipe image_tiff_pipe image_bmp_pipe image_jpegxl_pipe gif' -split ' '
+            # Names as -demuxers prints them: MPEG-PS is 'mpeg'; the image pipes have no 'image_' prefix.
+            '-demuxers' = 'mov matroska avi asf flv mpegts mpeg ogg flac mp3 wav aiff w64 caf ape wv tta dsf iff image2 jpeg_pipe png_pipe webp_pipe tiff_pipe bmp_pipe jpegxl_pipe gif' -split ' '
             '-muxers' = 'null wav md5 streamhash framemd5 mp4 mov ipod matroska webm ogg opus flac mp3 adts aiff avi mpegts asf flv ac3 eac3 dts truehd w64 caf image2 apng' -split ' '
             '-encoders' = $encoders
             '-filters' = $filters
