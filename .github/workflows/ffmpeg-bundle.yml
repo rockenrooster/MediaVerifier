@@ -1,6 +1,6 @@
 # Builds the LGPL FFmpeg bundle (subplan 17, task FFB-04): compile in the pinned BtbN image, package only
 # what the app uses with bundle.json, verify on Windows, publish a pre-release with the exact source and
-# build script, and open a pull request that updates deps/ffmpeg/bundle.lock.json.
+# build script, and commit the updated deps/ffmpeg/bundle.lock.json to the branch the workflow ran from.
 name: ffmpeg-bundle
 
 on:
@@ -114,7 +114,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$TAG" "$ASSET" "ffmpeg-$VERSION-source.tar.gz" deps/ffmpeg/build-ffmpeg.sh --prerelease --title "$TAG" --notes "FFmpeg $VERSION (LGPL), built for MediaVerifier. The complete source and the build script are attached."
-      - name: Open the lock-file pull request
+      - name: Commit the lock file
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -132,8 +132,7 @@ jobs:
             "buildImageDigest": "$digest"
           }
           EOF
-          git checkout -b "bundle/$TAG"
+          # The owner's repository takes the verified lock straight onto the branch the workflow ran from.
           git add deps/ffmpeg/bundle.lock.json
           git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -m "FFB-04: use FFmpeg bundle $TAG"
-          git push origin "bundle/$TAG"
-          gh pr create --base "${{ github.ref_name }}" --title "Use FFmpeg bundle $TAG" --body "Updates deps/ffmpeg/bundle.lock.json to the verified bundle $TAG."
+          git push origin "HEAD:${{ github.ref_name }}"
