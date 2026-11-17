@@ -127,6 +127,12 @@ internal sealed class LibraryPage : PageBase
                 _view.SelectedIndex = 1;
                 Reload();
                 break;
+            case LibrarySearchRequest search:
+                // The header's search: Browse lists the matching files of every watched folder.
+                _query = new BrowseQuery(null, null, Search: search.Text);
+                _view.SelectedIndex = 1;
+                Reload();
+                break;
             case AddFolderRequest add:
                 AddFolder(add.Path);
                 break;
@@ -381,7 +387,7 @@ internal sealed class LibraryPage : PageBase
             return;
         }
 
-        _query = _query with { RootId = folder.RootId, DirId = folder.DirId };
+        _query = _query with { RootId = folder.RootId, DirId = folder.DirId, Search = null };
         Reload();
     }
 

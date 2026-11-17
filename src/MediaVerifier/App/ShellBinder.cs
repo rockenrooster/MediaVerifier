@@ -364,10 +364,16 @@ internal sealed class ShellBinder : IDisposable
 
     private void OnSearchKey(object? sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.Enter && _form.Header.Search.Text.Length > 0)
+        if (e.KeyCode == Keys.Enter && _form.Header.Search.Text.Trim().Length > 0)
         {
             e.Handled = true;
-            _services.Navigate?.Invoke(PageId.Library, new LibrarySearchRequest(_form.Header.Search.Text));
+            _services.Navigate?.Invoke(PageId.Library, new LibrarySearchRequest(_form.Header.Search.Text.Trim()));
+        }
+        else if (e.KeyCode == Keys.Escape && _form.Header.Search.Text.Length > 0)
+        {
+            // Esc clears the box (subplan 09, Shell).
+            e.Handled = true;
+            _form.Header.Search.Text = string.Empty;
         }
     }
 }

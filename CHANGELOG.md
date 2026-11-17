@@ -13,6 +13,8 @@ All notable changes to MediaVerifier are documented here.
   until you opened another page.
 - Fixed: Ask before large scans had no effect; turned off, large scans start without the question.
 - Fixed: Del in Issues did nothing, though the menu lists it for Move to quarantine.
+- Fixed: Search files in the header did nothing. Enter now lists the matching files of every
+  watched folder in Library → Browse (the OK and Problems chips still apply); Esc clears the box.
 - Notifications of scheduled scans in the bell open Issues when the scan found problems, and Scans
   otherwise; before, clicking one only marked it read.
 

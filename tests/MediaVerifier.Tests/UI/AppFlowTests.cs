@@ -80,6 +80,7 @@ public sealed class AppFlowTests
         string report = string.Empty;
         bool stripShown = false;
         bool issuesShown = false;
+        List<string> found = [];
         Sta.Run(() =>
         {
             using TempDirectory temp = new("app-flow");
@@ -131,6 +132,12 @@ public sealed class AppFlowTests
                 (hasDamage ? damaged : healthy).Add(file.Name);
             }
 
+            // The header's search: Library → Browse lists the matching files of every watched folder.
+            services.Navigate!(PageId.Library, new LibrarySearchRequest("broken"));
+            Settle(() => form.CurrentPageLoading.IsCompleted);
+            Settle(() => form.CurrentPageControl is LibraryPage { Rows.Count: > 0 });
+            found = form.CurrentPageControl is LibraryPage browse ? [.. browse.Rows.Values.Select(r => r.Name)] : [];
+
             report = string.Join("; ", files.Select(f => $"{f.Name} {f.State} {f.SkipReason} [{string.Join(" ", services.Database.Findings.ForFile(f.Id).Select(x => x.RuleId + "/" + x.Status))}]"))
                 + " | runs: " + string.Join(", ", services.Database.Runs.List(10).Select(r => $"{r.Status} {r.Depth}"));
 
@@ -151,6 +158,7 @@ public sealed class AppFlowTests
 
         Assert.True(stripShown, "The status strip did not show the scan when it started.");
         Assert.True(issuesShown, "Issues did not show the scan's findings when the scan ended.");
+        Assert.Equal(["broken.mp3"], found);
         Assert.True(damaged.SequenceEqual(["broken.mp3"]), report);
         Assert.Equal(["healthy.flac"], healthy);
     }

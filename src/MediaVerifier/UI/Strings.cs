@@ -424,6 +424,7 @@ internal static class Strings
         public const string ChipProblems = "Problems";
         public const string ColumnName = "Name";
         public const string ColumnProblem = "Problem";
+        public const string SearchResults = "Files matching \u201C{0}\u201D";
         public const string ProblemMore = "{0} and {1} more";
         public const string ColumnFormat = "Format";
         public const string ColumnSize = "Size";

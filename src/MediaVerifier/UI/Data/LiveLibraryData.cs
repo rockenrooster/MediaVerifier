@@ -46,6 +46,19 @@ internal sealed partial class LiveUiData
             }
         }
 
+        // The header's search (subplan 09, Shell): every watched folder's files whose name or folder holds the text.
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            FileFilter search = new() { DirectOnly = false, Text = query.Search.Trim() };
+            long[] found = database.Queries.FileIds(WithState(search, query.State), query.Sort, query.Descending);
+            FolderStateCounts counts = new(
+                database.Queries.FileIds(WithState(search, BrowseState.All)).Length,
+                database.Queries.FileIds(WithState(search, BrowseState.Ok)).Length,
+                database.Queries.FileIds(WithState(search, BrowseState.Problems)).Length);
+            string crumb = string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Library.SearchResults, query.Search.Trim());
+            return new BrowseData(query with { RootId = null, DirId = null }, tree, [crumb], found, counts);
+        }
+
         // No folder chosen yet: the first root's top folder.
         long? dirId = query.DirId ?? (tree.Count > 0 ? tree[0].DirId : null);
         if (dirId is not long dir || !byDir.TryGetValue(dir, out (FolderNode Node, RootRecord Root) shown))
@@ -53,15 +66,7 @@ internal sealed partial class LiveUiData
             return new BrowseData(query, tree, [], [], new FolderStateCounts(0, 0, 0));
         }
 
-        FileFilter filter = new()
-        {
-            RootId = shown.Root.Id,
-            DirId = dir,
-            DirectOnly = true,
-            States = query.State == BrowseState.All ? [FileState.Pending, FileState.Ok, FileState.Issues, FileState.Skipped, FileState.Error] : query.State == BrowseState.Ok ? [FileState.Ok, FileState.Issues] : null,
-            MaxSeverity = query.State == BrowseState.Ok ? Severity.Low : null,
-            MinSeverity = query.State == BrowseState.Problems ? Severity.Medium : null,
-        };
+        FileFilter filter = WithState(new FileFilter { RootId = shown.Root.Id, DirId = dir, DirectOnly = true }, query.State);
         long[] ids = database.Queries.FileIds(filter, query.Sort, query.Descending);
         List<string> crumbs = [RootName(shown.Root)];
         crumbs.AddRange(shown.Node.RelPath.Split('\\', StringSplitOptions.RemoveEmptyEntries));
@@ -69,6 +74,14 @@ internal sealed partial class LiveUiData
     }
 
     public IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids) => database.Queries.FileRows(ids);
+
+    /// <summary>The chip's files: all, OK (no finding above Low) or with problems (Medium and above).</summary>
+    private static FileFilter WithState(FileFilter filter, BrowseState state) => filter with
+    {
+        States = state == BrowseState.All ? [FileState.Pending, FileState.Ok, FileState.Issues, FileState.Skipped, FileState.Error] : state == BrowseState.Ok ? [FileState.Ok, FileState.Issues] : null,
+        MaxSeverity = state == BrowseState.Ok ? Severity.Low : null,
+        MinSeverity = state == BrowseState.Problems ? Severity.Medium : null,
+    };
 
     private static BrowseFolder ToBrowse(RootRecord root, FolderNode node, string? name, Dictionary<long, (FolderNode, RootRecord)> byDir)
     {

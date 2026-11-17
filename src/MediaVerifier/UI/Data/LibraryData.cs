@@ -31,7 +31,8 @@ internal enum BrowseState
 }
 
 /// <summary>What Library → Browse shows: a folder (or a whole root), a state chip and a sort.</summary>
-internal sealed record BrowseQuery(long? RootId, long? DirId, BrowseState State = BrowseState.All, FileSort Sort = FileSort.Name, bool Descending = false);
+/// <summary>What Browse shows: a folder, or with <paramref name="Search"/> the files of every watched folder matching it.</summary>
+internal sealed record BrowseQuery(long? RootId, long? DirId, BrowseState State = BrowseState.All, FileSort Sort = FileSort.Name, bool Descending = false, string? Search = null);
 
 /// <summary>A folder of the Browse tree: name, worst open tier below it, children.</summary>
 internal sealed record BrowseFolder(long RootId, long DirId, string Name, Severity Worst, IReadOnlyList<BrowseFolder> Children);
