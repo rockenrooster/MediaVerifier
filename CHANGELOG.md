@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.5 - 2026-11-17
+
 - Fixed: the Scan button stayed disabled after the first folder was added, so clicking it did
   nothing. A started scan now shows in the status strip at once, and a scan that cannot start says
   why.
