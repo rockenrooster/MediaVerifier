@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.7 - 2026-11-17
+
 - Fixed: Start with Windows did nothing; it now adds MediaVerifier to the programs Windows starts,
   and at start-up MediaVerifier puts the entry right if an earlier version left it out.
 - Fixed: turning on Keep running in the tray (or Start with Windows) only took effect after a
