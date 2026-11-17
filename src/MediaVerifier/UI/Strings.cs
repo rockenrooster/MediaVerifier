@@ -8,6 +8,18 @@ internal static class Strings
 {
     public const string ProductName = "MediaVerifier";
 
+    // Tier names (subplan 09, Formats used in strings).
+    public const string TierCritical = "Critical";
+    public const string TierHigh = "High";
+    public const string TierMedium = "Medium";
+    public const string TierLow = "Low";
+    public const string TierOk = "OK";
+
+    public static class Kit
+    {
+        public const string Browse = "Browse…";
+    }
+
     public static class Pages
     {
         public const string Dashboard = "Dashboard";
