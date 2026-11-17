@@ -57,16 +57,5 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
     /// <summary>Stored UTC ticks to a timestamp.</summary>
     internal static DateTimeOffset Ticks(long utcTicks) => new(utcTicks, TimeSpan.Zero);
 
-    internal static RunInfo ToRunInfo(RunRecord run, IReadOnlyList<RootRecord> roots) => new(
-        run.Id,
-        Ticks(run.StartedUtc),
-        run.EndedUtc is long ended ? Ticks(ended) : null,
-        run.Trigger,
-        null,
-        run.Depth,
-        string.Join(", ", roots.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))),
-        run.FilesSeen,
-        run.NewFindings,
-        run.ResolvedFindings,
-        run.Status);
+    internal static RunInfo ToRunInfo(RunRecord run, IReadOnlyList<RootRecord> roots) => ToRunInfo(run, roots, new Dictionary<long, string>());
 }

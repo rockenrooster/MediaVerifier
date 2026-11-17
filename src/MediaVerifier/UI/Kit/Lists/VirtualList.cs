@@ -14,7 +14,7 @@ internal enum ListMode
 }
 
 /// <summary>A table column: header text, fixed logical width (0 = absorbs the remaining width), alignment.</summary>
-internal sealed record ListColumn(string Header, int Width, bool RightAligned = false, bool Sortable = true);
+internal sealed record ListColumn(string Header, int Width, bool RightAligned = false, bool Sortable = true, int Pad = 16);
 
 /// <summary>
 /// One row's content, filled by the source into a reused instance (painting allocates nothing). Strings
@@ -39,6 +39,12 @@ internal sealed class ListRow
 
     /// <summary>A table cell drawn in Text3 (a skip reason); -1 for none.</summary>
     public int MutedColumn = -1;
+
+    /// <summary>A table cell drawn as a pill (a run result); -1 for none.</summary>
+    public int PillColumn = -1;
+
+    /// <summary>The pill's colours: a tier, OK colours, or neutral when null.</summary>
+    public Severity? PillTier;
     public string Line1 = string.Empty;
     public string? Line2;
     public string? Size;
@@ -59,6 +65,8 @@ internal sealed class ListRow
         StateIcon = null;
         OkIcon = false;
         MutedColumn = -1;
+        PillColumn = -1;
+        PillTier = null;
         Line1 = string.Empty;
         Line2 = null;
         Size = null;
@@ -144,6 +152,9 @@ internal sealed class VirtualList : KitControl
     public event EventHandler<(int Column, bool Descending)>? SortChanged;
 
     public ListMode Mode { get; set; } = ListMode.TwoLine;
+
+    /// <summary>Table rows keep a 44 px icon column; without it the first cell starts at its column's inset.</summary>
+    public bool Icons { get; set; } = true;
 
     /// <summary>The list draws its own Surface card with a Stroke border and radius 8.</summary>
     public bool Framed
@@ -453,7 +464,7 @@ internal sealed class VirtualList : KitControl
     private const int RightPad = 4;
 
     /// <summary>Paints a table header: 32 px, Bg at 55 %, CaptionStrong Text3, 1 px Stroke below, sort arrow after the label.</summary>
-    public static void DrawTableHeader(Graphics g, Rectangle bounds, IReadOnlyList<ListColumn> columns, ReadOnlySpan<int> widths, int sortColumn, bool descending, int dpi)
+    public static void DrawTableHeader(Graphics g, Rectangle bounds, IReadOnlyList<ListColumn> columns, ReadOnlySpan<int> widths, int sortColumn, bool descending, int dpi, bool icons = true)
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(dpi);
@@ -467,7 +478,7 @@ internal sealed class VirtualList : KitControl
             int width = widths[i];
             int pad = Dpi.Scale(16, dpi);
             int labelWidth = KitPaint.MeasureWidth(column.Header, type.CaptionStrong);
-            int labelX = column.RightAligned ? x + width - Dpi.Scale(RightPad, dpi) - labelWidth : x + (i == 0 ? Dpi.Scale(44, dpi) : pad);
+            int labelX = column.RightAligned ? x + width - Dpi.Scale(RightPad, dpi) - labelWidth : x + (i == 0 && icons ? Dpi.Scale(44, dpi) : Dpi.Scale(column.Pad, dpi));
             KitPaint.DrawText(g, column.Header, type.CaptionStrong, t.Text3, labelX, centreY, labelWidth + 1);
             if (i == sortColumn)
             {
@@ -479,7 +490,7 @@ internal sealed class VirtualList : KitControl
     }
 
     /// <summary>Paints a one-line table row: state or severity icon at (+16, +10), cells in Body.</summary>
-    public static void DrawTableRow(Graphics g, Rectangle row, ListRow data, IReadOnlyList<ListColumn> columns, ReadOnlySpan<int> widths, bool selected, bool hover, bool focused, int dpi)
+    public static void DrawTableRow(Graphics g, Rectangle row, ListRow data, IReadOnlyList<ListColumn> columns, ReadOnlySpan<int> widths, bool selected, bool hover, bool focused, int dpi, bool icons = true)
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(dpi);
@@ -515,8 +526,21 @@ internal sealed class VirtualList : KitControl
                 // Left-aligned text may run up to the next column (whose text starts 16 px in); right-aligned
                 // text keeps 4 px from both edges.
                 bool right = columns[i].RightAligned;
-                int left = i == 0 ? row.X + Dpi.Scale(44, dpi) : x + (right ? Dpi.Scale(RightPad, dpi) : pad);
+                int left = i == 0 && icons ? row.X + Dpi.Scale(44, dpi) : x + (right ? Dpi.Scale(RightPad, dpi) : Dpi.Scale(columns[i].Pad, dpi));
                 int available = x + width - (right ? Dpi.Scale(RightPad, dpi) : 0) - left;
+                if (i == data.PillColumn)
+                {
+                    (Color fg, Color bg) = data.PillTier switch
+                    {
+                        Severity tier when tier != Core.Model.Severity.None => (t.ForSeverity(tier).Text, t.ForSeverity(tier).Pill),
+                        Severity => (t.Ok.Text, t.Ok.Pill),
+                        null => (t.Text2, t.NeutralPill),
+                    };
+                    BadgePainter.PaintPill(g, left, centreY - Dpi.Scale(10, dpi), text, fg, bg, dpi);
+                    x += width;
+                    continue;
+                }
+
                 Font font = type.Body;
                 Color color = i == data.MutedColumn ? t.Text3 : i == 0 ? t.Text : t.Text2;
                 KitPaint.DrawText(g, text, font, color, left, centreY, available, columns[i].RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
@@ -525,7 +549,7 @@ internal sealed class VirtualList : KitControl
             x += width;
         }
 
-        KitPaint.HorizontalLine(g, Color.FromArgb(153, t.Stroke), row.X + Dpi.Scale(44, dpi), row.Right, row.Bottom - Dpi.ScaleF(1, dpi), Dpi.ScaleF(1, dpi));
+        KitPaint.HorizontalLine(g, Color.FromArgb(153, t.Stroke), row.X + Dpi.Scale(icons ? 44 : 16, dpi), row.Right - (icons ? 0 : Dpi.Scale(16, dpi)), row.Bottom - Dpi.ScaleF(1, dpi), Dpi.ScaleF(1, dpi));
         if (focused)
         {
             KitPaint.DrawFocusRing(g, Rectangle.Inflate(row, -Dpi.Scale(3, dpi), -Dpi.Scale(3, dpi)), Dpi.ScaleF(4, dpi), dpi);
@@ -620,7 +644,7 @@ internal sealed class VirtualList : KitControl
                     }
                     else
                     {
-                        DrawTableRow(g, rowBounds, _row, _columns, widths, selected, hover, focused, dpi);
+                        DrawTableRow(g, rowBounds, _row, _columns, widths, selected, hover, focused, dpi, Icons);
                     }
                 }
 
@@ -632,7 +656,7 @@ internal sealed class VirtualList : KitControl
 
         if (Mode == ListMode.Table)
         {
-            DrawTableHeader(g, new Rectangle(0, 0, Width, S(HeaderHeight)), _columns, widths, _sortColumn, _sortDescending, dpi);
+            DrawTableHeader(g, new Rectangle(0, 0, Width, S(HeaderHeight)), _columns, widths, _sortColumn, _sortDescending, dpi, Icons);
         }
 
         if (ThumbBounds() is Rectangle thumb && !thumb.IsEmpty)

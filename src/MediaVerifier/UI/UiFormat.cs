@@ -110,7 +110,8 @@ internal static class UiFormat
             minutes = 0;
         }
 
-        return minutes == 0 ? string.Format(Culture, Strings.Units.Hours, hours) : string.Format(Culture, Strings.Units.HoursMinutes, hours, minutes);
+        // Whole hours keep their minutes, as the scans mockup writes them (2 h 00 min).
+        return string.Format(Culture, Strings.Units.HoursMinutes, hours, minutes == 0 ? "00" : minutes.ToString(Culture));
     }
 
     /// <summary>An estimate: <c>About 1 h 12 min</c> (lower case in sentences: <c>about 1 h 12 min</c>).</summary>

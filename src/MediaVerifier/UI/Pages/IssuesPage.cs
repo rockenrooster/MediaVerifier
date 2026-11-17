@@ -39,6 +39,7 @@ internal sealed class IssuesPage : PageBase
     private IssuesData? _data;
     private IReadOnlyList<(long RootId, string Name)> _roots = [];
     private bool _updating;
+    private long? _firstRun;
     private bool _narrow;
 
     public IssuesPage(UiServices services)
@@ -155,6 +156,7 @@ internal sealed class IssuesPage : PageBase
     {
         if (request is IssuesFilterRequest filter)
         {
+            _firstRun = filter.FirstRun;
             _updating = true;
             _all.On = filter.Tier is null;
             for (int i = 0; i < Tiers.Length; i++)
@@ -226,6 +228,7 @@ internal sealed class IssuesPage : PageBase
 
     internal void ClearFilters()
     {
+        _firstRun = null;
         _updating = true;
         _all.On = true;
         foreach (Chip chip in _tierChips.Concat(_kindChips))
@@ -484,6 +487,7 @@ internal sealed class IssuesPage : PageBase
             Categories = categories,
             RuleIds = rule is null ? null : [rule],
             RootId = root,
+            FirstRun = _firstRun,
         };
         _query = _query with { Filter = filter, Group = (FindingGroup)_group.SelectedIndex };
         UpdateHighlights();

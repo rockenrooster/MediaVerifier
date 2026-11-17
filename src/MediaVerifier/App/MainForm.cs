@@ -171,6 +171,7 @@ internal sealed class MainForm : Form
         page.Activate();
         _rail.SelectedPage = id;
         _header.PageTitle = page.Title;
+        _binder?.PollNow();
         _state.Settings.WindowPlacement.LastPage = id.ToString();
     }
 
@@ -518,6 +519,7 @@ internal static class PageFactory
         PageId.Dashboard => new DashboardPage(services),
         PageId.Issues => new IssuesPage(services),
         PageId.Library => new LibraryPage(services),
+        PageId.Scans => new ScansPage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

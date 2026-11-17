@@ -16,3 +16,6 @@ All notable changes to MediaVerifier are documented here.
 - Library page: watched folders as cards (scan, verify, edit, remove, not-connected state), an Add
   folder dialog that checks the folder and counts its media files, and Browse with the folder tree
   and a sortable file table.
+- Scans page: the running scan with progress, speed, time left, problems found and the files being
+  worked on; history of runs with results; a run's details in the drawer; a confirmation with time
+  estimates before a large scan.

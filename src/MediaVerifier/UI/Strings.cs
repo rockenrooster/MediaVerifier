@@ -438,7 +438,8 @@ internal static class Strings
         public const string TimeLeft = "Time left";
         public const string OfTotal = "{0} of {1}";
         public const string Estimating = "Estimating…";
-        public const string FoundSoFar = "FOUND SO FAR";
+        public const string FoundSoFar = "Found so far";
+        public const string ErrorsCount = "{0} files could not be read";
         public const string WorkingOn = "WORKING ON";
         public const string NoScan = "No scan is running";
         public const string LastScan = "Last scan {0}.";

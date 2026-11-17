@@ -533,7 +533,8 @@ internal sealed class DashboardPage : PageBase
 }
 
 /// <summary>Navigation request to Issues with a tier and kind filter.</summary>
-internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind);
+/// <summary>Opens Issues filtered by tier and kind, or to the findings first raised in one run.</summary>
+internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long? FirstRun = null);
 
 /// <summary>Navigation requests to the Library page.</summary>
 internal enum LibraryRequest

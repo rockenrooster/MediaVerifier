@@ -92,7 +92,8 @@ internal sealed class ShellBinder : IDisposable
         EngineStatus status = _services.Scans.Status;
         bool active = status.IsActive;
         _poll.Interval = active ? 250 : 2000;
-        _form.Shell.StatusStripVisible = active;
+        // The Scans page shows the run itself, so the strip hides there (as in the scans mockup).
+        _form.Shell.StatusStripVisible = active && _form.CurrentPageControl?.Id != UI.Pages.PageId.Scans;
         if (active)
         {
             UpdateStrip(status);
@@ -204,24 +205,8 @@ internal sealed class ShellBinder : IDisposable
             return;
         }
 
-        try
-        {
-            List<RootRecord> roots = await Task.Run(_services.Database.Roots.List).ConfigureAwait(true);
-            List<RootRecord> library = [.. roots.Where(r => r.Role == RootRole.Library && r.Enabled)];
-            if (library.Count == 0)
-            {
-                return;
-            }
-
-            string scope = library.Count == roots.Count(r => r.Role == RootRole.Library) ? UI.Strings.Scans.AllFolders : UiFormat.JoinNames([.. library.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))]);
-            ScanRequest request = new([.. library.Select(r => new ScanScope(r.Id))], depth, RunTrigger.Manual, Options: options);
-            await _services.Scans.StartAsync(request, scope).ConfigureAwait(true);
-            Poll();
-        }
-        catch (InvalidOperationException ex)
-        {
-            _services.State.Log.Warning("Scan not started: " + ex.Message);
-        }
+        await UI.Pages.ScanLauncher.StartLibraryScanAsync(_form, _services, depth, options).ConfigureAwait(true);
+        Poll();
     }
 
     private void TogglePause()

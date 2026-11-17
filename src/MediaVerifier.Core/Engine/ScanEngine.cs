@@ -21,7 +21,8 @@ namespace MediaVerifier.Core.Engine;
 public sealed class ScanEngine : IDisposable
 {
     public const long ReadOnceLimit = 256L * 1024 * 1024;
-    private const string EstimatesKey = "estimates.v1";
+    /// <summary>Meta key of the per-storage-class timing averages (pre-scan estimates read them).</summary>
+    public const string EstimatesKey = "estimates.v1";
 
     private readonly EngineServices _services;
     private readonly Lock _gate = new();
