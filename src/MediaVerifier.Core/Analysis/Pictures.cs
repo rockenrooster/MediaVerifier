@@ -19,6 +19,11 @@ public sealed class PictureRenderer(FfRunner runner, string cacheDirectory)
     public const int StripHeight = 108;
     public const int CompareWidth = 384;
     public const int CompareHeight = 216;
+
+    /// <summary>The thumbnail's filter: fill a <see cref="ThumbnailSize"/> square, then crop the overflow.</summary>
+    public static readonly string ThumbnailFilter = string.Create(
+        CultureInfo.InvariantCulture,
+        $"scale={ThumbnailSize}:{ThumbnailSize}:force_original_aspect_ratio=increase,crop={ThumbnailSize}:{ThumbnailSize}");
     private const int MaxCachedFiles = 400;
 
     /// <summary>The time the last fresh compare image took (the acceptance asks for under 2 s).</summary>
@@ -38,7 +43,7 @@ public sealed class PictureRenderer(FfRunner runner, string cacheDirectory)
 
         args.AddRange(FfmpegArgs.Input(path, kind, null));
         args.AddRange(["-map", "0:v:0", "-frames:v", "1"]);
-        args.AddRange(["-vf", string.Create(CultureInfo.InvariantCulture, $"scale={ThumbnailSize}:{ThumbnailSize}:force_original_aspect_ratio=increase,crop={ThumbnailSize}:{ThumbnailSize}")]);
+        args.AddRange(["-vf", ThumbnailFilter]);
         args.AddRange(["-c:v", "png", "-f", "image2pipe", "-"]);
         return CachedAsync(cacheKey + "-thumb", args, token);
     }
@@ -69,18 +74,23 @@ public sealed class PictureRenderer(FfRunner runner, string cacheDirectory)
     /// </summary>
     public async Task<byte[]?> CompareAsync(string path, string cacheKey, MediaKind kind, double time, int width, int height, int effectiveHeight, CancellationToken token)
     {
-        int small = Even((double)effectiveHeight / height * width);
-        string graph = string.Create(
-            CultureInfo.InvariantCulture,
-            $"[0:v]trim=end_frame=1,setpts=PTS-STARTPTS,split[a][b];[b]scale={small}:{effectiveHeight}:flags=bicubic,scale={width}:{height}:flags=bicubic[r];" +
-            $"[a]crop='min(iw,{CompareWidth})':'min(ih,{CompareHeight})'[c1];[r]crop='min(iw,{CompareWidth})':'min(ih,{CompareHeight})'[c2];[c1][c2]hstack[out]");
         List<string> args = kind == MediaKind.Video ? ["-noaccurate_seek", "-ss", time.ToString("0.###", CultureInfo.InvariantCulture)] : [];
         args.AddRange(FfmpegArgs.Input(path, kind, null));
-        args.AddRange(["-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-"]);
+        args.AddRange(["-filter_complex", CompareGraph(width, height, effectiveHeight), "-map", "[out]", "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-"]);
         Stopwatch watch = Stopwatch.StartNew();
         byte[]? image = await CachedAsync(string.Create(CultureInfo.InvariantCulture, $"{cacheKey}-cmp-{time:0.###}-{effectiveHeight}"), args, token).ConfigureAwait(false);
         LastCompareTime = watch.Elapsed;
         return image;
+    }
+
+    /// <summary>The compare image's filter graph: the centre crop of the frame beside the same crop of its down-up copy.</summary>
+    public static string CompareGraph(int width, int height, int effectiveHeight)
+    {
+        int small = Even((double)effectiveHeight / height * width);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"[0:v]trim=end_frame=1,setpts=PTS-STARTPTS,split[a][b];[b]scale={small}:{effectiveHeight}:flags=bicubic,scale={width}:{height}:flags=bicubic[r];" +
+            $"[a]crop='min(iw,{CompareWidth})':'min(ih,{CompareHeight})'[c1];[r]crop='min(iw,{CompareWidth})':'min(ih,{CompareHeight})'[c2];[c1][c2]hstack[out]");
     }
 
     /// <summary>The frame strip's filter graph: first frame of each input, letterboxed, tiled in one row.</summary>

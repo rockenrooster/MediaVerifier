@@ -213,9 +213,10 @@ product's providers; it contains no detection logic of its own.
 - Integration job (`windows-latest`): fetch the bundle with `scripts/Get-FfmpegBundle.ps1` (cached with
   `actions/cache`, keyed by the lock file's SHA-256), install the tooling FFmpeg with
   `choco install ffmpeg-full --no-progress -y` pinned with `--version` (record the version in the
-  workflow), cache the generated fixtures keyed by generator and tooling versions, then run the
-  integration tests. Until the first bundle exists, set `MEDIAVERIFIER_FFMPEG_DIR` to the tooling
-  build.
+  workflow), cache the generated fixtures keyed by generator and tooling versions, then run every
+  test except `Perf`, `Fuzz` and `Calibration`. Tests that need FFmpeg skip themselves in the unit
+  job, and fixture tests need no trait, so a `Category=Integration` filter would leave them unrun.
+  Until the first bundle exists, set `MEDIAVERIFIER_FFMPEG_DIR` to the tooling build.
 - The release workflow runs unit tests before building.
 
 ## Tasks

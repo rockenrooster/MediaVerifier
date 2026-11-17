@@ -95,10 +95,12 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build MediaVerifier.sln -c Release
 
-      - name: Integration and system tests
+      # Every test except the slow and separate categories: tests that need FFmpeg skip themselves in the
+      # build job, and many fixture tests carry no category, so filtering on Integration would skip them.
+      - name: Tests with FFmpeg
         shell: pwsh
         env:
           # Path.GetTempPath() follows TMP, so the fixtures land in the cached folder.
           TMP: ${{ runner.temp }}
           TEMP: ${{ runner.temp }}
-        run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category=Integration|Category=System"
+        run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Perf&Category!=Fuzz&Category!=Calibration"

@@ -72,7 +72,7 @@ cd /ffbuild/ffmpeg
   --enable-bsf='*' \
   --enable-muxer='*' \
   --enable-encoder=wrapped_avframe,flac,alac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be,png,mjpeg,bmp \
-  --enable-filter=scale,crop,split,asplit,concat,trim,atrim,setpts,asetpts,null,anull,format,aformat,aresample,metadata,ametadata,ssim,psnr,siti,blockdetect,blurdetect,idet,yadif,bwdif,freezedetect,blackdetect,volumedetect,ebur128,astats,adeclip,adeclick,select,fps,pad,transpose,hflip,vflip,rotate,showinfo,fsync \
+  --enable-filter=scale,crop,split,asplit,concat,trim,atrim,setpts,asetpts,null,anull,format,aformat,aresample,metadata,ametadata,ssim,psnr,siti,blockdetect,blurdetect,idet,yadif,bwdif,freezedetect,blackdetect,volumedetect,ebur128,astats,adeclip,adeclick,volume,select,fps,pad,setsar,tile,hstack,transpose,hflip,vflip,rotate,showinfo,fsync \
   || { cat ffbuild/config.log; exit 1; }
 
 make -j"$(nproc)"
@@ -104,10 +104,13 @@ What each enabled encoder and filter is for:
 | `ssim`, `psnr`, `siti`, `blockdetect`, `blurdetect`, `scale`, `crop`, `split`, `concat`, `trim`, `setpts`, `metadata` | Upscale and artifact sampling (subplan 11) |
 | `idet`, `yadif`, `bwdif` | Interlace detection and deinterlacing before sampling |
 | `freezedetect`, `blackdetect`, `volumedetect` | Deep video checks |
-| `ebur128`, `astats`, `adeclip`, `adeclick`, `aresample`, `aformat` | Audio diagnostics and the de-clipped copy |
+| `ebur128`, `astats`, `adeclip`, `adeclick`, `volume`, `aresample`, `aformat` | Audio diagnostics and the de-clipped copy (`volume=-6dB,adeclip`) |
+| `setsar`, `tile`, `hstack` | The frame strip and the compare image in the details pane (`PictureRenderer`) |
 | `select`, `fps`, `pad`, `transpose`, `hflip`, `vflip`, `rotate`, `format`, `null`, `anull`, `asplit`, `atrim`, `asetpts`, `ametadata`, `showinfo` | Frame selection, orientation, plumbing and diagnostics |
 
-Adding a filter or encoder later is a one-line change here plus a new bundle release.
+Adding a filter or encoder later is a one-line change here plus a new bundle release. The unit test
+`BundleFilterTests` builds every filter graph the app passes to FFmpeg and fails when one uses a filter
+missing from the script's list.
 
 ## Output and packaging
 
