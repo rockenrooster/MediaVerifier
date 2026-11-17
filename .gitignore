@@ -42,3 +42,6 @@ Thumbs.db
 [Dd]esktop.ini
 .codegraph/
 .claude/settings.local.json
+
+# FFmpeg bundle extracted by scripts/Get-FfmpegBundle.ps1 (subplan 17)
+deps/ffmpeg/bin/

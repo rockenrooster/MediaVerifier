@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, for example v0.1.0.2"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+\.\d+$') {
+            throw "Tag must look like v0.1.0.2"
+          }
+          "TAG=$tag" >> $env:GITHUB_ENV
+          "VERSION=$($tag.Substring(1))" >> $env:GITHUB_ENV
+
+      - name: Build artifact
+        shell: pwsh
+        env:
+          MEDIAVERIFIER_UPDATE_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.MEDIAVERIFIER_UPDATE_SIGNING_PRIVATE_KEY_PEM }}
+        run: .\build.ps1 -Version $env:VERSION -NoIncrement
+
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+
+          $notes = $null
+          if (Test-Path CHANGELOG.md) {
+            $content = Get-Content CHANGELOG.md -Raw
+            foreach ($heading in @($env:VERSION, $env:TAG)) {
+              $section = [regex]::Match($content, "(?ms)^## $([regex]::Escape($heading))\b[^`r`n]*\r?\n(.*?)(?=^## |\z)")
+              if ($section.Success -and $section.Groups[1].Value.Trim()) {
+                $notes = $section.Groups[1].Value.Trim()
+                break
+              }
+            }
+          }
+
+          if ($notes) {
+            Write-Host "Using CHANGELOG.md notes for $env:TAG"
+            Set-Content $notesPath -Value $notes -Encoding utf8NoBOM
+          }
+          else {
+            Write-Host "No CHANGELOG.md section for $env:TAG; using generated notes"
+            gh api "repos/$repo/releases/generate-notes" -f tag_name=$env:TAG -q .body | Set-Content $notesPath -Encoding utf8NoBOM
+          }
+
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $env:TAG --notes-file $notesPath
+            gh release upload $env:TAG artifacts\MediaVerifier-portable.zip artifacts\MediaVerifier-portable.zip.sha256 artifacts\MediaVerifier-Setup.exe artifacts\MediaVerifier-Setup.exe.sha256 artifacts\MediaVerifier-Setup.exe.manifest.json artifacts\MediaVerifier-Setup.exe.manifest.sig --clobber
+          }
+          else {
+            gh release create $env:TAG artifacts\MediaVerifier-portable.zip artifacts\MediaVerifier-portable.zip.sha256 artifacts\MediaVerifier-Setup.exe artifacts\MediaVerifier-Setup.exe.sha256 artifacts\MediaVerifier-Setup.exe.manifest.json artifacts\MediaVerifier-Setup.exe.manifest.sig --verify-tag --title $env:TAG --notes-file $notesPath
+          }

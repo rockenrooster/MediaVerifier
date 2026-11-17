@@ -679,6 +679,9 @@ internal static class Strings
         public const string StartWithWindows = "Start with Windows";
         public const string StartWithWindowsHelper = "Starts hidden in the notification area";
         public const string KeepRunning = "Keep running in the notification area when closed";
+        public const string CheckNowLabel = "Check for a new version";
+        public const string UpdateAvailableTitle = "Install version {0}?";
+        public const string UpdateInstallText = "The verified installer is downloaded and started. MediaVerifier closes while it installs and opens again afterwards.";
         public const string DefaultDepth = "Default scan depth";
         public const string AskLarge = "Ask before large scans";
         public const string AskLargeHelper = "Shows the estimated time first";

@@ -84,6 +84,7 @@ internal sealed class SettingsPage : PageBase
             [
                 Info(string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText), Strings.Settings.NotChecked),
                 Toggle(Strings.Settings.CheckOnStart, null, () => State.Settings.CheckForUpdatesOnStartup, v => State.Settings.CheckForUpdatesOnStartup = v),
+                Button(Strings.Settings.CheckNowLabel, null, Strings.Settings.CheckNow, () => _ = CheckForUpdatesAsync()),
             ]),
             Section(Strings.Settings.Advanced, Strings.Settings.AdvancedIntro,
             [
@@ -224,6 +225,43 @@ internal sealed class SettingsPage : PageBase
             Save();
         };
         return new SettingRow(label, helper, drop, null);
+    }
+
+    /// <summary>
+    /// Checks the signed release (subplan 14); when a newer verified installer exists, asks, downloads it
+    /// (size and hash checked) and starts it silently. Fails closed: an unverified manifest only reports.
+    /// </summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        if (Services.IsDemo || FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        using Core.Updates.UpdateService updates = new();
+        Core.Updates.UpdateCheckResult result = await updates.CheckAsync().ConfigureAwait(true);
+        if (!result.CanDownload)
+        {
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.None, Strings.Settings.Updates, result.Message));
+            return;
+        }
+
+        string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText);
+        if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+        {
+            return;
+        }
+
+        try
+        {
+            string setup = await updates.DownloadInstallerAsync().ConfigureAwait(true);
+            updates.InstallDownloadedUpdate(setup);
+            owner.Close();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or HttpRequestException or System.Security.Cryptography.CryptographicException)
+        {
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.High, Strings.Settings.Updates, ex.Message));
+        }
     }
 
     private static SettingRow Button(string label, string? helper, string text, Action click)

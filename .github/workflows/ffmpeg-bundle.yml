@@ -1,0 +1,138 @@
+# Builds the LGPL FFmpeg bundle (subplan 17, task FFB-04): compile in the pinned BtbN image, package only
+# what the app uses with bundle.json, verify on Windows, publish a pre-release with the exact source and
+# build script, and open a pull request that updates deps/ffmpeg/bundle.lock.json.
+name: ffmpeg-bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: FFmpeg version
+        required: true
+        default: "9.0.2"
+      revision:
+        description: Bundle revision (mv<n>)
+        required: true
+        default: "1"
+      image:
+        description: Build image (pin by digest)
+        required: true
+        default: "ghcr.io/btbn/ffmpeg-builds/win64-lgpl-shared-9.0:latest"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  VERSION: ${{ inputs.version }}
+  TAG: ffmpeg-bundle-${{ inputs.version }}-mv${{ inputs.revision }}
+  ASSET: mediaverifier-ffmpeg-${{ inputs.version }}-mv${{ inputs.revision }}-win64.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and mirror the source
+        run: |
+          curl -fsSL -o "ffmpeg-$VERSION-source.tar.gz" "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.gz"
+          sha256sum "ffmpeg-$VERSION-source.tar.gz" | cut -d' ' -f1 > source.sha256
+          mkdir -p work/ffmpeg && tar -xzf "ffmpeg-$VERSION-source.tar.gz" -C work/ffmpeg --strip-components=1
+      - name: Build in the pinned image
+        run: |
+          docker pull "${{ inputs.image }}"
+          docker inspect --format '{{index .RepoDigests 0}}' "${{ inputs.image }}" > image.digest
+          docker run --rm -v "$PWD/work:/ffbuild" -v "$PWD/deps/ffmpeg/build-ffmpeg.sh:/build-ffmpeg.sh:ro" "${{ inputs.image }}" bash /build-ffmpeg.sh
+      - name: Package
+        run: |
+          mkdir -p bundle
+          cp work/prefix/bin/ffmpeg.exe work/prefix/bin/ffprobe.exe work/prefix/bin/*.dll bundle/
+          cp work/ffmpeg/COPYING.LGPLv2.1 bundle/LICENSE.txt
+          echo "See the bundle release for the source of every library linked into these DLLs." > bundle/THIRD-PARTY.txt
+          python3 - <<'PY'
+          import hashlib, json, os, datetime
+          files = {f: hashlib.sha256(open(os.path.join('bundle', f), 'rb').read()).hexdigest() for f in sorted(os.listdir('bundle'))}
+          bundle = {
+              "schemaVersion": 1,
+              "ffmpegVersion": os.environ["VERSION"],
+              "extraVersion": "mediaverifier-${{ inputs.revision }}",
+              "licence": "LGPL-2.1-or-later",
+              "sourceArchive": f"ffmpeg-{os.environ['VERSION']}-source.tar.gz",
+              "sourceSha256": open('source.sha256').read().strip(),
+              "buildImage": open('image.digest').read().strip(),
+              "files": files,
+              "builtUtc": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+          }
+          json.dump(bundle, open('bundle/bundle.json', 'w'), indent=2)
+          PY
+          (cd bundle && zip -9 -r "../$ASSET" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: |
+            ${{ env.ASSET }}
+            ffmpeg-${{ inputs.version }}-source.tar.gz
+            source.sha256
+            image.digest
+
+  verify:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+      - name: Verify the bundle on Windows
+        shell: pwsh
+        run: |
+          Expand-Archive $env:ASSET -DestinationPath bin
+          $bundle = Get-Content bin\bundle.json -Raw | ConvertFrom-Json
+          foreach ($f in $bundle.files.PSObject.Properties) {
+            if ((Get-FileHash "bin\$($f.Name)" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $f.Value) { throw "Hash mismatch: $($f.Name)" }
+          }
+          $conf = & bin\ffmpeg.exe -hide_banner -buildconf | Out-String
+          if ($conf -match '--enable-network') { throw "The bundle must not enable networking." }
+          $filters = & bin\ffmpeg.exe -hide_banner -filters | Out-String
+          foreach ($name in @('ssim','siti','blockdetect','blurdetect','idet','yadif','freezedetect','blackdetect','volumedetect','ebur128','astats','adeclip')) {
+            if ($filters -notmatch "\s$name\s") { throw "Missing filter: $name" }
+          }
+          & bin\ffprobe.exe -hide_banner -version | Select-Object -First 1
+          $size = (Get-ChildItem bin -Recurse | Measure-Object Length -Sum).Sum
+          if ($size -gt 60MB) { throw "The bundle is $size bytes; the budget is 60 MB." }
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" "$ASSET" "ffmpeg-$VERSION-source.tar.gz" deps/ffmpeg/build-ffmpeg.sh --prerelease --title "$TAG" --notes "FFmpeg $VERSION (LGPL), built for MediaVerifier. The complete source and the build script are attached."
+      - name: Open the lock-file pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          size=$(stat -c%s "$ASSET")
+          sha=$(sha256sum "$ASSET" | cut -d' ' -f1)
+          digest=$(cut -d@ -f2 image.digest)
+          cat > deps/ffmpeg/bundle.lock.json <<EOF
+          {
+            "release": "$TAG",
+            "asset": "$ASSET",
+            "sha256": "$sha",
+            "sizeBytes": $size,
+            "ffmpegVersion": "$VERSION",
+            "sourceSha256": "$(cat source.sha256)",
+            "buildImageDigest": "$digest"
+          }
+          EOF
+          git checkout -b "bundle/$TAG"
+          git add deps/ffmpeg/bundle.lock.json
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -m "FFB-04: use FFmpeg bundle $TAG"
+          git push origin "bundle/$TAG"
+          gh pr create --title "Use FFmpeg bundle $TAG" --body "Updates deps/ffmpeg/bundle.lock.json to the verified bundle $TAG."
