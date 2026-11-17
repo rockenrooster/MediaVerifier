@@ -53,6 +53,8 @@ All notable changes to MediaVerifier are documented here.
 - Video checks: interlacing marked wrongly (combing), a picture that stands still, long black sections
   (off by default) and a silent soundtrack.
 - Fixed: a video with black frames could fail to be analysed.
+- Fixed: files in folders whose names end in a space or a dot (common on copies from a NAS, macOS
+  or Linux) were skipped by scans.
 - Video and photo quality checks: videos and photos enlarged from a smaller source, videos with too
   little bitrate for their resolution, heavy block artifacts, high bitrates on weak pictures, HDR
   marked on 8-bit video, heavily compressed JPEGs and (off by default) low-resolution photos.

@@ -146,7 +146,8 @@ public sealed class FfRunner : IDisposable
 
         foreach (string arg in request.Arguments)
         {
-            start.ArgumentList.Add(arg);
+            // Media paths whose folders end in a space or a dot only open in the \\?\ form (task T-12).
+            start.ArgumentList.Add(Engine.ExtendedPath.ForArgument(arg));
         }
 
         Stopwatch wall = Stopwatch.StartNew();

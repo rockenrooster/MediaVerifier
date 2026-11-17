@@ -46,7 +46,7 @@ public sealed class WindowsFileSystem : IMediaFileSystem
 
     public IEnumerable<FsEntry> EnumerateDirectory(string path) =>
         new FileSystemEnumerable<FsEntry>(
-            path,
+            ExtendedPath.For(path),
             (ref FileSystemEntry entry) => new FsEntry(
                 entry.FileName.ToString(),
                 entry.IsDirectory,
@@ -55,12 +55,13 @@ public sealed class WindowsFileSystem : IMediaFileSystem
                 entry.Attributes),
             Options);
 
-    public bool DirectoryExists(string path) => Directory.Exists(path);
+    public bool DirectoryExists(string path) => Directory.Exists(ExtendedPath.For(path));
 
-    public bool FileExists(string path) => File.Exists(path);
+    public bool FileExists(string path) => File.Exists(ExtendedPath.For(path));
 
     public FileStat? Stat(string path)
     {
+        path = ExtendedPath.For(path);
         try
         {
             using SafeFileHandle handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, FileOptions.None);
@@ -96,7 +97,7 @@ public sealed class WindowsFileSystem : IMediaFileSystem
     }
 
     public Stream OpenRead(string path, int bufferSize = 4096, bool sequential = true) =>
-        new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize, sequential ? FileOptions.SequentialScan : FileOptions.RandomAccess);
+        new FileStream(ExtendedPath.For(path), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize, sequential ? FileOptions.SequentialScan : FileOptions.RandomAccess);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ByHandleFileInformation

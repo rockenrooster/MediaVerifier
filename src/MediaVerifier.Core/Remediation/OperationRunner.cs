@@ -115,7 +115,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(file);
-        return Path.Combine(root.Path, QuarantineFolder, operationId.ToString(CultureInfo.InvariantCulture), file.RelDir ?? string.Empty, file.Name);
+        return ExtendedPath.For(Path.Combine(root.Path, QuarantineFolder, operationId.ToString(CultureInfo.InvariantCulture), file.RelDir ?? string.Empty, file.Name));
     }
 
     /// <summary>Preconditions of step 1; null when the action can run, else the reason.</summary>
@@ -189,7 +189,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
             return new OperationOutcome(0, fileId, OperationStatus.Failed, CoreStrings.Remediation.Missing, null);
         }
 
-        string source = HealthyCopyFinder.FullPath(root, file);
+        string source = ExtendedPath.For(HealthyCopyFinder.FullPath(root, file));
         string? precondition = CheckPreconditions(file, root, action, file.Size);
         long operationId = await database.Journal.AddAsync(
             new OperationRecord { BatchId = batchId, Utc = clock.UtcNow.UtcTicks, ActionId = action.Id, FileId = file.Id, Status = precondition is null ? OperationStatus.Running : OperationStatus.Failed, SourcePath = source, DetailJson = precondition },

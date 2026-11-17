@@ -102,7 +102,7 @@ public sealed class RestoreCopyAction(IMediaFileSystem fileSystem) : IRemediatio
         {
             if (await finder.VerifyAsync(candidate, baseline, token).ConfigureAwait(false))
             {
-                File.Copy(candidate.FullPath, context.TempPath, overwrite: false);
+                File.Copy(ExtendedPath.For(candidate.FullPath), context.TempPath, overwrite: false);
                 context.Detail["copiedFrom"] = candidate.FullPath;
                 return;
             }
