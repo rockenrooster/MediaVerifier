@@ -346,7 +346,7 @@ internal sealed class AddFolderDialog : KitDialog
                 string.Format(CultureInfo.CurrentCulture, Strings.Library.AddedToast, name),
                 waiting,
                 Strings.Library.ScanNow,
-                () => _ = ScanNewRootAsync(path, name)));
+                () => UiTask.Run(ScanNewRootAsync(path, name))));
         }
     }
 

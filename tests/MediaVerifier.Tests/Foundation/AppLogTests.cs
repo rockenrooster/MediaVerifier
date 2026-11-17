@@ -76,7 +76,7 @@ public sealed class AppLogTests
         }
         finally
         {
-            ErrorLog.Configure(TestLogs.Directory);
+            ErrorLog.Configure(TestEnvironment.ErrorLogDirectory);
         }
     }
 }

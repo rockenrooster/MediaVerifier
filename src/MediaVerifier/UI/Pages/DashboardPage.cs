@@ -60,7 +60,7 @@ internal sealed class DashboardPage : PageBase
         string command = item.ActionId;
         if (command.StartsWith("fix:", StringComparison.Ordinal) && item.FileIds is { Count: > 0 } files)
         {
-            _ = FixAllAsync(files, command[4..]);
+            UiTask.Run(FixAllAsync(files, command[4..]));
             return;
         }
 
@@ -69,12 +69,12 @@ internal sealed class DashboardPage : PageBase
             case "scan":
                 if (FindForm() is Form owner)
                 {
-                    _ = ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null);
+                    UiTask.Run(ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null));
                 }
 
                 break;
             case "verify":
-                _ = VerifyAllAsync();
+                UiTask.Run(VerifyAllAsync());
                 break;
             case "add-folder":
                 Services.Navigate?.Invoke(PageId.Library, new AddFolderRequest(null));

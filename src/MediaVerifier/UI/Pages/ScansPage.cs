@@ -70,7 +70,7 @@ internal sealed class ScansPage : PageBase
     {
         if (FindForm() is Form owner)
         {
-            _ = ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null);
+            UiTask.Run(ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null));
         }
     }
 
@@ -94,7 +94,7 @@ internal sealed class ScansPage : PageBase
     {
         if (request is ScanRunRequest run)
         {
-            _ = ShowRunAsync(run.RunId);
+            UiTask.Run(ShowRunAsync(run.RunId));
         }
     }
 
@@ -140,7 +140,7 @@ internal sealed class ScansPage : PageBase
     {
         if (_data?.Interrupted is RunInfo run)
         {
-            _ = Services.StartScanAsync([.. Services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id))], run.Depth, run.Folders);
+            UiTask.Run(Services.StartScanAsync([.. Services.Database.Roots.List().Where(r => r.Role == RootRole.Library && r.Enabled).Select(r => new ScanScope(r.Id))], run.Depth, run.Folders));
             _interrupted.Visible = false;
             PerformLayout();
         }

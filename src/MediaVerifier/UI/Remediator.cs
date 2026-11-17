@@ -214,7 +214,7 @@ internal static class Remediator
             }
 
             bool undoable = action.Class is not (ActionClass.Meta or ActionClass.Recycle);
-            services.ShowToast?.Invoke(new ToastContent(Severity.None, title, string.Join(Strings.Separator, detail), undoable ? Strings.Dialogs.Undo : null, undoable ? () => _ = UndoBatchAsync(services, batch) : null));
+            services.ShowToast?.Invoke(new ToastContent(Severity.None, title, string.Join(Strings.Separator, detail), undoable ? Strings.Dialogs.Undo : null, undoable ? () => UiTask.Run(UndoBatchAsync(services, batch)) : null));
         }
 
         if (failed.Count > 0)

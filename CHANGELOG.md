@@ -14,6 +14,11 @@ All notable changes to MediaVerifier are documented here.
 - Add folder and Create report stay open until the folder is saved or the report written, and a
   failure is shown; before, they closed at once as if it had worked. Create report says when the
   folder to save to does not exist, and a message listing changed files shows the whole list.
+- Schedules: when Windows will not accept a schedule, the editor stays open and says why, and the
+  schedule is saved switched off; switching on a schedule that Windows refuses says why in a toast.
+  Before, the schedule looked saved but never ran.
+- An action that fails (a button, a menu item, a toast's action) now shows `Something went wrong`
+  and writes the details to the error log, instead of doing nothing.
 
 ## 0.1.0.2 - 2026-11-17
 

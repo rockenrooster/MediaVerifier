@@ -217,7 +217,7 @@ internal sealed class MainForm : Form
             BeginInvoke(() => OpenActivation(link));
         }
 
-        _ = StartupUpdateCheckAsync();
+        UI.UiTask.Run(StartupUpdateCheckAsync());
     }
 
     /// <summary>
@@ -332,7 +332,7 @@ internal sealed class MainForm : Form
                 SetDrawerContent(null);
                 return true;
             case Keys.Control | Keys.Z when !IsTextInput(FromChildHandle(msg.HWnd)):
-                _ = UI.Remediator.UndoLatestAsync(_services);
+                UI.UiTask.Run(UI.Remediator.UndoLatestAsync(_services));
                 return true;
         }
 
@@ -479,7 +479,7 @@ internal sealed class MainForm : Form
                 break;
             case IpcMessage.RunPlan when message.PlanId is long planId:
                 _state.Log.Info($"Plan {planId} was forwarded by a scheduled launch");
-                _ = GuiPlanRunner.RunAsync(_services, planId, () => !IsDisposed && ActiveForm == this, ShowRunNotification);
+                UI.UiTask.Run(GuiPlanRunner.RunAsync(_services, planId, () => !IsDisposed && ActiveForm == this, ShowRunNotification));
                 break;
         }
     }

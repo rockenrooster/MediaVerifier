@@ -860,14 +860,14 @@ internal sealed class FileDetailView : KitControl
         CancellationToken token = _pictureCancel.Token;
         if (ThumbnailLoader is { } thumbnails)
         {
-            _ = LoadPictureAsync(detail, () => thumbnails(detail, token), image => _thumbnail = image, token);
+            UiTask.Run(LoadPictureAsync(detail, () => thumbnails(detail, token), image => _thumbnail = image, token));
         }
 
         FindingDetail? finding = detail.Findings.FirstOrDefault(f => f.View == EvidenceView.FrameStrip);
         _stripCount = finding is null ? 0 : Math.Max(1, UI.Data.LiveUiData.FrameTimes(finding.Evidence).Length);
         if (StripLoader is { } strips && finding is not null)
         {
-            _ = LoadPictureAsync(detail, () => strips(detail, finding, token), image => _strip = image, token);
+            UiTask.Run(LoadPictureAsync(detail, () => strips(detail, finding, token), image => _strip = image, token));
         }
     }
 
@@ -930,11 +930,11 @@ internal sealed class FileDetailView : KitControl
         double time = index < times.Length ? times[index] : 0;
         CancellationToken token = _pictureCancel.Token;
         _compareLoading = true;
-        _ = LoadPictureAsync(detail, () => compare(detail, finding, time, token), image =>
+        UiTask.Run(LoadPictureAsync(detail, () => compare(detail, finding, time, token), image =>
         {
             _compare = image;
             _compareLoading = false;
-        }, token);
+        }, token));
     }
 
     private int CompareHeight() => (int)Math.Round((Width - S(2 * Pad) - S(24)) * (double)Core.Analysis.PictureRenderer.CompareHeight / Core.Analysis.PictureRenderer.CompareWidth);

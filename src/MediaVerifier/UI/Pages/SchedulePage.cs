@@ -31,7 +31,7 @@ internal sealed class SchedulePage : PageBase
     public SchedulePage(UiServices services)
         : base(services)
     {
-        _new.Click += (_, _) => _ = EditAsync(null);
+        _new.Click += (_, _) => UiTask.Run(EditAsync(null));
         _scrubDays.ValueChanged += (_, _) => SaveVerification();
         _budget.ValueChanged += (_, _) => SaveVerification();
         Controls.AddRange([_new, _empty, _scrubDays, _budget, _pass]);
@@ -74,10 +74,9 @@ internal sealed class SchedulePage : PageBase
             KitButton run = new() { Kind = ButtonKind.Secondary, Text = Strings.Schedule.RunNow };
             KitButton edit = new() { Kind = ButtonKind.Secondary, Text = Strings.Schedule.Edit };
             IconButton more = new() { Icon = IconName.More, ToolTipText = Strings.Kit.MoreActions };
-            long id = plan.Id;
-            toggle.CheckedChanged += (_, _) => _ = SetEnabledAsync(id, toggle.Checked);
-            run.Click += (_, _) => _ = RunNowAsync(plan);
-            edit.Click += (_, _) => _ = EditAsync(plan);
+            toggle.CheckedChanged += (_, _) => UiTask.Run(SetEnabledAsync(plan, toggle.Checked));
+            run.Click += (_, _) => UiTask.Run(RunNowAsync(plan));
+            edit.Click += (_, _) => UiTask.Run(EditAsync(plan));
             more.Click += (_, _) => ShowMoreMenu(plan, more);
             _rows.Add((toggle, run, edit, more));
             Controls.AddRange([toggle, run, edit, more]);
@@ -235,15 +234,73 @@ internal sealed class SchedulePage : PageBase
 
         List<RootRecord> roots = await Task.Run(Services.Database.Roots.List).ConfigureAwait(true);
         PlanDefinition start = plan?.Definition ?? PlanDefinition.Templates[1].Definition;
-        if (ScheduleEditorDialog.Ask(owner, plan?.Name ?? Strings.Schedule.Weekly, start, roots, DateOnly.FromDateTime(DateTime.Now), plan is not null) is not (string name, PlanDefinition edited))
-        {
-            return;
-        }
 
+        // Each Save of the open editor stores the same plan: the first one of a new plan creates it.
+        long? planId = plan?.Id;
+        bool enabled = plan?.Enabled ?? true;
+        _ = ScheduleEditorDialog.Ask(owner, plan?.Name ?? Strings.Schedule.Weekly, start, roots, DateOnly.FromDateTime(DateTime.Now), plan is not null, async (name, edited) =>
+        {
+            (long id, string? refused) = await StorePlanAsync(planId, name, edited, enabled).ConfigureAwait(true);
+            planId = id;
+            return refused;
+        });
+        Reload();
+    }
+
+    /// <summary>
+    /// Stores a plan and brings the scheduled tasks up to date. When Windows refuses the task, the plan is stored
+    /// switched off and Windows' message is returned (subplan 09, Schedule).
+    /// </summary>
+    private async Task<(long Id, string? Refused)> StorePlanAsync(long? id, string name, PlanDefinition definition, bool enabled)
+    {
+        Database database = Services.Database;
         long now = Services.Clock.UtcNow.UtcTicks;
-        await ChangePlansAsync(db => plan is not null && db.Plans.Get(plan.Id) is PlanRecord record
-            ? db.Plans.UpdateAsync(record with { Name = name, DefinitionJson = edited.ToJson(), UpdatedUtc = now })
-            : db.Plans.AddAsync(new PlanRecord { Name = name, DefinitionJson = edited.ToJson(), CreatedUtc = now, UpdatedUtc = now })).ConfigureAwait(true);
+        return await Task.Run(async () =>
+        {
+            long planId;
+            if (id is long existing && database.Plans.Get(existing) is PlanRecord record)
+            {
+                planId = existing;
+                await database.Plans.UpdateAsync(record with { Name = name, DefinitionJson = definition.ToJson(), Enabled = enabled, UpdatedUtc = now }).ConfigureAwait(false);
+            }
+            else
+            {
+                planId = await database.Plans.AddAsync(new PlanRecord { Name = name, Enabled = enabled, DefinitionJson = definition.ToJson(), CreatedUtc = now, UpdatedUtc = now }).ConfigureAwait(false);
+            }
+
+            string? refused = await RegisterAsync(database).ConfigureAwait(false);
+            if (refused is not null && enabled)
+            {
+                await SwitchOffAsync(database, planId, now).ConfigureAwait(false);
+            }
+
+            return (planId, refused);
+        }).ConfigureAwait(true);
+    }
+
+    /// <summary>Makes the scheduled tasks match the plans; Windows' message when it refused, otherwise null.</summary>
+    private async Task<string?> RegisterAsync(Database database)
+    {
+        try
+        {
+            await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            State.Log.Warning("Windows would not accept the scheduled tasks", ex);
+            return ex.Message;
+        }
+    }
+
+    /// <summary>A plan whose task Windows refused stays switched off; its task, if one is left, goes.</summary>
+    private async Task SwitchOffAsync(Database database, long planId, long now)
+    {
+        if (database.Plans.Get(planId) is PlanRecord record)
+        {
+            await database.Plans.UpdateAsync(record with { Enabled = false, UpdatedUtc = now }).ConfigureAwait(false);
+            _ = await RegisterAsync(database).ConfigureAwait(false);
+        }
     }
 
     private void ShowMoreMenu(PlanRow plan, Control anchor)
@@ -253,7 +310,7 @@ internal sealed class SchedulePage : PageBase
         {
             if (item.Tag is "delete")
             {
-                _ = ChangePlansAsync(db => db.Plans.RemoveAsync(plan.Id));
+                UiTask.Run(ChangePlansAsync(db => db.Plans.RemoveAsync(plan.Id)));
             }
         });
     }
@@ -261,13 +318,46 @@ internal sealed class SchedulePage : PageBase
     private Task AddPlanAsync(string name, PlanDefinition definition) =>
         ChangePlansAsync(db => db.Plans.AddAsync(new PlanRecord { Name = name, DefinitionJson = definition.ToJson(), CreatedUtc = Services.Clock.UtcNow.UtcTicks, UpdatedUtc = Services.Clock.UtcNow.UtcTicks }));
 
-    private Task SetEnabledAsync(long planId, bool enabled) =>
-        ChangePlansAsync(db => db.Plans.Get(planId) is PlanRecord plan ? db.Plans.UpdateAsync(plan with { Enabled = enabled, UpdatedUtc = Services.Clock.UtcNow.UtcTicks }) : Task.CompletedTask);
+    /// <summary>The plan's switch; when Windows refuses the task, the plan stays switched off and a toast says why.</summary>
+    private async Task SetEnabledAsync(PlanRow plan, bool enabled)
+    {
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
+        Database database = Services.Database;
+        long now = Services.Clock.UtcNow.UtcTicks;
+        string? refused = await Task.Run(async () =>
+        {
+            if (database.Plans.Get(plan.Id) is not PlanRecord record)
+            {
+                return null;
+            }
+
+            await database.Plans.UpdateAsync(record with { Enabled = enabled, UpdatedUtc = now }).ConfigureAwait(false);
+            string? message = await RegisterAsync(database).ConfigureAwait(false);
+            if (message is null || !enabled)
+            {
+                return null;
+            }
+
+            await SwitchOffAsync(database, plan.Id, now).ConfigureAwait(false);
+            return message;
+        }).ConfigureAwait(true);
+        if (refused is not null)
+        {
+            Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, plan.Name, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused)));
+        }
+
+        Reload();
+    }
 
     private Task SaveDefinitionAsync(long planId, PlanDefinition definition) =>
         ChangePlansAsync(db => db.Plans.Get(planId) is PlanRecord plan ? db.Plans.UpdateAsync(plan with { DefinitionJson = definition.ToJson(), UpdatedUtc = Services.Clock.UtcNow.UtcTicks }) : Task.CompletedTask);
 
     /// <summary>Writes off the UI thread, makes the scheduled tasks match, then reloads.</summary>
+    /// <summary>Deletes a plan; a task Windows would not remove is retried at the next start (and never runs a scan).</summary>
     private async Task ChangePlansAsync(Func<Database, Task> change)
     {
         if (Services.IsDemo)
@@ -275,19 +365,12 @@ internal sealed class SchedulePage : PageBase
             return;
         }
 
-        try
+        Database database = Services.Database;
+        await Task.Run(async () =>
         {
-            await Task.Run(async () =>
-            {
-                await change(Services.Database).ConfigureAwait(false);
-                await PlanHost.ReconcileAsync(Services.Database).ConfigureAwait(false);
-            }).ConfigureAwait(true);
-        }
-        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            State.Log.Warning("Scheduled tasks could not be updated", ex);
-        }
-
+            await change(database).ConfigureAwait(false);
+            _ = await RegisterAsync(database).ConfigureAwait(false);
+        }).ConfigureAwait(true);
         Reload();
     }
 

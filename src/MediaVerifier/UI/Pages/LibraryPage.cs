@@ -161,7 +161,7 @@ internal sealed class LibraryPage : PageBase
 
         if (missing.Count > 0)
         {
-            _ = LoadRowsAsync(missing);
+            UiTask.Run(LoadRowsAsync(missing));
         }
     }
 
@@ -504,10 +504,10 @@ internal sealed class LibraryPage : PageBase
                     OpenDetails(index);
                     break;
                 case "scan":
-                    _ = ScanFilesAsync([row], verify: false);
+                    UiTask.Run(ScanFilesAsync([row], verify: false));
                     break;
                 case "verify":
-                    _ = ScanFilesAsync([row], verify: true);
+                    UiTask.Run(ScanFilesAsync([row], verify: true));
                     break;
                 case "show":
                     ShellActions.ShowInFolder(PathOf(row));
@@ -525,7 +525,7 @@ internal sealed class LibraryPage : PageBase
         switch (e.KeyCode)
         {
             case Keys.F5 when e.Shift && row is not null:
-                _ = ScanFilesAsync([row], verify: false);
+                UiTask.Run(ScanFilesAsync([row], verify: false));
                 e.Handled = true;
                 break;
             case Keys.Enter when e.Alt && row is not null:
@@ -575,10 +575,10 @@ internal sealed class LibraryPage : PageBase
             switch (item.Tag)
             {
                 case "scan":
-                    _ = Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], State.Settings.Scanning.DefaultDepth, folder.Name);
+                    UiTask.Run(Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], State.Settings.Scanning.DefaultDepth, folder.Name));
                     break;
                 case "verify":
-                    _ = Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], ScanDepth.Quick, folder.Name, new ScanOptions { VerifyOnly = true, VerifyEverything = true });
+                    UiTask.Run(Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], ScanDepth.Quick, folder.Name, new ScanOptions { VerifyOnly = true, VerifyEverything = true }));
                     break;
                 case "show":
                     string? root = _library?.Folders.FirstOrDefault(f => f.RootId == folder.RootId)?.Path;
@@ -613,19 +613,26 @@ internal sealed class LibraryPage : PageBase
             return;
         }
 
-        _ = AddFolderDialog.ShowAsync(owner, Services, null, path).ContinueWith(_ => Reload(), TaskScheduler.FromCurrentSynchronizationContext());
+        UiTask.Run(ShowFolderDialogAsync(owner, null, path));
     }
 
     internal void EditFolder(FolderCard card)
     {
         if (FindForm() is Form owner)
         {
-            _ = AddFolderDialog.ShowAsync(owner, Services, card.RootId, null).ContinueWith(_ => Reload(), TaskScheduler.FromCurrentSynchronizationContext());
+            UiTask.Run(ShowFolderDialogAsync(owner, card.RootId, null));
         }
     }
 
+    /// <summary>Add folder or Edit folder; the page then shows what changed.</summary>
+    private async Task ShowFolderDialogAsync(Form owner, long? rootId, string? path)
+    {
+        await AddFolderDialog.ShowAsync(owner, Services, rootId, path).ConfigureAwait(true);
+        Reload();
+    }
+
     internal void ScanFolder(FolderCard card, bool verify) =>
-        _ = Services.StartScanAsync([new ScanScope(card.RootId)], verify ? ScanDepth.Quick : State.Settings.Scanning.DefaultDepth, card.Name, verify ? new ScanOptions { VerifyOnly = true, VerifyEverything = true } : null);
+        UiTask.Run(Services.StartScanAsync([new ScanScope(card.RootId)], verify ? ScanDepth.Quick : State.Settings.Scanning.DefaultDepth, card.Name, verify ? new ScanOptions { VerifyOnly = true, VerifyEverything = true } : null));
 
     internal void BrowseFolder(FolderCard card) => HandleRequest(new LibraryBrowseRequest(card.RootId, null));
 

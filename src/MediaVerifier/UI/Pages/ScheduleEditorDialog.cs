@@ -10,10 +10,13 @@ namespace MediaVerifier.UI.Pages;
 
 /// <summary>
 /// The plan editor (subplan 09, Schedule; reference <c>schedule-edit</c>; task SCH-07): name, folders, depth, repeat,
-/// days or interval, time, time limit, conditions and a live summary with the next run from the calculator.
+/// days or interval, time, time limit, conditions and a live summary with the next run from the calculator. Save
+/// stores the plan and registers it with Windows while the editor is open; when Windows refuses the task, the plan is
+/// saved switched off and a Critical info bar above the buttons says why.
 /// </summary>
 internal sealed class ScheduleEditorDialog : KitDialog
 {
+    private const int FormHeight = 507;
     private static readonly int?[] Limits = [null, 30, 60, 120, 240, 480];
     private static readonly DayOfWeek[] Week = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
     private readonly IReadOnlyList<RootRecord> _roots;
@@ -28,14 +31,17 @@ internal sealed class ScheduleEditorDialog : KitDialog
     private readonly KitCheckBox _plugged = new() { Text = Strings.Schedule.PluggedIn, TabIndex = 14 };
     private readonly KitCheckBox _fullScreen = new() { Text = Strings.Schedule.WaitFullScreen, TabIndex = 15 };
     private readonly KitCheckBox _wake = new() { Text = Strings.Schedule.Wake, TabIndex = 16 };
+    private readonly InfoBar _refused = new() { Tier = Severity.Critical, Visible = false, TabIndex = 17 };
     private readonly KitButton _save;
     private readonly DateOnly _anchor;
+    private readonly Func<string, PlanDefinition, Task<string?>>? _store;
 
-    private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing)
+    private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>>? store)
         : base(editing ? Strings.Schedule.EditSchedule : Strings.Schedule.NewSchedule, DialogWidth.Form, closeButton: true)
     {
         _roots = roots;
         _anchor = anchor;
+        _store = store;
         CloseToolTip = Strings.Kit.CloseEsc;
         _name.Text = name;
         foreach (string folder in new[] { Strings.Schedule.AllFolders }.Concat(roots.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))))
@@ -87,11 +93,14 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _number.ValueChanged += (_, _) => Changed();
         _time.TextChanged += (_, _) => Changed();
         _limit.SelectedIndexChanged += (_, _) => Changed();
-        Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake]);
+        Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake, _refused]);
         Body.Paint += (_, e) => PaintBody(e.Graphics);
         AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
-        _save = AddButton(Strings.Kit.Save, ButtonKind.Primary, DialogResult.OK);
-        BodyHeight = 507;
+        _save = AddButton(Strings.Kit.Save, ButtonKind.Primary, DialogResult.None);
+
+        // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
+        _save.Click += async (_, _) => await SaveAsync().ConfigureAwait(true);
+        BodyHeight = FormHeight;
         Changed();
     }
 
@@ -100,15 +109,19 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
     public string PlanName => _name.Text.Trim();
 
-    /// <summary>Shows the editor; returns the name and definition, or null when cancelled.</summary>
-    public static (string Name, PlanDefinition Plan)? Ask(Form owner, string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing)
+    /// <summary>
+    /// Shows the editor. Save calls <paramref name="store"/> with the name and definition; it stores the plan, registers
+    /// it with Windows and returns null, or Windows' message when the task was refused (the plan is then stored
+    /// switched off), which keeps the editor open with the message. True when the plan was stored and registered.
+    /// </summary>
+    public static bool Ask(Form owner, string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>> store)
     {
-        using ScheduleEditorDialog dialog = new(name, plan, roots, anchor, editing);
-        return dialog.ShowOver(owner) == DialogResult.OK ? (dialog.PlanName, dialog.Result) : null;
+        using ScheduleEditorDialog dialog = new(name, plan, roots, anchor, editing, store);
+        return dialog.ShowOver(owner) == DialogResult.OK;
     }
 
     /// <summary>The dialog without showing it (render tests).</summary>
-    internal static ScheduleEditorDialog Create(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor) => new(name, plan, roots, anchor, true);
+    internal static ScheduleEditorDialog Create(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor) => new(name, plan, roots, anchor, true, null);
 
     protected override Control? InitialFocus() => _name;
 
@@ -137,6 +150,38 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _plugged.Bounds = new Rectangle(new Point(x, S(366)), _plugged.GetPreferredSize(Size.Empty));
         _fullScreen.Bounds = new Rectangle(new Point(x, S(396)), _fullScreen.GetPreferredSize(Size.Empty));
         _wake.Bounds = new Rectangle(new Point(x, S(426)), _wake.GetPreferredSize(Size.Empty));
+        _refused.Bounds = new Rectangle(0, S(FormHeight + 16), Body.Width, S(40));
+    }
+
+    private async Task SaveAsync()
+    {
+        Changed();
+        if (!_save.Enabled || _store is null)
+        {
+            return;
+        }
+
+        // One save at a time; Save comes back afterwards when the form is still valid.
+        _save.Enabled = false;
+        string? refused;
+        try
+        {
+            refused = await _store(PlanName, Result).ConfigureAwait(true);
+        }
+        finally
+        {
+            Changed();
+        }
+
+        if (refused is null)
+        {
+            Finish(DialogResult.OK);
+            return;
+        }
+
+        _refused.Text = string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused);
+        _refused.Visible = true;
+        BodyHeight = FormHeight + 16 + 40;
     }
 
     private PlanDefinition Build()

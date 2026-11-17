@@ -51,8 +51,8 @@ internal sealed class SettingsPage : PageBase
         quietFrom.Collapsed = quietTo.Collapsed = !scan.QuietHours;
         _updateRow = new SettingRow(string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText), Strings.Settings.NotChecked, [_releaseNotes, _checkNow, _install]);
         _releaseNotes.Click += (_, _) => ShellActions.OpenUrl(ReleaseNotesUrl());
-        _checkNow.Click += (_, _) => _ = CheckForUpdatesAsync();
-        _install.Click += (_, _) => _ = InstallUpdateAsync();
+        _checkNow.Click += (_, _) => UiTask.Run(CheckForUpdatesAsync());
+        _install.Click += (_, _) => UiTask.Run(InstallUpdateAsync());
         if (services.Updates is not null)
         {
             services.Updates.StatusChanged += OnUpdateStatusChanged;
@@ -107,9 +107,9 @@ internal sealed class SettingsPage : PageBase
                 }),
                 quietFrom,
                 quietTo,
-                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.TestNotification, () => _ = SendTestNotificationAsync()),
+                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.TestNotification, () => UiTask.Run(SendTestNotificationAsync())),
                 Webhook(scan),
-                Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, () => _ = SendWebhookTestAsync()),
+                Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, () => UiTask.Run(SendWebhookTestAsync())),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
@@ -122,7 +122,7 @@ internal sealed class SettingsPage : PageBase
                 Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
                 Buttons(Strings.Settings.Diagnostics, null,
                 [
-                    (Strings.Settings.RunSelfCheck, () => _ = RunSelfCheckAsync()),
+                    (Strings.Settings.RunSelfCheck, () => UiTask.Run(RunSelfCheckAsync())),
                     (Strings.Settings.CopyReport, () => ShellActions.CopyText([AppInfo.WindowTitle, Environment.OSVersion.VersionString, ".NET " + Environment.Version])),
                 ]),
             ]),
@@ -189,7 +189,7 @@ internal sealed class SettingsPage : PageBase
     {
         base.OnActivated();
         Reload();
-        _ = DetectInstallAsync();
+        UiTask.Run(DetectInstallAsync());
     }
 
     protected override void Dispose(bool disposing)

@@ -38,7 +38,7 @@ internal sealed class ShellBinder : IDisposable
         header.Scan.Click += (_, _) => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
         header.Scan.DropDownClick += (_, _) => ShowScanMenu();
         header.Search.KeyDown += OnSearchKey;
-        header.Bell.Click += (_, _) => _ = ShowNotificationsAsync();
+        header.Bell.Click += (_, _) => UiTask.Run(ShowNotificationsAsync());
         ScanStatusStrip strip = form.StatusStrip;
         strip.Pause.Click += (_, _) => TogglePause();
         strip.Stop.Click += (_, _) => AskStop();
@@ -61,7 +61,7 @@ internal sealed class ShellBinder : IDisposable
         }
 
         _loading = true;
-        _ = LoadAsync();
+        UiTask.Run(LoadAsync());
     }
 
     public void Dispose() => _poll.Dispose();
@@ -135,7 +135,7 @@ internal sealed class ShellBinder : IDisposable
         if (!_readingRun)
         {
             _readingRun = true;
-            _ = ReadBackgroundRunAsync();
+            UiTask.Run(ReadBackgroundRunAsync());
         }
 
         string facts = Strings.Shell.ScheduledRunning;

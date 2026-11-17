@@ -53,10 +53,10 @@ internal sealed class ToolsPage : PageBase
         _back.Click += (_, _) => ShowView(-1);
         _table.Source = _source;
         _table.SelectionChanged += (_, _) => UpdateViewButtons();
-        _restore.Click += (_, _) => _ = RestoreSelectedAsync();
-        _delete.Click += (_, _) => _ = DeleteSelectedAsync();
+        _restore.Click += (_, _) => UiTask.Run(RestoreSelectedAsync());
+        _delete.Click += (_, _) => UiTask.Run(DeleteSelectedAsync());
         _openFolder.Click += (_, _) => ShellActions.ShowInFolder(SelectedKept()?.BackupPath);
-        _undo.Click += (_, _) => _ = UndoSelectedAsync();
+        _undo.Click += (_, _) => UiTask.Run(UndoSelectedAsync());
         Controls.AddRange([.. _cards, _back, _facts, _table, _empty, _restore, _delete, _openFolder, _undo]);
         ShowView(-1);
     }

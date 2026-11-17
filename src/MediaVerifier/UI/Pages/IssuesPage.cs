@@ -56,7 +56,7 @@ internal sealed class IssuesPage : PageBase
         _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
         _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
-        _detail.FindingAction += (_, action) => _ = OnFindingActionAsync(action.FindingId, action.Ignore);
+        _detail.FindingAction += (_, action) => UiTask.Run(OnFindingActionAsync(action.FindingId, action.Ignore));
         _detail.ShowInFolderRequested += (_, _) => ShowInFolder(_detail.Detail?.FullPath);
 
         _all.Toggled += (_, _) => OnAllChip();
@@ -126,16 +126,16 @@ internal sealed class IssuesPage : PageBase
         _selectionBar.Closed += (_, _) => _list.ClearSelection();
         _selectionBar.SetButtons(
         [
-            Button(Strings.Issues.Fix, ButtonKind.Primary, IconName.Tools, (_, _) => _ = FixSelectedAsync()),
-            Button(Strings.Issues.Ignore, ButtonKind.Secondary, IconName.Ignore, (_, _) => _ = IgnoreSelectedAsync()),
+            Button(Strings.Issues.Fix, ButtonKind.Primary, IconName.Tools, (_, _) => UiTask.Run(FixSelectedAsync())),
+            Button(Strings.Issues.Ignore, ButtonKind.Secondary, IconName.Ignore, (_, _) => UiTask.Run(IgnoreSelectedAsync())),
             Button(Strings.Issues.ScanAgain, ButtonKind.Secondary, IconName.Refresh, (_, _) => ScanSelected()),
-            Button(Strings.Issues.Quarantine, ButtonKind.Secondary, IconName.Quarantine, (_, _) => _ = RunOnSelectedAsync(ActionIds.Quarantine)),
+            Button(Strings.Issues.Quarantine, ButtonKind.Secondary, IconName.Quarantine, (_, _) => UiTask.Run(RunOnSelectedAsync(ActionIds.Quarantine))),
         ]);
         _detail.PrimaryRequested += (_, _) =>
         {
             if (_detail.Detail is { RecommendedActionId.Length: > 0 } shown)
             {
-                _ = RunAndReloadAsync([shown.FileId], shown.RecommendedActionId);
+                UiTask.Run(RunAndReloadAsync([shown.FileId], shown.RecommendedActionId));
             }
         };
         KitButton fix = _selectionBar.Buttons[0];
@@ -168,7 +168,7 @@ internal sealed class IssuesPage : PageBase
     {
         if (request is IssueFindingRequest finding)
         {
-            _ = ShowFindingAsync(finding.FindingId);
+            UiTask.Run(ShowFindingAsync(finding.FindingId));
             return;
         }
 
@@ -242,7 +242,7 @@ internal sealed class IssuesPage : PageBase
 
         if (missing.Count > 0)
         {
-            _ = LoadRowsAsync(missing);
+            UiTask.Run(LoadRowsAsync(missing));
         }
     }
 
@@ -549,7 +549,7 @@ internal sealed class IssuesPage : PageBase
             {
                 if (FindForm() is Form owner)
                 {
-                    _ = ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null);
+                    UiTask.Run(ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null));
                 }
             };
         }
@@ -615,7 +615,7 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
-        _ = LoadDetailAsync(row.FileId);
+        UiTask.Run(LoadDetailAsync(row.FileId));
     }
 
     private async Task LoadDetailAsync(long fileId)
@@ -661,7 +661,7 @@ internal sealed class IssuesPage : PageBase
                 e.Handled = true;
                 break;
             case Keys.I when e.Control:
-                _ = IgnoreSelectedAsync();
+                UiTask.Run(IgnoreSelectedAsync());
                 e.Handled = true;
                 break;
             case Keys.C when e.Control:
@@ -714,10 +714,10 @@ internal sealed class IssuesPage : PageBase
                     ScanSelected();
                     break;
                 case "ignore":
-                    _ = IgnoreSelectedAsync();
+                    UiTask.Run(IgnoreSelectedAsync());
                     break;
                 case "ignore-rule":
-                    _ = IgnoreRuleInFolderAsync(row);
+                    UiTask.Run(IgnoreRuleInFolderAsync(row));
                     break;
                 case "show":
                     ShowInFolder(row.FullPath);
@@ -726,7 +726,7 @@ internal sealed class IssuesPage : PageBase
                     CopySelectedPaths();
                     break;
                 case "quarantine":
-                    _ = RunAndReloadAsync(SelectedRows() is { Count: > 0 } selected ? [.. selected.Select(r => r.FileId).Distinct()] : [row.FileId], ActionIds.Quarantine);
+                    UiTask.Run(RunAndReloadAsync(SelectedRows() is { Count: > 0 } selected ? [.. selected.Select(r => r.FileId).Distinct()] : [row.FileId], ActionIds.Quarantine));
                     break;
             }
         });
@@ -787,7 +787,7 @@ internal sealed class IssuesPage : PageBase
             Reload();
             if (_detail.Detail is FileDetail d)
             {
-                _ = LoadDetailAsync(d.FileId);
+                UiTask.Run(LoadDetailAsync(d.FileId));
             }
         }
         else if (_detail.Detail is FileDetail detail)
@@ -812,7 +812,7 @@ internal sealed class IssuesPage : PageBase
             files.Add(focused.FileId);
         }
 
-        _ = RescanFilesAsync(files);
+        UiTask.Run(RescanFilesAsync(files));
     }
 
     private async Task RescanFilesAsync(IReadOnlyList<long> fileIds)

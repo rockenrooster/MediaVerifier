@@ -205,8 +205,8 @@ internal sealed class RulesView : KitControl
             _cap.SelectedIndex = Math.Max(0, Array.IndexOf(_caps, settings.Cap(rule)));
             _cap.AccessibleName = rule.Title;
             _binding = false;
-            _enabled.CheckedChanged += (_, _) => _ = ChangedAsync(() => _view.Services.Rules.SetEnabled(Rule.Id, _enabled.Checked));
-            _cap.SelectedIndexChanged += (_, _) => _ = ChangedAsync(() => _view.Services.Rules.SetSeverityCap(Rule.Id, _caps[Math.Max(0, _cap.SelectedIndex)]));
+            _enabled.CheckedChanged += (_, _) => UiTask.Run(ChangedAsync(() => _view.Services.Rules.SetEnabled(Rule.Id, _enabled.Checked)));
+            _cap.SelectedIndexChanged += (_, _) => UiTask.Run(ChangedAsync(() => _view.Services.Rules.SetSeverityCap(Rule.Id, _caps[Math.Max(0, _cap.SelectedIndex)])));
             _expand.ToolTipText = rule.Title;
             _expand.Click += (_, _) =>
             {
@@ -228,7 +228,7 @@ internal sealed class RulesView : KitControl
                         _debounce.Start();
                     }
                 };
-                reset.Click += (_, _) => _ = SetParameterAsync(p.Name, p.Default);
+                reset.Click += (_, _) => UiTask.Run(SetParameterAsync(p.Name, p.Default));
                 _parameters.Add((parameter, box, reset));
                 Controls.Add(box);
                 Controls.Add(reset);
@@ -239,7 +239,7 @@ internal sealed class RulesView : KitControl
                 _debounce.Stop();
                 if (_debounce.Tag is (RuleParameter parameter, double value))
                 {
-                    _ = SetParameterAsync(parameter.Name, value);
+                    UiTask.Run(SetParameterAsync(parameter.Name, value));
                 }
             };
             _expand.Visible = _parameters.Count > 0;
