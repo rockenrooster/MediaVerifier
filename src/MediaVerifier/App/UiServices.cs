@@ -177,11 +177,12 @@ internal sealed class UiServices : IDisposable
             try
             {
                 _ = ToastRegistration.Ensure(state);
+                new StartupRegistration().Reconcile(state.Settings.StartWithWindows);
                 await services.Operations.RecoverAsync().ConfigureAwait(false);
                 await services.Operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays).ConfigureAwait(false);
                 await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException or System.Security.SecurityException)
             {
                 state.Log.Warning("Start-up maintenance failed", ex);
             }

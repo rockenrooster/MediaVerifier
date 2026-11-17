@@ -101,7 +101,8 @@ internal static class ScanLauncher
             return;
         }
 
-        if (options is null)
+        // Settings → General, Ask before large scans: off, a large scan starts without the question.
+        if (options is null && services.State.Settings.Scanning.AskBeforeLargeScans)
         {
             ScanEstimate estimate = await Task.Run(() => services.Data.LoadScanEstimate([.. library.Select(r => r.Id)])).ConfigureAwait(true);
             if (estimate.IsLarge)

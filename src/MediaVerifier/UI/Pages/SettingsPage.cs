@@ -67,8 +67,22 @@ internal sealed class SettingsPage : PageBase
                     State.Settings.Theme = (ThemeMode)i;
                     ThemeService.Apply(State.Settings.Theme);
                 }),
-                Toggle(Strings.Settings.StartWithWindows, Strings.Settings.StartWithWindowsHelper, () => State.Settings.StartWithWindows, v => State.Settings.StartWithWindows = v),
-                Toggle(Strings.Settings.KeepRunning, null, () => State.Settings.MinimizeToTray, v => State.Settings.MinimizeToTray = v),
+                Toggle(Strings.Settings.StartWithWindows, Strings.Settings.StartWithWindowsHelper, () => State.Settings.StartWithWindows, v =>
+                {
+                    // The setting alone did nothing: the Run value is what starts MediaVerifier with Windows.
+                    State.Settings.StartWithWindows = v;
+                    if (!Services.IsDemo)
+                    {
+                        new StartupRegistration().Apply(v);
+                    }
+
+                    (FindForm() as MainForm)?.UpdateTray();
+                }),
+                Toggle(Strings.Settings.KeepRunning, null, () => State.Settings.MinimizeToTray, v =>
+                {
+                    State.Settings.MinimizeToTray = v;
+                    (FindForm() as MainForm)?.UpdateTray();
+                }),
                 Segmented(Strings.Settings.DefaultDepth, null, [Strings.Depths.Quick, Strings.Depths.Standard, Strings.Depths.Deep], () => DepthIndex(scan.DefaultDepth), i => scan.DefaultDepth = i switch { 0 => ScanDepth.Quick, 2 => ScanDepth.Deep, _ => ScanDepth.Standard }),
                 Toggle(Strings.Settings.AskLarge, Strings.Settings.AskLargeHelper, () => scan.AskBeforeLargeScans, v => scan.AskBeforeLargeScans = v),
             ]),

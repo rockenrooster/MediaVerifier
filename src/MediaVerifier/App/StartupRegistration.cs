@@ -54,6 +54,19 @@ internal sealed class StartupRegistration
         }
     }
 
+    /// <summary>
+    /// Makes the Run value match the setting (start-up maintenance): written when it should start with Windows and
+    /// is missing or points elsewhere (an earlier version never wrote it; a reinstall moves the app), removed
+    /// otherwise.
+    /// </summary>
+    public void Reconcile(bool enabled)
+    {
+        if (enabled ? !IsCurrent : IsEnabled)
+        {
+            Apply(enabled);
+        }
+    }
+
     public void Remove()
     {
         using RegistryKey? key = Registry.CurrentUser.OpenSubKey(_keyPath, writable: true);

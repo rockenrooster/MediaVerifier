@@ -683,6 +683,15 @@ internal sealed class IssuesPage : PageBase
 
                 e.Handled = true;
                 break;
+            case Keys.Delete when Services.Operations is not null:
+                // The row menu's Del: Move to quarantine for the selection the row is in (dialog A asks first).
+                if (_source.RowAt(_list.FocusedIndex) is IssueRow deleteRow)
+                {
+                    UiTask.Run(RunAndReloadAsync([.. FixFor(deleteRow).Targets.Select(t => t.FileId).Distinct()], ActionIds.Quarantine));
+                }
+
+                e.Handled = true;
+                break;
             case Keys.Enter when e.Alt:
                 ShellActions.ShowInFolder(_source.RowAt(_list.FocusedIndex)?.FullPath);
                 e.Handled = true;

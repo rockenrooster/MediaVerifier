@@ -504,8 +504,35 @@ internal sealed class MainForm : Form
 
     private void ConfigureTray()
     {
+        bool trayOn = UpdateTray();
+        if (_options.Minimized)
+        {
+            if (trayOn)
+            {
+                _startHidden = true;
+            }
+            else
+            {
+                WindowState = FormWindowState.Minimized;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shows the tray icon while Keep running or Start with Windows is on, and removes it when both are off (Settings
+    /// calls this when either changes, so closing the window behaves at once as the setting says). True when shown.
+    /// </summary>
+    internal bool UpdateTray()
+    {
         bool trayOn = _state.Settings.MinimizeToTray || _state.Settings.StartWithWindows;
-        if (trayOn)
+        if (!trayOn)
+        {
+            _tray?.Dispose();
+            _tray = null;
+            return false;
+        }
+
+        if (_tray is null)
         {
             _tray = new TrayIcon(Icon ?? SystemIcons.Application) { Visible = true };
             _tray.OpenRequested += (_, _) => BringToFrontFromAnywhere();
@@ -518,17 +545,7 @@ internal sealed class MainForm : Form
             _tray.ExitRequested += (_, _) => ExitApplication();
         }
 
-        if (_options.Minimized)
-        {
-            if (trayOn)
-            {
-                _startHidden = true;
-            }
-            else
-            {
-                WindowState = FormWindowState.Minimized;
-            }
-        }
+        return true;
     }
 
     private void ExitApplication()

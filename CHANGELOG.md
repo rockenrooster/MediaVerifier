@@ -5,6 +5,16 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: Start with Windows did nothing; it now adds MediaVerifier to the programs Windows starts,
+  and at start-up MediaVerifier puts the entry right if an earlier version left it out.
+- Fixed: turning on Keep running in the tray (or Start with Windows) only took effect after a
+  restart; the tray icon now appears at once.
+- Fixed: when a scan finished, Issues and the Dashboard went on showing what was there before it
+  until you opened another page.
+- Fixed: Ask before large scans had no effect; turned off, large scans start without the question.
+- Fixed: Del in Issues did nothing, though the menu lists it for Move to quarantine.
+- Notifications of scheduled scans in the bell open Issues when the scan found problems, and Scans
+  otherwise; before, clicking one only marked it read.
 
 ## 0.1.0.6 - 2026-11-17
 

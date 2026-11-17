@@ -79,6 +79,7 @@ public sealed class AppFlowTests
         List<string> damaged = [];
         string report = string.Empty;
         bool stripShown = false;
+        bool issuesShown = false;
         Sta.Run(() =>
         {
             using TempDirectory temp = new("app-flow");
@@ -114,7 +115,12 @@ public sealed class AppFlowTests
             Assert.True(scan.Enabled, "Scan stayed disabled after the first folder was added.");
             services.ScanStarted += () => stripShown = form.Shell.StatusStripVisible;
             scan.PerformClick();
+
+            // Wait on Issues: when the scan ends, the page shows what it found without being opened again.
+            form.Navigate(PageId.Issues);
             Settle(() => services.Database.Runs.List(10).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
+            Settle(() => form.CurrentPageControl is IssuesPage { Rows.Count: > 0 }, TimeSpan.FromSeconds(10));
+            issuesShown = form.CurrentPageControl is IssuesPage { Rows.Count: > 0 };
             Pump(TimeSpan.FromMilliseconds(300));
 
             List<FileRecord> files = services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter()));
@@ -144,6 +150,7 @@ public sealed class AppFlowTests
         });
 
         Assert.True(stripShown, "The status strip did not show the scan when it started.");
+        Assert.True(issuesShown, "Issues did not show the scan's findings when the scan ended.");
         Assert.True(damaged.SequenceEqual(["broken.mp3"]), report);
         Assert.Equal(["healthy.flac"], healthy);
     }
@@ -177,6 +184,60 @@ public sealed class AppFlowTests
         Assert.True(openWhileWriting, "Create report closed before the report was written.");
         Assert.Single(written);
         Assert.EndsWith(".html", written[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The riskiest action through the app's own path: Move to quarantine asks first (dialog A), takes the file out of
+    /// the library, and the toast's Undo puts back exactly the same bytes.
+    /// </summary>
+    [FixtureFact]
+    public void Move_to_quarantine_asks_moves_the_file_and_undo_brings_back_the_same_bytes()
+    {
+        string? dialog = null;
+        bool movedAway = false;
+        bool restored = false;
+        List<string> toastTitles = [];
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("quarantine-flow");
+            string library = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+            string broken = FixtureFactory.CopyTo("m128.mp3", library, "broken.mp3");
+            Mutate.Truncate(broken, 0.55);
+            File.SetLastWriteTimeUtc(broken, DateTime.UtcNow.AddHours(-1));
+            byte[] original = File.ReadAllBytes(broken);
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            List<MediaVerifier.UI.Kit.Popups.ToastContent> toasts = [];
+            services.ShowToast = toasts.Add;
+
+            Task<long> add = services.Database.Roots.AddAsync(new RootRecord { Path = library, Label = "My Music", Role = RootRole.Library, MediaMask = MediaKindMask.All, AddedUtc = services.Clock.UtcNow });
+            Settle(() => add.IsCompleted);
+            Task<bool> scan = services.StartScanAsync([new MediaVerifier.Core.Engine.ScanScope(add.Result)], ScanDepth.Standard, "My Music");
+            Settle(() => scan.IsCompleted);
+            Assert.True(scan.Result, "The scan did not start.");
+            Settle(() => services.Database.Runs.List(10).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
+            long fileId = services.Database.Files.GetMany(services.Database.Queries.FileIds(new FileFilter())).Single(f => f.Name == "broken.mp3").Id;
+
+            dialog = Answer<RepairDialog>(() => UiTask.Run(Remediator.RunAsync(services, form, [fileId], MediaVerifier.Core.Rules.ActionIds.Quarantine)), d => d.DialogResult = DialogResult.OK);
+            Settle(() => toasts.Count > 0, TimeSpan.FromSeconds(30));
+            movedAway = !File.Exists(broken);
+            toastTitles.AddRange(toasts.Select(t => t.Title));
+
+            Action? undo = toasts.FirstOrDefault()?.Action;
+            Assert.NotNull(undo);
+            undo();
+            Settle(() => File.Exists(broken) && toasts.Count > 1, TimeSpan.FromSeconds(30));
+            restored = File.Exists(broken) && File.ReadAllBytes(broken).AsSpan().SequenceEqual(original);
+            toastTitles.AddRange(toasts.Skip(1).Select(t => t.Title));
+            form.Close();
+        });
+
+        Assert.False(string.IsNullOrEmpty(dialog), "Move to quarantine did not ask first.");
+        Assert.True(movedAway, "The file is still in the library: " + string.Join(" | ", toastTitles));
+        Assert.True(restored, "Undo did not bring back the same bytes: " + string.Join(" | ", toastTitles));
     }
 
     /// <summary>Runs <paramref name="open"/>, answers the first <typeparamref name="T"/> dialog it shows, returns its title.</summary>

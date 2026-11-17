@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using MediaVerifier.Core.Analysis;
 using MediaVerifier.Core.Ffmpeg;
 using MediaVerifier.Core.Model;
@@ -8,6 +7,7 @@ namespace MediaVerifier.Tests.Analysis;
 
 /// <summary>Drawer thumbnails, frame strips and compare images (subplan 09 header; subplan 11, task V-05).</summary>
 [Trait("Category", "Integration")]
+[Collection(TimingCollection.Name)]
 public sealed class PictureRendererTests
 {
     [FixtureFact]
@@ -35,9 +35,10 @@ public sealed class PictureRendererTests
         Assert.Equal((2 * PictureRenderer.CompareWidth, PictureRenderer.CompareHeight), Size(compare));
         Assert.True(pictures.LastCompareTime < TimeSpan.FromSeconds(2), $"{pictures.LastCompareTime.TotalMilliseconds:0} ms");
 
-        Stopwatch watch = Stopwatch.StartNew();
-        Assert.Equal(compare, await pictures.CompareAsync(video, "5-a", MediaKind.Video, 2.5, 1920, 1080, 720, CancellationToken.None));
-        Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(200), "the second request should come from the cache");
+        // The second request comes from the cache: a renderer whose FFmpeg does not exist can only answer from there.
+        using FfRunner none = new(new FfmpegLocation(temp.Combine("no-ffmpeg"), IsOverride: false));
+        PictureRenderer cachedOnly = new(none, temp.Combine("cache"));
+        Assert.Equal(compare, await cachedOnly.CompareAsync(video, "5-a", MediaKind.Video, 2.5, 1920, 1080, 720, CancellationToken.None));
     }
 
     private static (int Width, int Height)? Size(byte[]? png)

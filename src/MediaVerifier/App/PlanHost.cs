@@ -105,7 +105,7 @@ internal static class PlanHost
         string? skip = SkipReason(definition.Conditions, state, stopEvent);
         if (skip is not null)
         {
-            Record(database, new RunNotification(Severity.Low, CoreStrings.Notify.Skipped, skip, Toast: false));
+            Record(database, new RunNotification(Severity.Low, CoreStrings.Notify.Skipped, skip, Toast: false), "page:Scans");
             state.Log.Info($"Plan {planId} skipped: {skip}");
             return HeadlessScan.ExitSuccess;
         }
@@ -188,8 +188,11 @@ internal static class PlanHost
 
     private static bool Busy() => SHQueryUserNotificationState(out int state) == 0 && state is 2 or 3 or 4;
 
-    private static void Record(Database database, RunNotification notification) =>
-        database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = notification.Level, Title = notification.Title, Body = notification.Body }).Wait(TimeSpan.FromSeconds(10));
+    private static void Record(Database database, RunNotification notification, string? page = null) =>
+        database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = notification.Level, Title = notification.Title, Body = notification.Body, ActionUri = page ?? PageOf(notification) }).Wait(TimeSpan.FromSeconds(10));
+
+    /// <summary>Where the bell's item leads: Issues when the run found problems, Scans otherwise.</summary>
+    internal static string PageOf(RunNotification notification) => notification.Level > Severity.None ? "page:Issues" : "page:Scans";
 
     [DllImport("shell32.dll")]
     private static extern int SHQueryUserNotificationState(out int state);
@@ -233,7 +236,7 @@ internal static class GuiPlanRunner
         if (skip is not null)
         {
             log.Info($"Forwarded plan {planId} skipped: {skip}");
-            await services.Database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = Severity.Low, Title = CoreStrings.Notify.Skipped, Body = skip }).ConfigureAwait(true);
+            await services.Database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = Severity.Low, Title = CoreStrings.Notify.Skipped, Body = skip, ActionUri = "page:Scans" }).ConfigureAwait(true);
             return;
         }
 
@@ -275,7 +278,7 @@ internal static class GuiPlanRunner
                 return;
             }
 
-            await services.Database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = notification.Level, Title = notification.Title, Body = notification.Body }).ConfigureAwait(false);
+            await services.Database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = notification.Level, Title = notification.Title, Body = notification.Body, ActionUri = PlanHost.PageOf(notification) }).ConfigureAwait(false);
             if (!notification.Toast)
             {
                 return;

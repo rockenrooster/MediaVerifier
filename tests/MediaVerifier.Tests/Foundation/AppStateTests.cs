@@ -107,6 +107,37 @@ public sealed class AppStateTests
         }
     }
 
+    /// <summary>
+    /// Start-up maintenance makes the Run value match the setting: an earlier version saved the setting without the value,
+    /// and a reinstall to another folder leaves a value pointing at the old one.
+    /// </summary>
+    [Fact]
+    public void StartupReconcileWritesAMissingOrStaleValueAndRemovesAnUnwantedOne()
+    {
+        string key = @"Software\MediaVerifier.Tests\Run-" + Guid.NewGuid().ToString("N");
+        StartupRegistration old = new(key, @"C:\Old\MediaVerifier.exe");
+        StartupRegistration registration = new(key, @"C:\Apps\MediaVerifier\MediaVerifier.exe");
+        try
+        {
+            registration.Reconcile(true);
+            Assert.True(registration.IsCurrent);
+
+            old.Apply(true);
+            Assert.False(registration.IsCurrent);
+            registration.Reconcile(true);
+            Assert.True(registration.IsCurrent);
+
+            registration.Reconcile(false);
+            Assert.False(registration.IsEnabled);
+            registration.Reconcile(false);
+            Assert.False(registration.IsEnabled);
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\MediaVerifier.Tests", throwOnMissingSubKey: false);
+        }
+    }
+
     [Fact]
     public void PlacementOnADisconnectedMonitorIsNotReachable()
     {

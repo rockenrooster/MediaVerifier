@@ -150,7 +150,9 @@ internal sealed class ShellBinder : IDisposable
             }
             else if (!active && !background)
             {
-                Refresh();
+                // A scan of this window ended: the page on show reloads too, or Issues and the Dashboard kept
+                // showing what was there before the scan until the user went to another page.
+                _form.RefreshAll();
             }
         }
     }
