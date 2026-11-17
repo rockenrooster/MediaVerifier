@@ -82,8 +82,14 @@ internal static class ScanLauncher
 {
     public static async Task StartLibraryScanAsync(Form owner, UiServices services, ScanDepth depth, ScanOptions? options)
     {
-        if (services.IsDemo || services.CannotScanReason(true) is not null)
+        if (services.IsDemo)
         {
+            return;
+        }
+
+        if (services.CannotScanReason(true) is string reason)
+        {
+            services.ShowScanNotStarted(reason);
             return;
         }
 
@@ -91,6 +97,7 @@ internal static class ScanLauncher
         List<RootRecord> library = [.. roots.Where(r => r.Role == RootRole.Library && r.Enabled)];
         if (library.Count == 0)
         {
+            services.ShowScanNotStarted(Strings.Shell.AddFolderFirst);
             return;
         }
 

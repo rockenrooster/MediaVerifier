@@ -5,6 +5,15 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Fixed: the Scan button stayed disabled after the first folder was added, so clicking it did
+  nothing. A started scan now shows in the status strip at once, and a scan that cannot start says
+  why.
+- Fixed: toasts, such as the one after adding a folder, showed as a blank white box.
+- Fixed: text in right-click menus, drop-down lists and tooltips was heavy and jagged.
+- Fixed: the More button in the Issues detail panel did nothing; it opens a menu again.
+- Issues: `Open file` in the right-click menu and the detail panel's More menu, and a double-click
+  opens the file in its program.
+- Library → Browse has a Problem column with the file's most serious finding.
 
 ## 0.1.0.4 - 2026-11-17
 

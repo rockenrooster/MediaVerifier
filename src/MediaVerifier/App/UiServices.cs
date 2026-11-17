@@ -110,6 +110,13 @@ internal sealed class UiServices : IDisposable
     /// <summary>Shows a toast at the bottom right of the main window (set by the main window).</summary>
     public Action<UI.Kit.Popups.ToastContent>? ShowToast { get; set; }
 
+    /// <summary>Raised on the UI thread when a manual scan has started, so the status strip shows it at once.</summary>
+    public event Action? ScanStarted;
+
+    /// <summary>Tells the user why a scan they asked for did not start: a scan button never does nothing.</summary>
+    public void ShowScanNotStarted(string reason) =>
+        ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.Medium, UI.Strings.Activity.CouldNotRun, reason));
+
     /// <summary>True for the render harness: no timers start work, nothing is written.</summary>
     public bool IsDemo { get; init; }
 
@@ -220,19 +227,28 @@ internal sealed class UiServices : IDisposable
     /// </summary>
     public async Task<bool> StartScanAsync(IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null)
     {
-        if (IsDemo || scopes.Count == 0 || CannotScanReason(true) is not null)
+        if (IsDemo || scopes.Count == 0)
         {
+            return false;
+        }
+
+        if (CannotScanReason(true) is string reason)
+        {
+            ShowScanNotStarted(reason);
             return false;
         }
 
         try
         {
             await Scans.StartAsync(new ScanRequest(scopes, depth, RunTrigger.Manual, Options: options), scopeText).ConfigureAwait(true);
+            ScanStarted?.Invoke();
             return true;
         }
         catch (InvalidOperationException ex)
         {
+            // The engine is busy: a scan here, or one in another MediaVerifier process (a scheduled scan).
             State.Log.Warning("Scan not started: " + ex.Message);
+            ShowScanNotStarted(CannotScanReason(true) ?? UI.Strings.Shell.ScheduledRunning);
             return false;
         }
     }

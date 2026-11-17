@@ -16,7 +16,8 @@ namespace MediaVerifier.App;
 /// button with its menu and disabled reasons, the search box, and the status strip in every scan phase.
 /// Polls the engine's status snapshot at 4 Hz while a scan runs and every 2 s otherwise. A scheduled scan in another
 /// process (subplan 13, task SCH-06) shows in the strip with its checkpointed counts, polled every second, and its
-/// Stop signals that process.
+/// Stop signals that process. A scan started here shows in the strip at once, and adding, editing or removing a
+/// folder anywhere reloads the counts that decide whether Scan is enabled.
 /// </summary>
 internal sealed class ShellBinder : IDisposable
 {
@@ -45,6 +46,8 @@ internal sealed class ShellBinder : IDisposable
         strip.Click += (_, _) => _services.Navigate?.Invoke(PageId.Scans, null);
         _poll.Tick += (_, _) => Poll();
         _poll.Start();
+        _services.ScanStarted += Poll;
+        _services.Database.LibraryChanged += OnLibraryChanged;
         Refresh();
         Poll();
     }
@@ -64,7 +67,30 @@ internal sealed class ShellBinder : IDisposable
         UiTask.Run(LoadAsync());
     }
 
-    public void Dispose() => _poll.Dispose();
+    public void Dispose()
+    {
+        _services.ScanStarted -= Poll;
+        _services.Database.LibraryChanged -= OnLibraryChanged;
+        _poll.Dispose();
+    }
+
+    /// <summary>The database writer's thread: a change of the watched folders reloads the counts on the UI thread.</summary>
+    private void OnLibraryChanged(object? sender, LibraryChangedEventArgs e)
+    {
+        if ((e.Changes & ChangeFlags.Roots) == 0 || !_form.IsHandleCreated || _form.IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            _form.BeginInvoke(Refresh);
+        }
+        catch (InvalidOperationException)
+        {
+            // The window closed in between.
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -285,9 +311,10 @@ internal sealed class ShellBinder : IDisposable
         };
     }
 
+    /// <summary>Header Scan and its menu; the launcher says why when a scan cannot start.</summary>
     private async void StartScan(ScanDepth depth, ScanOptions? options)
     {
-        if (_services.IsDemo || _services.CannotScanReason(_counts?.HasFolders ?? true) is not null)
+        if (_services.IsDemo)
         {
             return;
         }

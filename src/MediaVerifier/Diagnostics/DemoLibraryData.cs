@@ -11,13 +11,13 @@ internal sealed partial class DemoUiData
 
     private static readonly FileRow[] OverpassFiles =
     [
-        File(101, "01 - Slip Road.flac", 29.8, FileState.Issues, Severity.High, verifiedDaysAgo: 0),
+        File(101, "01 - Slip Road.flac", 29.8, FileState.Issues, Severity.High, verifiedDaysAgo: 0, rule: "AUD-FAKE-LOSSLESS"),
         File(102, "02 - Sodium.flac", 33.1, FileState.Ok, Severity.None, verifiedDaysAgo: 0),
         File(103, "03 - Lane Change.flac", 27.4, FileState.Ok, Severity.None, verifiedDaysAgo: 35),
-        File(104, "04 - Median.flac", 35.0, FileState.Issues, Severity.Low, verifiedDaysAgo: 35),
+        File(104, "04 - Median.flac", 35.0, FileState.Issues, Severity.Low, verifiedDaysAgo: 35, rule: "AUD-DC"),
         File(105, "05 - Cat's Eyes.flac", 30.2, FileState.Ok, Severity.None, verifiedDaysAgo: 35),
         File(106, "06 - Underpass.flac", 26.6, FileState.Ok, Severity.None, verifiedDaysAgo: 35),
-        File(107, "07 - Overpass.flac", 31.2, FileState.Issues, Severity.High, verifiedDaysAgo: 35),
+        File(107, "07 - Overpass.flac", 31.2, FileState.Issues, Severity.High, verifiedDaysAgo: 35, rule: "AUD-FAKE-LOSSLESS"),
         File(108, "08 - Hard Shoulder.flac", 34.8, FileState.Pending, Severity.None, verifiedDaysAgo: null),
         File(109, "09 - Services.flac", 31.9, FileState.Skipped, Severity.None, verifiedDaysAgo: null, skip: SkipReason.Locked),
         new FileRow(110, 1, 14, "cover.jpg", @"Night Drive\Overpass", MediaKind.Photo, 412 * 1024, 0, FileState.Ok, SkipReason.None, Severity.None, 0, At(16, 3, 12).UtcTicks, 2, At(16, 3, 12).UtcTicks, "jpeg", null, null, 1400, 1400),
@@ -66,12 +66,12 @@ internal sealed partial class DemoUiData
 
     public IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids) => [.. ids.Select(id => OverpassFiles.First(f => f.Id == id))];
 
-    private static FileRow File(long id, string name, double megabytes, FileState state, Severity worst, int? verifiedDaysAgo, SkipReason skip = SkipReason.None)
+    private static FileRow File(long id, string name, double megabytes, FileState state, Severity worst, int? verifiedDaysAgo, SkipReason skip = SkipReason.None, string? rule = null)
     {
         bool scanned = state is FileState.Ok or FileState.Issues;
         long? verified = verifiedDaysAgo switch { null => null, 0 => At(16, 3, 12).UtcTicks, _ => Local(10, 12, 3, 0).UtcTicks };
         return new FileRow(
             id, 1, 14, name, @"Night Drive\Overpass", MediaKind.Audio, (long)(megabytes * 1024 * 1024), 0, state, skip, worst, worst == Severity.None ? 0 : 1,
-            verified, verified is null ? 0 : 2, scanned ? At(16, 3, 12).UtcTicks : null, "flac", null, "flac", null, null, scanned ? 44100 : null, scanned ? 16 : null);
+            verified, verified is null ? 0 : 2, scanned ? At(16, 3, 12).UtcTicks : null, "flac", null, "flac", null, null, scanned ? 44100 : null, scanned ? 16 : null, rule, rule is null ? 0 : 0.8f);
     }
 }

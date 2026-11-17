@@ -125,7 +125,9 @@ public sealed record FileRow(
     int? Width = null,
     int? Height = null,
     int? SampleRate = null,
-    int? BitDepth = null);
+    int? BitDepth = null,
+    string? WorstRuleId = null,
+    float WorstConfidence = 0);
 
 /// <summary>Open findings per tier.</summary>
 public sealed record SeverityCounts(int Critical, int High, int Medium, int Low)
@@ -481,7 +483,10 @@ public sealed class LibraryQueries(Database database)
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             "SELECT f.id, f.root_id, f.dir_id, f.name, d.rel_path, f.media_kind, f.size, f.mtime_utc, f.state, f.skip_reason, f.worst_severity, " +
-            "f.open_findings, f.last_verified_utc, f.verify_count, f.last_scanned_utc, f.container, f.video_codec, f.audio_codec, f.width, f.height, f.sample_rate, f.bit_depth " +
+            "f.open_findings, f.last_verified_utc, f.verify_count, f.last_scanned_utc, f.container, f.video_codec, f.audio_codec, f.width, f.height, f.sample_rate, f.bit_depth, " +
+            // The worst open finding (rule and confidence) of a file that has one: the Problem column of Browse.
+            "CASE WHEN f.open_findings > 0 THEN (SELECT fi.rule_id FROM findings fi WHERE fi.file_id = f.id AND fi.status = 0 ORDER BY fi.severity DESC, fi.confidence DESC LIMIT 1) END, " +
+            "CASE WHEN f.open_findings > 0 THEN (SELECT fi.confidence FROM findings fi WHERE fi.file_id = f.id AND fi.status = 0 ORDER BY fi.severity DESC, fi.confidence DESC LIMIT 1) END " +
             "FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.id IN (" + SqlHelpers.InList() + ")";
         foreach (ArraySegment<long> chunk in SqlHelpers.Chunks([.. ids]))
         {
@@ -494,7 +499,8 @@ public sealed class LibraryQueries(Database database)
                     r.GetInt64(0), r.GetInt64(1), r.GetInt64(2), r.GetString(3), r.GetString(4), (MediaKind)r.GetInt32(5), r.GetInt64(6), r.GetInt64(7),
                     (FileState)r.GetInt32(8), (SkipReason)r.GetInt32(9), (Severity)r.GetInt32(10), r.GetInt32(11), r.GetInt64OrNull(12), r.GetInt32(13), r.GetInt64OrNull(14),
                     r.IsDBNull(15) ? null : r.GetString(15), r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17),
-                    r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetInt32(19), r.IsDBNull(20) ? null : r.GetInt32(20), r.IsDBNull(21) ? null : r.GetInt32(21));
+                    r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetInt32(19), r.IsDBNull(20) ? null : r.GetInt32(20), r.IsDBNull(21) ? null : r.GetInt32(21),
+                    r.IsDBNull(22) ? null : r.GetString(22), r.IsDBNull(23) ? 0f : (float)r.GetDouble(23));
                 byId[row.Id] = row;
             }
         }

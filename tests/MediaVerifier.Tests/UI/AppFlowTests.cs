@@ -78,6 +78,7 @@ public sealed class AppFlowTests
         List<string> healthy = [];
         List<string> damaged = [];
         string report = string.Empty;
+        bool stripShown = false;
         Sta.Run(() =>
         {
             using TempDirectory temp = new("app-flow");
@@ -107,11 +108,12 @@ public sealed class AppFlowTests
             Settle(() => services.Database.Roots.List().Count == 1);
             Assert.Single(services.Database.Roots.List());
 
-            // Scan, as the header's Scan button does, and wait for the run to finish.
-            Assert.Null(services.CannotScanReason(true));
-            Task scan = ScanLauncher.StartLibraryScanAsync(form, services, ScanDepth.Standard, null);
-            Settle(() => scan.IsCompleted);
-            Assert.True(scan.IsCompletedSuccessfully, "The scan did not start: " + scan.Exception?.GetBaseException());
+            // The header's Scan button, which adding the first folder enables; the strip shows the scan at once.
+            SplitButton scan = form.Header.Scan;
+            Settle(() => scan.Enabled);
+            Assert.True(scan.Enabled, "Scan stayed disabled after the first folder was added.");
+            services.ScanStarted += () => stripShown = form.Shell.StatusStripVisible;
+            scan.PerformClick();
             Settle(() => services.Database.Runs.List(10).Any(r => r.EndedUtc is not null), TimeSpan.FromMinutes(2));
             Pump(TimeSpan.FromMilliseconds(300));
 
@@ -129,6 +131,7 @@ public sealed class AppFlowTests
             form.Close();
         });
 
+        Assert.True(stripShown, "The status strip did not show the scan when it started.");
         Assert.True(damaged.SequenceEqual(["broken.mp3"]), report);
         Assert.Equal(["healthy.flac"], healthy);
     }

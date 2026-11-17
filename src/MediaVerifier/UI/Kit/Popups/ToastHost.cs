@@ -143,10 +143,10 @@ internal sealed class ToastHost : IDisposable
         public void Start(Form owner)
         {
             Owner = owner;
+            PopupOpacity = SystemInformation.UIEffectsEnabled ? (byte)0 : (byte)255;
             ShowAt(_location, owner);
             _phase = 0;
             _phaseStart = Environment.TickCount64;
-            Opacity = SystemInformation.UIEffectsEnabled ? 0 : 1;
             _timer.Start();
         }
 
@@ -225,7 +225,7 @@ internal sealed class ToastHost : IDisposable
             switch (_phase)
             {
                 case 0:
-                    Opacity = SystemInformation.UIEffectsEnabled ? Math.Min(1, elapsed / 150.0) : 1;
+                    PopupOpacity = SystemInformation.UIEffectsEnabled ? (byte)Math.Min(255, elapsed * 255 / 150) : (byte)255;
                     if (elapsed >= 150)
                     {
                         Next(1);
@@ -250,7 +250,7 @@ internal sealed class ToastHost : IDisposable
                         return;
                     }
 
-                    Opacity = 1 - (elapsed / 150.0);
+                    PopupOpacity = (byte)Math.Max(0, 255 - (elapsed * 255 / 150));
                     break;
             }
         }

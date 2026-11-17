@@ -328,6 +328,15 @@ internal sealed class SplitButton : KitControl
     /// <summary>Raised when the menu part is clicked or Alt+Down is pressed.</summary>
     public event EventHandler? DropDownClick;
 
+    /// <summary>Clicks the main part, as a mouse click does (nothing while disabled or hidden).</summary>
+    public void PerformClick()
+    {
+        if (Enabled && Visible)
+        {
+            OnClick(EventArgs.Empty);
+        }
+    }
+
     public IconName? Icon
     {
         get => _icon;

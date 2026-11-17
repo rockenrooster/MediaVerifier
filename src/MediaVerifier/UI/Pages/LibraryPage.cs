@@ -24,13 +24,15 @@ internal sealed record AddFolderRequest(string? Path);
 /// </summary>
 internal sealed class LibraryPage : PageBase
 {
+    // Owner request: a Problem column with the worst open finding; the name takes the width that is left.
     private static readonly ListColumn[] TableColumns =
     [
-        new(Strings.Library.ColumnName, 284),
-        new(Strings.Library.ColumnFormat, 192, Sortable: false),
+        new(Strings.Library.ColumnName, 0),
+        new(Strings.Library.ColumnProblem, 170),
+        new(Strings.Library.ColumnFormat, 130, Sortable: false),
         new(Strings.Library.ColumnSize, 64, RightAligned: true),
-        new(Strings.Library.ColumnScanned, 88),
-        new(Strings.Library.ColumnVerified, 0),
+        new(Strings.Library.ColumnScanned, 96),
+        new(Strings.Library.ColumnVerified, 100),
     ];
 
     private readonly SegmentedControl _view = new() { TabIndex = 0 };
@@ -51,6 +53,7 @@ internal sealed class LibraryPage : PageBase
     private readonly VirtualList _table = new() { Mode = ListMode.Table };
     private readonly FileSource _source;
     private readonly Dictionary<long, FileRow> _rows = [];
+    private readonly Dictionary<long, string> _problems = [];
     private readonly FileDetailView _detail = new();
     private readonly ScrollPanel _detailScroll;
     private LibraryData? _library;
@@ -289,9 +292,10 @@ internal sealed class LibraryPage : PageBase
         _browse = browse;
         _query = browse.Query;
         _rows.Clear();
+        _problems.Clear();
         foreach (FileRow row in first)
         {
-            _rows[row.Id] = row;
+            Store(row);
         }
 
         if (treeChanged)
@@ -402,7 +406,7 @@ internal sealed class LibraryPage : PageBase
     {
         _query = _query with
         {
-            Sort = column switch { 2 => FileSort.Size, 3 => FileSort.Scanned, 4 => FileSort.Verified, _ => FileSort.Name },
+            Sort = column switch { 1 => FileSort.Severity, 3 => FileSort.Size, 4 => FileSort.Scanned, 5 => FileSort.Verified, _ => FileSort.Name },
             Descending = descending,
         };
         Reload();
@@ -416,7 +420,7 @@ internal sealed class LibraryPage : PageBase
             IReadOnlyList<FileRow> rows = await Task.Run(() => Services.Data.LoadFileRows(ids)).ConfigureAwait(true);
             foreach (FileRow row in rows)
             {
-                _rows[row.Id] = row;
+                Store(row);
             }
 
             _table.Invalidate();
@@ -425,6 +429,25 @@ internal sealed class LibraryPage : PageBase
         {
             _loadingRows = false;
         }
+    }
+
+    /// <summary>Keeps a loaded row and its Problem text (painting reads both, allocating nothing).</summary>
+    private void Store(FileRow row)
+    {
+        _rows[row.Id] = row;
+        _problems[row.Id] = ProblemText(row);
+    }
+
+    /// <summary>The worst open finding's title, hedged as in Issues, and how many more the file has.</summary>
+    private static string ProblemText(FileRow row)
+    {
+        if (row.WorstRuleId is null)
+        {
+            return string.Empty;
+        }
+
+        string title = Core.Rules.SeverityPolicy.Hedge(Core.Rules.RuleCatalog.TryGet(row.WorstRuleId, out Core.Rules.RuleDefinition rule) ? rule.Title : row.WorstRuleId, row.WorstConfidence);
+        return row.OpenFindings > 1 ? string.Format(CultureInfo.CurrentCulture, Strings.Library.ProblemMore, title, UiFormat.Count(row.OpenFindings - 1)) : title;
     }
 
     private FileRow? RowAt(int index) =>
@@ -680,11 +703,12 @@ internal sealed class LibraryPage : PageBase
             }
 
             row.Line1 = file.Name;
-            row.Cells[1] = UiFormat.FileFormat(file);
-            row.Cells[2] = UiFormat.Size(file.Size);
+            row.Cells[1] = page._problems.GetValueOrDefault(file.Id);
+            row.Cells[2] = UiFormat.FileFormat(file);
+            row.Cells[3] = UiFormat.Size(file.Size);
             DateTimeOffset now = page.Services.Clock.UtcNow;
-            row.Cells[3] = file.LastScannedUtc is long scanned ? UiFormat.RecentDate(new DateTimeOffset(scanned, TimeSpan.Zero), now) : Strings.Dash;
-            row.Cells[4] = file.LastVerifiedUtc is long verified ? UiFormat.RecentDate(new DateTimeOffset(verified, TimeSpan.Zero), now) : Strings.Dash;
+            row.Cells[4] = file.LastScannedUtc is long scanned ? UiFormat.RecentDate(new DateTimeOffset(scanned, TimeSpan.Zero), now) : Strings.Dash;
+            row.Cells[5] = file.LastVerifiedUtc is long verified ? UiFormat.RecentDate(new DateTimeOffset(verified, TimeSpan.Zero), now) : Strings.Dash;
             switch (file.State)
             {
                 case FileState.Pending:
@@ -692,7 +716,7 @@ internal sealed class LibraryPage : PageBase
                     break;
                 case FileState.Skipped:
                     row.StateIcon = IconName.StateSkipped;
-                    row.MutedColumn = 1;
+                    row.MutedColumn = 2;
                     break;
                 case FileState.Missing:
                     row.StateIcon = IconName.StateMissing;

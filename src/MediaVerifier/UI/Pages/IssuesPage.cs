@@ -58,6 +58,7 @@ internal sealed class IssuesPage : PageBase
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
         _detail.FindingAction += (_, action) => UiTask.Run(OnFindingActionAsync(action.FindingId, action.Ignore));
         _detail.ShowInFolderRequested += (_, _) => ShowInFolder(_detail.Detail?.FullPath);
+        _detail.MoreRequested += (_, screen) => ShowDetailMenu(screen);
 
         _all.Toggled += (_, _) => OnAllChip();
         foreach (Chip chip in _tierChips.Concat(_kindChips))
@@ -118,6 +119,9 @@ internal sealed class IssuesPage : PageBase
         };
 
         _list.ItemActivated += (_, index) => OpenDetail(index);
+
+        // Owner request: a double-click opens the file itself; Enter and Details open the drawer.
+        _list.ItemDoubleClicked += (_, index) => ShellActions.OpenFile(_source.RowAt(index)?.FullPath);
         _list.DetailsClicked += (_, index) => OpenDetail(index);
         _list.MoreRequested += (_, args) => ShowRowMenu(args.Index, args.Screen);
         _list.SelectionChanged += (_, _) => UpdateSelectionBar();
@@ -698,6 +702,7 @@ internal sealed class IssuesPage : PageBase
             new(Strings.Menu.Ignore, IconName.Ignore, Strings.Menu.ShortcutCtrlI, Tag: "ignore"),
             new(Strings.Menu.IgnoreRuleHere, IconName.Ignore, Tag: "ignore-rule"),
             PopupItem.Separator,
+            new(Strings.Menu.OpenFile, IconName.Open, Tag: "open"),
             new(Strings.Menu.ShowInFolder, IconName.Folder, Strings.Menu.ShortcutAltEnter, Tag: "show"),
             new(Strings.Menu.CopyPath, IconName.Copy, Strings.Menu.ShortcutCtrlC, Tag: "copy"),
             PopupItem.Separator,
@@ -718,6 +723,9 @@ internal sealed class IssuesPage : PageBase
                     break;
                 case "ignore-rule":
                     UiTask.Run(IgnoreRuleInFolderAsync(row));
+                    break;
+                case "open":
+                    ShellActions.OpenFile(row.FullPath);
                     break;
                 case "show":
                     ShowInFolder(row.FullPath);
@@ -815,23 +823,17 @@ internal sealed class IssuesPage : PageBase
         UiTask.Run(RescanFilesAsync(files));
     }
 
+    /// <summary>Scan again: through the services' start, which shows the strip at once or says why nothing started.</summary>
     private async Task RescanFilesAsync(IReadOnlyList<long> fileIds)
     {
-        if (fileIds.Count == 0 || Services.IsDemo || Services.CannotScanReason(true) is not null)
+        if (fileIds.Count == 0 || Services.IsDemo)
         {
             return;
         }
 
-        try
-        {
-            List<FileRecord> files = await Task.Run(() => Services.Database.Files.GetMany([.. fileIds])).ConfigureAwait(true);
-            ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(f => f.Id)]))];
-            await Services.Scans.StartAsync(new ScanRequest(scopes, ScanDepth.Standard, RunTrigger.Manual), string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(fileIds.Count))).ConfigureAwait(true);
-        }
-        catch (InvalidOperationException ex)
-        {
-            State.Log.Warning("Rescan not started: " + ex.Message);
-        }
+        List<FileRecord> files = await Task.Run(() => Services.Database.Files.GetMany([.. fileIds])).ConfigureAwait(true);
+        ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(f => f.Id)]))];
+        _ = await Services.StartScanAsync(scopes, ScanDepth.Standard, string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(fileIds.Count))).ConfigureAwait(true);
     }
 
     private void CopySelectedPaths()
@@ -854,6 +856,42 @@ internal sealed class IssuesPage : PageBase
         {
             Clipboard.SetText(string.Join(Environment.NewLine, paths));
         }
+    }
+
+    /// <summary>The drawer's More menu (subplan 09, Detail drawer): the file's remaining actions.</summary>
+    private void ShowDetailMenu(Point screen)
+    {
+        if (_detail.Detail is not FileDetail shown)
+        {
+            return;
+        }
+
+        PopupItem[] items =
+        [
+            new(Strings.Menu.OpenFile, IconName.Open, Tag: "open"),
+            new(Strings.Menu.ScanAgain, IconName.Refresh, Tag: "rescan"),
+            new(Strings.Menu.CopyPath, IconName.Copy, Tag: "copy"),
+            PopupItem.Separator,
+            new(Strings.Menu.MoveToQuarantine, IconName.Quarantine, Enabled: Services.Operations is not null, Tag: "quarantine"),
+        ];
+        KitMenu.Show(_detail, screen, items, item =>
+        {
+            switch (item.Tag as string)
+            {
+                case "open":
+                    ShellActions.OpenFile(shown.FullPath);
+                    break;
+                case "rescan":
+                    UiTask.Run(RescanFilesAsync([shown.FileId]));
+                    break;
+                case "copy":
+                    Clipboard.SetText(shown.FullPath);
+                    break;
+                case "quarantine":
+                    UiTask.Run(RunAndReloadAsync([shown.FileId], ActionIds.Quarantine));
+                    break;
+            }
+        });
     }
 
     private static void ShowInFolder(string? path)

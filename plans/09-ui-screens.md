@@ -151,7 +151,8 @@ Empty states (centred in the list card, 48 px icon):
 
 ## Detail drawer
 
-Reference `issues-detail`. Opens from any finding or file with Enter, double-click or `Details`. Esc
+Reference `issues-detail`. Opens from any finding or file with Enter or `Details` (and a double-click
+outside Issues; in Issues a double-click opens the file itself in its program). Esc
 closes it. Up and Down in the list move to the neighbouring item without closing it.
 
 | Region | Content |
@@ -214,11 +215,12 @@ After adding a Library folder, a toast offers the scan: `{name} added` / `{n} fi
 | Column | Offset from the table's left edge | Content |
 |--------|-----------------------------------|---------|
 | (icon) | 16 | Severity shape of the worst open finding, the OK shape, or a file-state icon |
-| `Name` | 44 | File name |
-| `Format` | 300 | Audio `{codec} {rate} kHz {bits}-bit`; video `{codec} {height}p`; photo `{format} {width} × {height}`; pending `Not scanned yet`; skipped `Skipped: {reason}` in `Text3` |
-| `Size` | right-aligned at 536 | |
-| `Scanned` | 556 | Recent date or `—` |
-| `Verified` | 644 | Recent date or `—` |
+| `Name` | 44 | File name; the column takes the width the others leave (at least 80) |
+| `Problem` | 170 wide | The worst open finding's title, hedged as in Issues (`Likely DC offset`), with `{title} and {n} more` when the file has more; empty without findings. Sorts by severity |
+| `Format` | 130 wide | Audio `{codec} {rate} kHz {bits}-bit`; video `{codec} {height}p`; photo `{format} {width} × {height}`; pending `Not scanned yet`; skipped `Skipped: {reason}` in `Text3` |
+| `Size` | 64 wide, right-aligned | |
+| `Scanned` | 96 wide | Recent date or `—` |
+| `Verified` | 100 wide | Recent date or `—` |
 
 Skip reasons: `online-only cloud file`, `still being written`, `in use by another program`, `no permission to read`, `larger than the size limit`, `format not supported`.
 
@@ -353,7 +355,7 @@ Reference `dialogs` (letters refer to that sheet).
 
 | Surface | Wording |
 |---------|---------|
-| C. Row menu (Issues) | `Details` (Enter), the recommended action (Ctrl+Enter), `Scan again` (Shift+F5), separator, `Ignore` (Ctrl+I), `Ignore this rule for this folder`, separator, `Show in folder` (Alt+Enter), `Copy path` (Ctrl+C), separator, `Move to quarantine` (Del) |
+| C. Row menu (Issues) | `Details` (Enter), the recommended action (Ctrl+Enter), `Scan again` (Shift+F5), separator, `Ignore` (Ctrl+I), `Ignore this rule for this folder`, separator, `Open file`, `Show in folder` (Alt+Enter), `Copy path` (Ctrl+C), separator, `Move to quarantine` (Del). The drawer's `more` menu: `Open file`, `Scan again`, `Copy path`, separator, `Move to quarantine` |
 | D. Toasts | Success: `{Result} for {n} {things}` with detail `{m} skipped · originals are in quarantine` and `Undo`. Failure (Critical bar): `{Action} failed for {n} {things}` with `Show`. Information: single line |
 | E. Tooltips | Full text of anything cut short; names for icon buttons |
 | H. Notifications flyout | Title `Notifications`; link `Mark all read`; items with tier shape, title, one line, time, and an `Accent` dot r 3 when unread; footer subtle button `Clear all`. Empty: `bell` icon 32 px, `No notifications` |

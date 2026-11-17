@@ -295,6 +295,7 @@ internal static class Strings
         public const string Ignore = "Ignore";
         public const string IgnoreRuleHere = "Ignore this rule for this folder";
         public const string ShowInFolder = "Show in folder";
+        public const string OpenFile = "Open file";
         public const string CopyPath = "Copy path";
         public const string MoveToQuarantine = "Move to quarantine";
         public const string VerifyNow = "Verify now";
@@ -422,6 +423,8 @@ internal static class Strings
         public const string ChipOk = "OK";
         public const string ChipProblems = "Problems";
         public const string ColumnName = "Name";
+        public const string ColumnProblem = "Problem";
+        public const string ProblemMore = "{0} and {1} more";
         public const string ColumnFormat = "Format";
         public const string ColumnSize = "Size";
         public const string ColumnScanned = "Scanned";

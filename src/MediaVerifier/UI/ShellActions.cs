@@ -18,6 +18,19 @@ internal static class ShellActions
         Start(start);
     }
 
+    /// <summary>Opens a file in the program Windows has for its type (Explorer hands it on); nothing when it is gone.</summary>
+    public static void OpenFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        ProcessStartInfo start = new("explorer.exe") { UseShellExecute = false };
+        start.ArgumentList.Add(path);
+        Start(start);
+    }
+
     /// <summary>Opens a folder in Explorer.</summary>
     public static void OpenFolder(string? path)
     {

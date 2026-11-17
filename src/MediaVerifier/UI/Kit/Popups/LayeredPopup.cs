@@ -9,7 +9,9 @@ namespace MediaVerifier.UI.Kit.Popups;
 /// A top-level popup with per-pixel alpha (menus, drop-down lists, tooltips, toasts): the content is
 /// painted opaque, clipped to its rounded rectangle with anti-aliased edges, and composited over the
 /// cached Gaussian shadow (subplan 08, Space, shape, elevation). It never takes activation, so focus
-/// stays where the user is working.
+/// stays where the user is working. A fade changes <see cref="PopupOpacity"/>, which the layered update
+/// applies; never <see cref="Form.Opacity"/>, which switches the window to SetLayeredWindowAttributes, after
+/// which the per-pixel image no longer shows and the popup is a blank white box.
 /// </summary>
 internal abstract class LayeredPopup : Form
 {
@@ -22,6 +24,9 @@ internal abstract class LayeredPopup : Form
     private const byte AcSrcAlpha = 1;
 
     private Point _contentScreenLocation;
+    private Bitmap? _frame;
+    private Point _frameLocation;
+    private byte _opacity = 255;
 
     protected LayeredPopup()
     {
@@ -33,6 +38,17 @@ internal abstract class LayeredPopup : Form
 
     /// <summary>The DPI to paint at (the owner window's).</summary>
     public int PaintDpi { get; set; } = 96;
+
+    /// <summary>0 (invisible) to 255 (opaque): the whole popup's opacity, applied without painting again.</summary>
+    public byte PopupOpacity
+    {
+        get => _opacity;
+        set
+        {
+            _opacity = value;
+            Present();
+        }
+    }
 
     /// <summary>Corner radius of the content in logical pixels.</summary>
     protected virtual int Radius => 8;
@@ -92,19 +108,13 @@ internal abstract class LayeredPopup : Form
         int pad = ShadowCache.Padding(dpi);
         int offset = Dpi.Scale(6, dpi);
         Size total = new(content.Width + (2 * pad), content.Height + (2 * pad) + offset);
-        using Bitmap final = new(total.Width, total.Height, PixelFormat.Format32bppArgb);
-        using (Graphics g = Graphics.FromImage(final))
+        Bitmap frame = new(total.Width, total.Height, PixelFormat.Format32bppArgb);
+        using (Graphics g = Graphics.FromImage(frame))
         {
             g.Clear(Color.Transparent);
             Rectangle contentRect = new(pad, pad, content.Width, content.Height);
             ShadowCache.Draw(g, contentRect, Radius, dpi, ThemeService.Tokens.Shadow);
-            using Bitmap opaque = new(content.Width, content.Height, PixelFormat.Format24bppRgb);
-            using (Graphics cg = Graphics.FromImage(opaque))
-            {
-                cg.Clear(ThemeService.Tokens.Raised);
-                PaintContent(cg, new Rectangle(Point.Empty, content), dpi);
-            }
-
+            using Bitmap opaque = PaintOpaque(content, dpi);
             using TextureBrush texture = new(opaque, WrapMode.Clamp);
             texture.TranslateTransform(pad, pad);
             using GraphicsPath path = new();
@@ -113,9 +123,76 @@ internal abstract class LayeredPopup : Form
             g.FillPath(texture, path);
         }
 
-        Point windowLocation = new(_contentScreenLocation.X - pad, _contentScreenLocation.Y - pad);
-        Bounds = new Rectangle(windowLocation, total);
-        UpdateLayered(final, windowLocation);
+        _frame?.Dispose();
+        _frame = frame;
+        _frameLocation = new Point(_contentScreenLocation.X - pad, _contentScreenLocation.Y - pad);
+        Bounds = new Rectangle(_frameLocation, total);
+        Present();
+    }
+
+    /// <summary>
+    /// The content painted opaque, through a real GDI surface (a DIB section in a memory DC) as a window's own
+    /// double buffer is. GDI text drawn on a GDI+ bitmap's Graphics blends its ClearType edges against an empty
+    /// scratch copy instead of the background, which made menu text heavy and jagged (Disk Monitor 2.0 has the
+    /// same fix).
+    /// </summary>
+    internal Bitmap PaintOpaque(Size content, int dpi)
+    {
+        Bitmap opaque = new(content.Width, content.Height, PixelFormat.Format32bppRgb);
+        BitmapInfoHeader header = new() { Size = Marshal.SizeOf<BitmapInfoHeader>(), Width = content.Width, Height = -content.Height, Planes = 1, BitCount = 32 };
+        IntPtr screen = GetDC(IntPtr.Zero);
+        IntPtr memory = CreateCompatibleDC(screen);
+        IntPtr section = CreateDIBSection(memory, ref header, 0, out IntPtr bits, IntPtr.Zero, 0);
+        IntPtr previous = section == IntPtr.Zero ? IntPtr.Zero : SelectObject(memory, section);
+        try
+        {
+            if (section == IntPtr.Zero)
+            {
+                // No GDI surface to be had: paint on the bitmap (the text is less crisp, but it shows).
+                using Graphics fallback = Graphics.FromImage(opaque);
+                fallback.Clear(ThemeService.Tokens.Raised);
+                PaintContent(fallback, new Rectangle(Point.Empty, content), dpi);
+                return opaque;
+            }
+
+            using (Graphics g = Graphics.FromHdc(memory))
+            {
+                g.Clear(ThemeService.Tokens.Raised);
+                PaintContent(g, new Rectangle(Point.Empty, content), dpi);
+            }
+
+            _ = GdiFlush();
+
+            // Copy the pixels out: the DIB is freed below.
+            BitmapData data = opaque.LockBits(new Rectangle(Point.Empty, content), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+            try
+            {
+                int rowBytes = content.Width * 4;
+                byte[] row = new byte[rowBytes];
+                for (int y = 0; y < content.Height; y++)
+                {
+                    Marshal.Copy(bits + (y * rowBytes), row, 0, rowBytes);
+                    Marshal.Copy(row, 0, data.Scan0 + (y * data.Stride), rowBytes);
+                }
+            }
+            finally
+            {
+                opaque.UnlockBits(data);
+            }
+
+            return opaque;
+        }
+        finally
+        {
+            if (section != IntPtr.Zero)
+            {
+                _ = SelectObject(memory, previous);
+                _ = DeleteObject(section);
+            }
+
+            _ = DeleteDC(memory);
+            _ = ReleaseDC(IntPtr.Zero, screen);
+        }
     }
 
     /// <summary>Paints the content opaque into <paramref name="bounds"/> (origin 0, 0), including its border.</summary>
@@ -126,6 +203,26 @@ internal abstract class LayeredPopup : Form
     {
         int pad = ShadowCache.Padding(PaintDpi);
         return new Point(client.X - pad, client.Y - pad);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _frame?.Dispose();
+            _frame = null;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>Shows the last painted image at the current opacity.</summary>
+    private void Present()
+    {
+        if (_frame is not null && IsHandleCreated)
+        {
+            UpdateLayered(_frame, _frameLocation);
+        }
     }
 
     private void UpdateLayered(Bitmap bitmap, Point location)
@@ -139,7 +236,7 @@ internal abstract class LayeredPopup : Form
             NativePoint destination = new(location.X, location.Y);
             NativeSize size = new(bitmap.Width, bitmap.Height);
             NativePoint source = new(0, 0);
-            BlendFunction blend = new() { BlendOp = AcSrcOver, SourceConstantAlpha = 255, AlphaFormat = AcSrcAlpha };
+            BlendFunction blend = new() { BlendOp = AcSrcOver, SourceConstantAlpha = _opacity, AlphaFormat = AcSrcAlpha };
             UpdateLayeredWindow(Handle, screen, ref destination, ref size, memory, ref source, 0, ref blend, UlwAlpha);
         }
         finally
@@ -163,6 +260,22 @@ internal abstract class LayeredPopup : Form
     {
         public int Cx = cx;
         public int Cy = cy;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public int Size;
+        public int Width;
+        public int Height;
+        public short Planes;
+        public short BitCount;
+        public int Compression;
+        public int SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public int ClrUsed;
+        public int ClrImportant;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -194,4 +307,10 @@ internal abstract class LayeredPopup : Form
 
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateDIBSection(IntPtr hdc, ref BitmapInfoHeader info, int usage, out IntPtr bits, IntPtr section, int offset);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool GdiFlush();
 }

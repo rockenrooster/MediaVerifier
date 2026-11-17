@@ -137,8 +137,11 @@ internal sealed class VirtualList : KitControl
         More,
     }
 
-    /// <summary>Enter or double-click on an item row.</summary>
+    /// <summary>Enter or double-click on an item row (double-click raises <see cref="ItemDoubleClicked"/> instead when a page handles it).</summary>
     public event EventHandler<int>? ItemActivated;
+
+    /// <summary>A double-click on an item row, when it means something else than Enter (Issues opens the file).</summary>
+    public event EventHandler<int>? ItemDoubleClicked;
 
     /// <summary>The Details hover button of a two-line row.</summary>
     public event EventHandler<int>? DetailsClicked;
@@ -824,7 +827,7 @@ internal sealed class VirtualList : KitControl
             _source.Fill(index, _row);
             if (!_row.IsGroup)
             {
-                ItemActivated?.Invoke(this, index);
+                (ItemDoubleClicked ?? ItemActivated)?.Invoke(this, index);
             }
         }
     }
