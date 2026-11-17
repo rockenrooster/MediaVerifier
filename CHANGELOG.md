@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.2 - 2026-11-17
+
 - Fixed: Add folder did nothing, because its dialog failed while opening. The Dashboard's first-run
   button and the Issues page's Add folder and Scan buttons work as well now.
 - Fixed: the first schedule could not be created, and every start logged a maintenance error, until
