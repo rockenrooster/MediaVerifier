@@ -34,6 +34,8 @@ public static class EngineFactory
         new StructureDetector(),
         new StreamLengthDetector(),
         new AudioDecodeDetector(),
+        new AudioQualityDetector(),
+        new LowBitrateDetector(),
         new ImageDecodeDetector(),
         new VideoDecodeDetector(),
     ];

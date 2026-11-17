@@ -159,6 +159,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** A silent music file almost always means the recording failed or the audio was lost.
 - **What you can do:** Restore it from a healthy copy or replace it.
 - **Actions:** `ACT-RESTORE-COPY`, `ACT-EXPORT-LIST`, `ACT-QUARANTINE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `peakDb` -60 dBFS (-150–-10); `rmsDb` -70 dBFS (-150–-10)
 
 ## Authenticity
 
@@ -178,6 +179,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The file takes the space of a lossless file but sounds no better than the lossy file it came from.
 - **What you can do:** Replace it from a genuine lossless source. Nothing can restore what the {sourceName} encoder removed.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `minDropDb` 30 dB (10–120); `likelyKneeHz` 19200 Hz (8000–22000); `possibleKneeHz` 20600 Hz (8000–22050)
 
 ### `AUD-UPSAMPLED` Hi-res file upsampled from a lower rate
 
@@ -185,6 +187,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** It takes two or more times the space of the original without any gain in quality, and it is not the hi-res recording it claims to be.
 - **What you can do:** Replace it from a genuine hi-res source if you want one. Otherwise keep it as it is.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `maxKneeHz` 24500 Hz (20600–48000)
 
 ### `AUD-PADDED-BITS` Bit depth is padded
 
@@ -199,6 +202,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Re-encoding cannot add back detail. The file only takes more space than its quality deserves.
 - **What you can do:** Replace it from a better source if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `marginHz` 1500 Hz (0–10000)
 
 ### `VID-UPSCALED` Resolution is higher than the detail
 
@@ -248,6 +252,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Low bitrates remove detail and can add swishing or ringing sounds, especially on headphones.
 - **What you can do:** Replace it from a better source if you notice the difference.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `mp3Kbps` 128 kbps (8–320); `aacKbps` 96 kbps (8–320); `heAacKbps` 48 kbps (8–320); `vorbisKbps` 96 kbps (8–500); `opusKbps` 64 kbps (6–510); `wmaKbps` 128 kbps (8–320)
 
 ### `AUD-CLIPPING` Clipping
 
@@ -255,7 +260,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Clipping is heard as harsh distortion on loud passages. It happened during recording or mastering, so every copy of this release has it.
 - **What you can do:** Look for a better master of the same recording. A de-clipped copy can be made as an estimate; it never replaces the original.
 - **Actions:** `ACT-DECLIP-COPY`, `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
-- **Limits:** `lowPerMinute` 5 clipped peaks per minute (1–10000); `mediumPerMinute` 60 clipped peaks per minute (1–10000); `highPerMinute` 600 clipped peaks per minute (1–100000)
+- **Limits:** `lowPerMinute` 5 clipped peaks per minute (1–10000); `mediumPerMinute` 60 clipped peaks per minute (1–10000); `highPerMinute` 600 clipped peaks per minute (1–100000); `minRuns` 10 peaks (1–100000); `mediumRunSamples` 16 samples (3–100000); `highRunSamples` 64 samples (3–100000); `highPercent` 0.05 % (0.001–100); `lossyLowPercent` 0.05 % (0.001–100); `lossyMediumPercent` 0.5 % (0.001–100)
 
 ### `AUD-OVERS` Decodes above full scale
 
@@ -270,6 +275,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** It wastes headroom and can cause clicks where tracks start, stop or are edited.
 - **What you can do:** Usually nothing. An audio editor can remove the offset if the clicks bother you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `lowLevel` 0.01 of full scale (0.001–0.5); `mediumLevel` 0.05 of full scale (0.001–0.5); `sameSignPercent` 90 % (50–100)
 
 ### `AUD-DEAD-CHANNEL` A channel is silent
 
@@ -277,6 +283,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** You hear the music from one side only. It is usually a recording or conversion mistake.
 - **What you can do:** Replace it from a better source.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `silentDb` -80 dBFS (-150–-20); `activeDb` -50 dBFS (-100–0)
 
 ### `AUD-PHASE` Channels are out of phase
 
@@ -284,6 +291,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The sound seems to come from nowhere, the bass is thin, and played in mono the music can nearly vanish.
 - **What you can do:** Replace it from a better source.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `correlationPercent` 90 % (50–100)
 
 ### `AUD-LONG-SILENCE` Long silence at start or end
 
@@ -291,6 +299,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Usually harmless, but it can hide a bonus track or point to a bad rip.
 - **What you can do:** Usually nothing.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `seconds` 10 seconds (1–600)
 
 ### `AUD-DUAL-MONO` Stereo file with identical channels
 

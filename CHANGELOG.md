@@ -5,6 +5,10 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Audio quality checks: lossless files made from MP3, AAC or Opus; hi-res files upsampled from CD
+  rates; padded bit depth; MP3s re-encoded at a higher bitrate; low bitrates; clipping and samples
+  above full scale; DC offset, silent or out-of-phase channels, silent tracks, long silences and
+  dropouts. The drawer shows the cutoff on the spectrum.
 - MediaVerifier uses the .NET 10 Desktop Runtime (x64) installed on the PC instead of carrying its
   own copy: the download is much smaller, and setup asks for the runtime when it is missing.
 - Scans check every photo, video and music file for damage: broken or truncated containers, decoder

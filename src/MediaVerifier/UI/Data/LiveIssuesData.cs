@@ -114,7 +114,7 @@ internal sealed partial class LiveUiData
                 RuleText.Render(rule.WhatYouCanDo, evidence),
                 view,
                 evidence,
-                finding.Summary));
+                view == EvidenceView.Spectrogram ? SpectralCaption(evidence) : finding.Summary));
         }
 
         List<(string, DateTimeOffset)> history = [.. database.Events.ForFile(fileId).OrderByDescending(e => e.Utc).Select(e => (EventText(e), Ticks(e.Utc)))];
@@ -181,9 +181,21 @@ internal sealed partial class LiveUiData
         }
     }
 
+    /// <summary>The caption under a spectrogram: <c>Cutoff 16.6 kHz · drop 67 dB · only rounding noise above</c>.</summary>
+    private static string SpectralCaption(IReadOnlyDictionary<string, object> evidence)
+    {
+        CultureInfo culture = CultureInfo.CurrentCulture;
+        double knee = Convert.ToDouble(evidence["kneeHz"], CultureInfo.InvariantCulture);
+        string cutoff = string.Format(culture, Strings.Drawer.CutoffLine, (knee / 1000).ToString("0.0", culture));
+        string? drop = evidence.TryGetValue("dropDb", out object? d) ? string.Format(culture, Strings.Drawer.DropLine, Math.Round(Convert.ToDouble(d, CultureInfo.InvariantCulture)).ToString("0", culture)) : null;
+        string? noise = evidence.TryGetValue("aboveVsFloorDb", out object? f) && Convert.ToDouble(f, CultureInfo.InvariantCulture) <= 6 ? Strings.Drawer.OnlyRoundingNoise : null;
+        return UiFormat.Facts(cutoff, drop, noise);
+    }
+
     private static EvidenceView ViewFor(string ruleId, IReadOnlyDictionary<string, object> evidence) => ruleId switch
     {
         "GEN-ZEROFILL" or "INT-ROT" => EvidenceView.ByteMap,
+        "AUD-FAKE-LOSSLESS" or "AUD-UPSAMPLED" or "AUD-BITRATE-INFLATED" when evidence.ContainsKey("kneeHz") => EvidenceView.Spectrogram,
         _ when evidence.ContainsKey("messages") => EvidenceView.Messages,
         _ => EvidenceView.None,
     };

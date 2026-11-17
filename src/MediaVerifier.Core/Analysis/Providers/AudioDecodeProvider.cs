@@ -39,7 +39,8 @@ public sealed record AudioDecodeArtifact(
     long SampleFrames,
     int SampleRate,
     int Channels,
-    Md5Verdict Md5) : IArtifact
+    Md5Verdict Md5,
+    Audio.PcmStats? Stats = null) : IArtifact
 {
     [JsonIgnore]
     public double? DecodedSeconds => Opened && SampleRate > 0 ? (double)SampleFrames / SampleRate : null;
@@ -172,7 +173,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
     /// <summary>Samples per block handed to the analyzers (about 46 ms of stereo audio at 44.1 kHz).</summary>
     private const int BlockSamples = 4096;
 
-    public override int Version => 1;
+    /// <summary>Version 2 adds the signal features of subplan 10 (<see cref="Audio.PcmStats"/>).</summary>
+    public override int Version => 2;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -184,7 +186,13 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
         FlacInfo? flac = structure?.Flac;
         SampleCounter counter = new();
         using FlacMd5Analyzer? md5 = flac is { Md5Hex: not null, BitsPerSample: <= 24 and >= 4 } ? new FlacMd5Analyzer(flac.BitsPerSample) : null;
-        List<IPcmAnalyzer> analyzers = [counter];
+        Audio.LevelAnalyzer levels = new();
+        Audio.BitDepthAnalyzer bits = new();
+        Audio.ClippingAnalyzer clipping = new();
+        Audio.StereoAnalyzer stereo = new();
+        Audio.SpectrumAnalyzer spectrum = new();
+        Audio.DropoutAnalyzer dropouts = new();
+        List<IPcmAnalyzer> analyzers = [counter, levels, bits, clipping, stereo, spectrum, dropouts];
         if (md5 is not null)
         {
             analyzers.Add(md5);
@@ -230,6 +238,22 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
             }
         }
 
+        Audio.PcmStats? stats = format is not null && counter.Frames > 0
+            ? new Audio.PcmStats(
+                format.SampleRate,
+                format.Channels,
+                (double)counter.Frames / Math.Max(1, format.SampleRate),
+                levels.Levels,
+                bits.Integral,
+                bits.EffectiveBits,
+                clipping.Result,
+                stereo.Correlation,
+                stereo.Identical,
+                spectrum.Result,
+                dropouts.Result,
+                levels.LeadingSilenceSeconds,
+                levels.TrailingSilenceSeconds)
+            : null;
         return new AudioDecodeArtifact(
             OutcomeMapping.From(result.Outcome),
             result.IdleTimeout,
@@ -238,7 +262,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
             counter.Frames,
             format?.SampleRate ?? 0,
             format?.Channels ?? 0,
-            verdict);
+            verdict,
+            stats);
     }
 
     /// <summary>Reads the WAV stream to its end, feeding whole frames to every analyzer. Null when no audio arrived.</summary>

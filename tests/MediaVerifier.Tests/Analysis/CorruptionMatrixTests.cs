@@ -47,9 +47,10 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
     /// <summary>Every fixture without damage: no finding at any depth (subplan 07 exit criteria).</summary>
     public static TheoryData<ScanDepth> Depths => new() { ScanDepth.Quick, ScanDepth.Standard, ScanDepth.Deep };
 
+    /// <summary>Undamaged fixtures; pad24.flac and up96.flac are left out because they are quality findings by design (subplan 10).</summary>
     private static readonly string[] HealthySet =
     [
-        "src16.flac", "m128.mp3", "m320.mp3", "mV0.mp3", "a128.m4a", "o128.opus", "pad24.flac", "up96.flac", "true96.flac",
+        "src16.flac", "m128.mp3", "m320.mp3", "mV0.mp3", "a128.m4a", "o128.opus", "true96.flac",
         "cover.mp3", "native1080.mp4", "fs.mp4", "t.mkv", "av.mp4", "img.jpg", "img.png", "img.webp",
     ];
 
@@ -105,7 +106,10 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
             AudioDecodeArtifact audio = Assert.IsType<AudioDecodeArtifact>(scan.Artifact(ArtifactKind.AudioDecode, new AudioDecodeProvider()));
             Assert.Equal(Md5Verdict.Match, audio.Md5);
             Assert.Equal(20.0, audio.DecodedSeconds!.Value, 2);
-            Assert.Empty(scan.Findings);
+
+            // The 24-bit copy of a 16-bit file is padded (subplan 10); nothing else is reported.
+            Assert.All(scan.Findings, f => Assert.Equal("AUD-PADDED-BITS", f.RuleId));
+            Assert.Equal(name == "pad24.flac" ? 1 : 0, scan.Findings.Count);
         }
     }
 

@@ -439,7 +439,8 @@ internal sealed class FileDetailView : KitControl
     private void DrawSpectrogramPlaceholder(Graphics g, FindingDetail f, Rectangle view, ThemeTokens t, TypeRamp type)
     {
         Color[] palette = [ThemeTokens.Hex(0x000004), ThemeTokens.Hex(0x3B0F70), ThemeTokens.Hex(0x8C2981), ThemeTokens.Hex(0xDE4968), ThemeTokens.Hex(0xFE9F6D), ThemeTokens.Hex(0xFCFDBF)];
-        double cutoff = f.Evidence.TryGetValue("cutoffHz", out object? hz) ? Convert.ToDouble(hz, CultureInfo.InvariantCulture) : 0;
+        double cutoff = f.Evidence.TryGetValue("kneeHz", out object? knee) ? Convert.ToDouble(knee, CultureInfo.InvariantCulture)
+            : f.Evidence.TryGetValue("cutoffHz", out object? hz) ? Convert.ToDouble(hz, CultureInfo.InvariantCulture) : 0;
         double nyquist = f.Evidence.TryGetValue("sampleRateHz", out object? rate) ? Convert.ToDouble(rate, CultureInfo.InvariantCulture) / 2 : 22050;
         int cutoffY = cutoff > 0 ? view.Bottom - (int)(view.Height * cutoff / nyquist) : view.Y;
         for (int y = view.Y; y < view.Bottom; y++)

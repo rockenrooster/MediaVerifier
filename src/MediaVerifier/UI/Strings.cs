@@ -335,6 +335,9 @@ internal static class Strings
         public const string Stereo = "stereo";
         public const string Surround = "5.1";
         public const string Kilohertz = "{0} kHz";
+        public const string CutoffLine = "Cutoff {0} kHz";
+        public const string DropLine = "drop {0} dB";
+        public const string OnlyRoundingNoise = "only rounding noise above";
         public const string Bits = "{0}-bit";
         public const string Progressive = "{0}p";
         public const string Fps = "{0} fps";
