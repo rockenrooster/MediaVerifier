@@ -281,6 +281,18 @@ internal sealed class EmptyState : KitControl
 
     public string? Note { get; set; }
 
+    /// <summary>Removes the button, and with it every Click handler a page attached.</summary>
+    public void ClearButton()
+    {
+        if (_button is not null)
+        {
+            Controls.Remove(_button);
+            _button.Dispose();
+            _button = null;
+            Invalidate();
+        }
+    }
+
     /// <summary>Adds the optional primary button; returns it so the page can handle Click.</summary>
     public KitButton SetButton(string text)
     {

@@ -532,19 +532,26 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
+        _empty.ClearButton();
         if (!data.HasFolders)
         {
             _empty.Icon = IconName.FolderAdd;
             _empty.Headline = Strings.Issues.NoFoldersHeadline;
             _empty.Body = string.Empty;
-            _empty.SetButton(Strings.Library.AddFolder);
+            _empty.SetButton(Strings.Library.AddFolder).Click += (_, _) => Services.Navigate?.Invoke(PageId.Library, new AddFolderRequest(null));
         }
         else if (!data.AnyScanned)
         {
             _empty.Icon = IconName.Scans;
             _empty.Headline = Strings.Issues.NotScannedHeadline;
             _empty.Body = string.Empty;
-            _empty.SetButton(Strings.Shell.Scan);
+            _empty.SetButton(Strings.Shell.Scan).Click += (_, _) =>
+            {
+                if (FindForm() is Form owner)
+                {
+                    _ = ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null);
+                }
+            };
         }
         else if (data.Query.Filtered)
         {

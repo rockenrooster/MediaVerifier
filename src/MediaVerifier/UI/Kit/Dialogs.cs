@@ -30,6 +30,9 @@ internal class KitDialog : Form
 
     protected KitDialog(string title, DialogWidth width, bool closeButton = false)
     {
+        // Setting the form's properties lays it out before the body exists; a subclass's OnLayout would then run
+        // against a null body (the Add folder dialog threw this way and never opened). Lay out once it exists.
+        SuspendLayout();
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -48,6 +51,7 @@ internal class KitDialog : Form
         }
 
         ThemeService.Changed += OnThemeChanged;
+        ResumeLayout(false);
     }
 
     public int LogicalWidth { get; }

@@ -89,9 +89,9 @@ public sealed class TaskSchedulerBackend : IScheduleBackend
                     names.Add(FolderName + "\\" + (string)task.Name);
                 }
             }
-            catch (COMException)
+            catch (Exception ex) when (ex is COMException or FileNotFoundException)
             {
-                // No folder yet.
+                // No folder yet (the late-bound call reports it as FileNotFoundException).
             }
 
             dynamic root = service.GetFolder("\\");
@@ -154,8 +154,9 @@ public sealed class TaskSchedulerBackend : IScheduleBackend
         {
             return service.GetFolder("\\" + FolderName);
         }
-        catch (COMException) when (create)
+        catch (Exception ex) when (create && ex is COMException or FileNotFoundException)
         {
+            // No folder yet: the late-bound call reports a missing folder as FileNotFoundException.
             dynamic root = service.GetFolder("\\");
             return root.CreateFolder(FolderName, null);
         }

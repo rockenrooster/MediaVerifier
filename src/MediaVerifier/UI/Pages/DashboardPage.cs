@@ -520,7 +520,7 @@ internal sealed class DashboardPage : PageBase
         {
             _page = page;
             _add = new KitButton { Text = Strings.Dashboard.AddFolder, Kind = ButtonKind.Primary, Icon = IconName.FolderAdd };
-            _add.Click += (_, _) => page.Services.Navigate?.Invoke(PageId.Library, LibraryRequest.AddFolder);
+            _add.Click += (_, _) => page.Services.Navigate?.Invoke(PageId.Library, new AddFolderRequest(null));
             Controls.Add(_add);
         }
 
@@ -588,8 +588,3 @@ internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long
 /// <summary>Opens Issues with one finding's file in the drawer (a notification's link, subplan 13).</summary>
 internal sealed record IssueFindingRequest(long FindingId);
 
-/// <summary>Navigation requests to the Library page.</summary>
-internal enum LibraryRequest
-{
-    AddFolder,
-}
