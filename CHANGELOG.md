@@ -6,6 +6,11 @@ All notable changes to MediaVerifier are documented here.
 
 - Add upcoming user-visible changes here before tagging a release.
 
+## 0.1.0.4 - 2026-11-17
+
+- Nothing changes in how MediaVerifier works: this release checks that updating from inside the app
+  works.
+
 ## 0.1.0.3 - 2026-11-17
 
 - Updates: every step of Download and install is written to the log and any failure is shown, instead
