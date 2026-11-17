@@ -92,6 +92,8 @@ internal sealed class SettingsPage : PageBase
                 quietFrom,
                 quietTo,
                 Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.SendTestNotification, () => _ = SendTestNotificationAsync()),
+                Webhook(scan),
+                Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, () => _ = SendWebhookTestAsync()),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
@@ -291,6 +293,68 @@ internal sealed class SettingsPage : PageBase
         };
         box.Leave += (_, _) => box.Text = NotificationPolicy.TryParseTime(box.Text, out TimeOnly time) ? time.ToString("HH:mm", CultureInfo.InvariantCulture) : get();
         return new SettingRow(label, null, box, null);
+    }
+
+    /// <summary>
+    /// The webhook address (task N-06), checked when the box loses focus: HTTPS is taken as it is, plain HTTP to a
+    /// private address after a confirmation, anything else is put back with a message. Empty turns the webhook off.
+    /// </summary>
+    private SettingRow Webhook(ScanSettings scan)
+    {
+        KitTextBox box = new() { Text = scan.WebhookUrl ?? string.Empty, AccessibleName = Strings.Settings.Webhook, Placeholder = Strings.Settings.WebhookPlaceholder, Inset = true, MaxLength = 2048 };
+        box.Leave += (_, _) => BeginInvoke(() => CommitWebhook(box, scan));
+        return new SettingRow(Strings.Settings.Webhook, Strings.Settings.WebhookHelper, box, null, width: 280);
+    }
+
+    private void CommitWebhook(KitTextBox box, ScanSettings scan)
+    {
+        string text = box.Text.Trim();
+        if (string.Equals(text, scan.WebhookUrl ?? string.Empty, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        switch (WebhookAddress.Check(text, out _))
+        {
+            case WebhookAddressVerdict.Ok:
+                scan.WebhookAllowHttp = false;
+                break;
+            case WebhookAddressVerdict.NeedsConfirmation when FindForm() is Form owner
+                && MessageDialog.Confirm(owner, Strings.Settings.WebhookHttpTitle, Strings.Settings.WebhookHttpText, Strings.Kit.Cancel, Strings.Settings.WebhookHttpConfirm, destructive: false):
+                scan.WebhookAllowHttp = true;
+                break;
+            case WebhookAddressVerdict.Invalid when text.Length == 0:
+                scan.WebhookAllowHttp = false;
+                break;
+            default:
+                box.Text = scan.WebhookUrl ?? string.Empty;
+                if (WebhookAddress.Check(text, out _) == WebhookAddressVerdict.Invalid)
+                {
+                    Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.Medium, Strings.Settings.Webhook, Strings.Settings.WebhookInvalid));
+                }
+
+                return;
+        }
+
+        scan.WebhookUrl = text.Length == 0 ? null : text;
+        Save();
+    }
+
+    /// <summary><c>Send test</c>: posts the test payload to the saved address and says whether it arrived.</summary>
+    private async Task SendWebhookTestAsync()
+    {
+        ScanSettings scan = State.Settings.Scanning;
+        WebhookAddressVerdict verdict = WebhookAddress.Check(scan.WebhookUrl, out Uri? address);
+        if (Services.IsDemo || address is null || (verdict == WebhookAddressVerdict.NeedsConfirmation && !scan.WebhookAllowHttp))
+        {
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.Medium, Strings.Settings.Webhook, Strings.Settings.WebhookInvalid));
+            return;
+        }
+
+        bool sent = await new WebhookSender().SendAsync(address, WebhookPayload.Test(DateTimeOffset.UtcNow), message => State.Log.Warning(message)).ConfigureAwait(true);
+        Services.ShowToast?.Invoke(sent
+            ? new Kit.Popups.ToastContent(Severity.None, Strings.Settings.Webhook, Strings.Settings.WebhookSent)
+            : new Kit.Popups.ToastContent(Severity.Medium, Strings.Settings.Webhook, Strings.Settings.WebhookFailed));
     }
 
     /// <summary>
@@ -510,13 +574,15 @@ internal sealed class SettingsPage : PageBase
         private readonly string? _helper;
         private readonly Control? _control;
         private readonly string? _unit;
+        private readonly int? _width;
 
-        public SettingRow(string label, string? helper, Control? control, string? unit)
+        public SettingRow(string label, string? helper, Control? control, string? unit, int? width = null)
         {
             _label = label;
             _helper = helper;
             _control = control;
             _unit = unit;
+            _width = width;
             TabStop = false;
             if (control is not null)
             {
@@ -538,7 +604,7 @@ internal sealed class SettingsPage : PageBase
             }
 
             int unitWidth = _unit is null ? 0 : KitPaint.MeasureWidth(_unit, Type.Body) + S(12);
-            Size size = _control switch
+            Size size = _width is int logical ? new Size(S(logical), S(32)) : _control switch
             {
                 ToggleSwitch toggle => toggle.GetPreferredSize(Size.Empty),
                 SegmentedControl segmented => new Size(S(segmented.PreferredLogicalWidth), S(32)),

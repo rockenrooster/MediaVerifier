@@ -129,6 +129,9 @@ internal static class PlanHost
                     _ = SystemToast.Show(notification.Title, notification.Body, new ActivationUri(ActivationTarget.Run, summary.RunId), notification.Silent);
                 }
             }
+
+            // After the run and its notification: a slow or failing webhook delays only the process exit.
+            WebhookDispatch.SendAsync(state, database, summary).GetAwaiter().GetResult();
         }
 
         return exit;
@@ -259,6 +262,7 @@ internal static class GuiPlanRunner
         try
         {
             await services.Database.Plans.UpdateAsync(plan with { LastRunId = summary.RunId }).ConfigureAwait(false);
+            _ = Task.Run(() => WebhookDispatch.SendAsync(services.State, services.Database, summary));
             Core.Settings.ScanSettings settings = services.State.Settings.Scanning;
             string finished = string.Format(CultureInfo.CurrentCulture, CoreStrings.Notify.FinishedAt, DateTime.Now.ToString("HH:mm", CultureInfo.CurrentCulture));
             PlanNotify notify = NotificationPolicy.WithThreshold(definition.Notify, settings.NotifyAbout);
@@ -287,6 +291,37 @@ internal static class GuiPlanRunner
         catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
         {
             services.State.Log.Warning("The notification of a forwarded plan run failed", ex);
+        }
+    }
+}
+
+/// <summary>Posts a scheduled run's summary to the webhook in Settings, when one is set (task N-06). Never throws.</summary>
+internal static class WebhookDispatch
+{
+    public static async Task SendAsync(AppState state, Database database, RunSummary summary)
+    {
+        Core.Settings.ScanSettings settings = state.Settings.Scanning;
+        if (settings.WebhookUrl is null)
+        {
+            return;
+        }
+
+        WebhookAddressVerdict verdict = WebhookAddress.Check(settings.WebhookUrl, out Uri? address);
+        if (address is null || (verdict == WebhookAddressVerdict.NeedsConfirmation && !settings.WebhookAllowHttp))
+        {
+            state.Log.Warning("The webhook address cannot be used; nothing was sent");
+            return;
+        }
+
+        try
+        {
+            Dictionary<string, long> byKind = await Task.Run(() => WebhookPayload.CountByKind(database, summary.RunId)).ConfigureAwait(false);
+            bool sent = await new WebhookSender().SendAsync(address, WebhookPayload.From(summary, byKind, DateTimeOffset.UtcNow), message => state.Log.Warning(message)).ConfigureAwait(false);
+            state.Log.Info(sent ? $"Webhook received run {summary.RunId}" : $"Webhook did not receive run {summary.RunId}");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException)
+        {
+            state.Log.Warning("The webhook could not be sent", ex);
         }
     }
 }

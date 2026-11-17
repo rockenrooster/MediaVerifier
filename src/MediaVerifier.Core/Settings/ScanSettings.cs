@@ -87,6 +87,12 @@ public sealed class ScanSettings
 
     public string QuietTo { get; set; } = "07:00";
 
+    /// <summary>Where scheduled runs post their summary (subplan 13, Optional webhook); null when off.</summary>
+    public string? WebhookUrl { get; set; }
+
+    /// <summary>The user confirmed plain HTTP for <see cref="WebhookUrl"/> (private addresses only).</summary>
+    public bool WebhookAllowHttp { get; set; }
+
     public int ReadersFor(Storage.StorageClass storage) => storage switch
     {
         Storage.StorageClass.Hdd => Math.Clamp(ReadersPerHdd, 1, 16),
@@ -108,6 +114,8 @@ public sealed class ScanSettings
         EmptyQuarantineAfterDays = Math.Clamp(EmptyQuarantineAfterDays, 1, 3650);
         QuietFrom ??= "22:00";
         QuietTo ??= "07:00";
+        WebhookUrl = string.IsNullOrWhiteSpace(WebhookUrl) ? null : WebhookUrl.Trim();
+        WebhookAllowHttp &= WebhookUrl is not null;
         if (!Enum.IsDefined(DefaultDepth) || DefaultDepth == ScanDepth.None)
         {
             DefaultDepth = ScanDepth.Standard;

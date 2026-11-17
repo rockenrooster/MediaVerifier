@@ -9,6 +9,9 @@ All notable changes to MediaVerifier are documented here.
   notification stays after MediaVerifier exits; Review opens the run. A newer run replaces an unread
   older notification. Quiet hours post silently, with From and To times in Settings → Notifications,
   which also has Send a test notification and honours Notify about for scheduled scans.
+- Webhook: Settings → Notifications can post a summary of each scheduled scan (counts only, no file
+  names) to an HTTPS address, or plain HTTP on the local network after confirming; Send test checks
+  it. The payload is described in docs/webhook.md.
 - Links of the form `mediaverifier://run/<id>`, `mediaverifier://finding/<id>` and
   `mediaverifier://issues` open MediaVerifier at that view; anything else is ignored.
 - While a scheduled scan runs in the background, the open window shows its progress, the Scan button

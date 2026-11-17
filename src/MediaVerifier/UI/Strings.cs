@@ -742,6 +742,17 @@ internal static class Strings
         public const string From = "From";
         public const string TestNotificationLabel = "Check that notifications arrive";
         public const string SendTestNotification = "Send a test notification";
+        public const string Webhook = "Webhook";
+        public const string WebhookHelper = "Receives a summary after each scheduled scan. No file names are sent";
+        public const string WebhookPlaceholder = "https://";
+        public const string WebhookTestLabel = "Check the webhook";
+        public const string SendTest = "Send test";
+        public const string WebhookHttpTitle = "Send over plain HTTP?";
+        public const string WebhookHttpText = "The summary will travel unencrypted on your local network. Use this only for a device you trust.";
+        public const string WebhookHttpConfirm = "Use this address";
+        public const string WebhookInvalid = "Use an https:// address, or http:// to a device on your local network.";
+        public const string WebhookSent = "The webhook received the test.";
+        public const string WebhookFailed = "The webhook did not answer. The log has the details.";
         public const string To = "To";
         public const string TestNotification = "Send a test notification";
         public const string Updates = "Updates";
