@@ -62,6 +62,85 @@ public sealed record SignalCounts(
 }
 
 /// <summary>A log reduced to counts, the three most frequent damage messages and the first raw line.</summary>
+/// <summary>
+/// Where in the file the decoder reported errors (owner request 2026-11-17): the position decoding had reached
+/// when each error line arrived, so an approximation, merged into spots at least 2 s apart.
+/// </summary>
+public static class ErrorSpots
+{
+    public const int Max = 50;
+
+    /// <summary>Seconds rounded to tenths, sorted; an error within 2 s of the last kept spot belongs to it.</summary>
+    public static double[] Merge(IEnumerable<double> seconds)
+    {
+        List<double> spots = [];
+        foreach (double s in seconds.Where(double.IsFinite).Select(s => Math.Round(Math.Max(0, s), 1)).Order())
+        {
+            if (spots.Count == 0 || s - spots[^1] >= 2)
+            {
+                spots.Add(s);
+                if (spots.Count == Max)
+                {
+                    break;
+                }
+            }
+        }
+
+        return [.. spots];
+    }
+
+    /// <summary>
+    /// The media position of each error from when it was reported (wall-clock seconds since the decode started),
+    /// linear between the progress reports around it; before the first report from the start, after the last one
+    /// its position. Both lists are in time order.
+    /// </summary>
+    public static List<double> Interpolate(IReadOnlyList<double> errorWall, IReadOnlyList<(double Wall, double Media)> marks)
+    {
+        ArgumentNullException.ThrowIfNull(errorWall);
+        ArgumentNullException.ThrowIfNull(marks);
+        List<double> positions = new(errorWall.Count);
+        int next = 0;
+        foreach (double wall in errorWall)
+        {
+            while (next < marks.Count && marks[next].Wall < wall)
+            {
+                next++;
+            }
+
+            (double Wall, double Media) before = next > 0 ? marks[next - 1] : (0, 0);
+            if (next == marks.Count)
+            {
+                positions.Add(before.Media);
+                continue;
+            }
+
+            (double Wall, double Media) after = marks[next];
+            double span = after.Wall - before.Wall;
+            positions.Add(span <= 0 ? after.Media : before.Media + ((after.Media - before.Media) * (wall - before.Wall) / span));
+        }
+
+        return positions;
+    }
+
+    /// <summary>True for the log signals the decode findings count (where they happened is worth keeping).</summary>
+    public static bool Counts(LogSignalKind kind) => kind is LogSignalKind.DecodeError or LogSignalKind.MinorDecode or LogSignalKind.ConcealedFrame;
+
+    /// <summary>True when the counts hold errors whose spots are worth knowing.</summary>
+    public static bool HasErrors(SignalCounts counts) => counts.DecodeError + counts.MinorDecode + counts.Concealed > 0;
+
+    /// <summary>The finding's evidence with the spots in seconds (<c>positionsSeconds</c>) when the decode kept any.</summary>
+    public static Dictionary<string, object> AddTo(Dictionary<string, object> evidence, double[]? spots)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        if (spots is { Length: > 0 })
+        {
+            evidence["positionsSeconds"] = spots;
+        }
+
+        return evidence;
+    }
+}
+
 public sealed record LogDigest(SignalCounts Counts, MessageCount[] Top, string? FirstLine)
 {
     public static LogDigest Empty { get; } = new(SignalCounts.Zero, [], null);

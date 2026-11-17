@@ -102,6 +102,34 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
         Assert.Empty(unknown);
     }
 
+    /// <summary>
+    /// A decode finding says where in the file the errors were (owner request 2026-11-17): damage in the middle of an
+    /// MP3 is placed near its middle, from the audio read so far; in a video, between the progress reports.
+    /// </summary>
+    [FixtureTheory]
+    [InlineData("m128.mp3", 3000)]
+    [InlineData("av.mp4", 2000)]
+    public async Task Decode_errors_are_placed_in_the_file(string fixture, int bytes)
+    {
+        Scan scan = await ScanOneAsync(fixture, path => Mutate.RandomBlock(path, 0.5, bytes, seed: 1), ScanDepth.Standard);
+        FindingRecord decode = Assert.Single(scan.Findings, f => f.RuleId == "COR-DECODE");
+        output.WriteLine(decode.Summary);
+        double[]? spots = fixture.EndsWith(".mp3", StringComparison.Ordinal)
+            ? Assert.IsType<AudioDecodeArtifact>(scan.Artifact(ArtifactKind.AudioDecode, new AudioDecodeProvider())).ErrorPositions
+            : Assert.IsType<VideoDecodeArtifact>(scan.Artifact(ArtifactKind.VideoDecode, new VideoDecodeProvider())).ErrorPositions;
+        Assert.NotNull(spots);
+        Assert.NotEmpty(spots);
+        output.WriteLine("spots: " + string.Join(", ", spots));
+        Assert.Contains(", around ", decode.Summary, StringComparison.Ordinal);
+        double duration = (scan.File.Media.DurationMs ?? 0) / 1000.0;
+        Assert.True(duration > 0, "No duration.");
+        Assert.All(spots, s => Assert.InRange(s, 0, duration + 1));
+        if (fixture.EndsWith(".mp3", StringComparison.Ordinal))
+        {
+            Assert.InRange(spots[0], duration * 0.3, duration * 0.8);
+        }
+    }
+
     [FixtureFact]
     public async Task Flac_md5_matches_for_16_and_24_bit()
     {

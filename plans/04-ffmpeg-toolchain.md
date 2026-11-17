@@ -214,7 +214,7 @@ in the middle of one, so they are decode errors here.
 
 ## Progress parsing
 
-Commands that discard decoded output use `-progress pipe:1 -nostats -stats_period 0.5` and write media
+Commands that discard decoded output use `-progress pipe:1 -nostats -stats_period 0.5` (the video decode uses 0.1, to place decoder errors) and write media
 to `-f null -`. Standard output then carries blocks of `key=value` lines ending with
 `progress=continue` or `progress=end`. Parse `frame`, `out_time_us`, `dup_frames`, `drop_frames`,
 `speed`. The final block gives the decoded frame count and decoded duration, which are the inputs for

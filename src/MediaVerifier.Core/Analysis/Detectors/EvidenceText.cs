@@ -12,6 +12,25 @@ public static class EvidenceText
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
     /// <summary>A position or length inside media: <c>0:07</c>, <c>4:05</c>, <c>1:02:10</c>.</summary>
+    /// <summary>
+    /// Where decoder errors were: ", around 1:23, 4:05 and 12:40", ", around 0:11", or with more spots ", around 1:23,
+    /// 4:05, 12:40 and 11 more places"; empty without spots. The positions are approximate, hence "around".
+    /// </summary>
+    public static string Around(IReadOnlyList<double>? spots)
+    {
+        if (spots is null || spots.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        string[] shown = [.. spots.Take(3).Select(MediaTime)];
+        int more = spots.Count - shown.Length;
+        string list = more > 0 ? string.Join(", ", shown) + " and " + Plural(more, "more place", "more places")
+            : shown.Length == 1 ? shown[0]
+            : string.Join(", ", shown[..^1]) + " and " + shown[^1];
+        return ", around " + list;
+    }
+
     public static string MediaTime(double seconds)
     {
         long total = (long)Math.Round(Math.Max(0, seconds), MidpointRounding.AwayFromZero);

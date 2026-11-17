@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -134,7 +135,10 @@ public sealed record VideoDecodeArtifact(
     double[]? BlackDurations = null,
 
     // volumedetect on the first audio stream: the loudest sample in dBFS; null without audio or a reading.
-    double? AudioMaxVolumeDb = null) : IArtifact, IStreamHashSource
+    double? AudioMaxVolumeDb = null,
+
+    // Where the decoder reported errors (ErrorSpots); null in decodes stored before the spots were kept.
+    double[]? ErrorPositions = null) : IArtifact, IStreamHashSource
 {
     [JsonIgnore]
     public byte[]? StreamHash => StreamHashBytes;
@@ -165,7 +169,9 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
 
     /// <summary>A Standard pass (key frames only) does not answer a Deep scan, which decodes every frame.</summary>
     public override bool CanReuse(IArtifact stored, FileContext file) =>
-        file.Depth < ScanDepth.Deep || stored is VideoDecodeArtifact { Pass: VideoPass.Deep };
+        (file.Depth < ScanDepth.Deep || stored is VideoDecodeArtifact { Pass: VideoPass.Deep })
+        && (stored is not VideoDecodeArtifact decode || decode.ErrorPositions is not null
+            || !(ErrorSpots.HasErrors(decode.Video.Counts) || ErrorSpots.HasErrors(decode.Audio.Counts) || ErrorSpots.HasErrors(decode.Container.Counts)));
 
     protected override async Task<VideoDecodeArtifact> ProduceTypedAsync(FileContext file)
     {
@@ -174,7 +180,8 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         bool hasVideo = probe?.Video is not null;
         bool hasAudio = probe?.Audio is not null;
         int threads = deep ? 8 : 4;
-        List<string> args = ["-progress", "pipe:1", "-nostats", "-stats_period", "0.5"];
+        // Progress every 0.1 s: decoder errors are placed between the reports around them (ErrorSpots.Interpolate).
+        List<string> args = ["-progress", "pipe:1", "-nostats", "-stats_period", "0.1"];
         args.AddRange(FfmpegArgs.Decode(deep && file.Settings.StrictDecoding));
         args.AddRange(["-threads", threads.ToString(CultureInfo.InvariantCulture)]);
         if (!deep)
@@ -227,6 +234,10 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         List<double> blackDurations = [];
         double? maxVolume = null;
         double? declared = probe?.Duration ?? probe?.Video?.Duration;
+        Stopwatch wall = Stopwatch.StartNew();
+        Lock spotsGate = new();
+        List<(double Wall, double Media)> marks = [];
+        List<double> errorWall = [];
         FfResult result = await file.Runner.RunAsync(
             new FfRequest
             {
@@ -237,8 +248,29 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                 LogLevel = "info",
                 IdleTimeout = TimeSpan.FromSeconds(file.Settings.StallSeconds),
                 HardTimeout = FfmpegArgs.HardTimeout(file.Depth, declared, file.Stat.Size),
+                OnProgress = block =>
+                {
+                    if (block.OutTimeSeconds is double media && media > 0)
+                    {
+                        lock (spotsGate)
+                        {
+                            marks.Add((wall.Elapsed.TotalSeconds, media));
+                        }
+                    }
+                },
                 OnLogLine = line =>
                 {
+                    if (ErrorSpots.Counts(line.Kind))
+                    {
+                        lock (spotsGate)
+                        {
+                            if (errorWall.Count < 1000)
+                            {
+                                errorWall.Add(wall.Elapsed.TotalSeconds);
+                            }
+                        }
+                    }
+
                     if (deep)
                     {
                         Match start = FreezeStart().Match(line.Raw);
@@ -332,7 +364,8 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
             [.. freezeDurations],
             [.. blackStarts],
             [.. blackDurations],
-            maxVolume is double v && double.IsNegativeInfinity(v) ? -200 : maxVolume);
+            maxVolume is double v && double.IsNegativeInfinity(v) ? -200 : maxVolume,
+            ErrorSpots.Merge(ErrorSpots.Interpolate(errorWall, marks)));
     }
 
     /// <summary>Which stream a log line is about: input-stream contexts first, then the decoder's codec name.</summary>

@@ -347,12 +347,12 @@ public sealed class AudioDecodeDetector : IDetector
             Severity severity = lossless || errors >= input.Settings.Value("COR-DECODE", "highErrors") || lost >= input.Settings.Value("COR-DECODE", "audioHighSeconds")
                 ? Severity.High
                 : Severity.Medium;
-            string summary = "Decoder reported " + Plural(errors, "error", "errors") + missing;
-            sink.Raise("COR-DECODE", severity, 1f, summary, new Dictionary<string, object>(shared) { ["errors"] = errors });
+            string summary = "Decoder reported " + Plural(errors, "error", "errors") + EvidenceText.Around(decode.ErrorPositions) + missing;
+            sink.Raise("COR-DECODE", severity, 1f, summary, ErrorSpots.AddTo(new Dictionary<string, object>(shared) { ["errors"] = errors }, decode.ErrorPositions));
         }
         else if (counts.MinorDecode > 0)
         {
-            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(counts.MinorDecode, "minor problem", "minor problems"), new Dictionary<string, object>(shared));
+            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(counts.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(decode.ErrorPositions), ErrorSpots.AddTo(new Dictionary<string, object>(shared), decode.ErrorPositions));
         }
 
         if (timedOut || declared is not double length || length <= 0 || decoded is not double got)
@@ -515,11 +515,11 @@ public sealed class VideoDecodeDetector : IDetector
             Severity severity = errors >= input.Settings.Value("COR-DECODE", "highErrors") || lost >= input.Settings.Value("COR-DECODE", "videoHighSeconds")
                 ? Severity.High
                 : Severity.Medium;
-            sink.Raise("COR-DECODE", severity, 1f, DecodePhrase(video, errors, missingFrames), new Dictionary<string, object>(shared) { ["errors"] = errors });
+            sink.Raise("COR-DECODE", severity, 1f, DecodePhrase(video, errors, missingFrames), ErrorSpots.AddTo(new Dictionary<string, object>(shared) { ["errors"] = errors }, video.ErrorPositions));
         }
         else if (all.MinorDecode > 0)
         {
-            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(all.MinorDecode, "minor problem", "minor problems"), new Dictionary<string, object>(shared));
+            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(all.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(video.ErrorPositions), ErrorSpots.AddTo(new Dictionary<string, object>(shared), video.ErrorPositions));
         }
 
         if (all.Concealed > 0)
@@ -568,6 +568,8 @@ public sealed class VideoDecodeDetector : IDetector
         {
             text += " in the sound";
         }
+
+        text += EvidenceText.Around(video.ErrorPositions);
 
         if (missingFrames > 0)
         {

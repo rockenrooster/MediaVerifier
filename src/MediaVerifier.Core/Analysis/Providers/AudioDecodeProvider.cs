@@ -40,7 +40,10 @@ public sealed record AudioDecodeArtifact(
     int SampleRate,
     int Channels,
     Md5Verdict Md5,
-    Audio.PcmStats? Stats = null) : IArtifact
+    Audio.PcmStats? Stats = null,
+
+    // Where the decoder reported errors (ErrorSpots); null in decodes stored before the spots were kept.
+    double[]? ErrorPositions = null) : IArtifact
 {
     [JsonIgnore]
     public double? DecodedSeconds => Opened && SampleRate > 0 ? (double)SampleFrames / SampleRate : null;
@@ -60,16 +63,28 @@ public interface IPcmAnalyzer
     void End();
 }
 
-/// <summary>Counts decoded sample frames (task C-07).</summary>
+/// <summary>
+/// Counts decoded sample frames (task C-07). <see cref="Seconds"/> is read from the log reader's thread while the
+/// decode runs, to place decoder errors.
+/// </summary>
 public sealed class SampleCounter : IPcmAnalyzer
 {
     private int _channels = 1;
+    private int _rate;
+    private long _frames;
 
-    public long Frames { get; private set; }
+    public long Frames => Volatile.Read(ref _frames);
 
-    public void Begin(WavFormat format) => _channels = Math.Max(1, format.Channels);
+    /// <summary>How far the decode has got, in seconds.</summary>
+    public double Seconds => Volatile.Read(ref _rate) is int rate && rate > 0 ? (double)Frames / rate : 0;
 
-    public void Process(ReadOnlySpan<float> interleaved) => Frames += interleaved.Length / _channels;
+    public void Begin(WavFormat format)
+    {
+        _channels = Math.Max(1, format.Channels);
+        Volatile.Write(ref _rate, format.SampleRate);
+    }
+
+    public void Process(ReadOnlySpan<float> interleaved) => Volatile.Write(ref _frames, _frames + (interleaved.Length / _channels));
 
     public void End()
     {
@@ -180,6 +195,10 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
 
     public override bool Applies(FileContext file) => file.Kind == MediaKind.Audio;
 
+    /// <summary>A stored decode that found errors without their spots (an older version) decodes once more to place them.</summary>
+    public override bool CanReuse(IArtifact stored, FileContext file) =>
+        stored is not AudioDecodeArtifact decode || decode.ErrorPositions is not null || !ErrorSpots.HasErrors(decode.Log.Counts);
+
     protected override async Task<AudioDecodeArtifact> ProduceTypedAsync(FileContext file)
     {
         StructureArtifact? structure = await file.GetAsync<StructureArtifact>().ConfigureAwait(false);
@@ -200,6 +219,7 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
         }
 
         WavFormat? format = null;
+        List<double> errorSeconds = [];
         List<string> args = [.. FfmpegArgs.Decode(file.Settings.StrictDecoding && file.Depth == ScanDepth.Deep)];
         args.AddRange(["-i", file.FullPath, "-map", "0:a:0", "-map_metadata", "-1", "-fflags", "+bitexact", "-c:a", "pcm_f32le", "-f", "wav", "-"]);
         FfResult result = await file.Runner.RunAsync(
@@ -212,6 +232,15 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
                 IdleTimeout = TimeSpan.FromSeconds(file.Settings.StallSeconds),
                 HardTimeout = FfmpegArgs.HardTimeout(file.Depth, DeclaredForTimeout(flac), file.Stat.Size),
                 BinaryConsumer = async (stream, token) => format = await PumpAsync(stream, analyzers, token).ConfigureAwait(false),
+
+                // The audio read so far places each error (the pipe holds a fraction of a second more).
+                OnLogLine = line =>
+                {
+                    if (ErrorSpots.Counts(line.Kind) && errorSeconds.Count < 1000)
+                    {
+                        errorSeconds.Add(counter.Seconds);
+                    }
+                },
             },
             file.Cancellation).ConfigureAwait(false);
 
@@ -265,7 +294,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
             format?.SampleRate ?? 0,
             format?.Channels ?? 0,
             verdict,
-            stats);
+            stats,
+            ErrorSpots.Merge(errorSeconds));
     }
 
     /// <summary>Reads the WAV stream to its end, feeding whole frames to every analyzer. Null when no audio arrived.</summary>
