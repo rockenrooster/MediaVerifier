@@ -74,6 +74,8 @@ internal sealed partial class LiveUiData
         return result;
     }
 
+    public long? FileOfFinding(long findingId) => database.Findings.Get(findingId)?.FileId;
+
     public FileDetail? LoadFileDetail(long fileId)
     {
         FileRecord? file = database.Files.Get(fileId);

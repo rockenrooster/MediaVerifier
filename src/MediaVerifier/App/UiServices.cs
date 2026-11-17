@@ -153,6 +153,7 @@ internal sealed class UiServices : IDisposable
         {
             try
             {
+                _ = ToastRegistration.Ensure(state);
                 await services.Operations.RecoverAsync().ConfigureAwait(false);
                 await services.Operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays).ConfigureAwait(false);
                 await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
@@ -190,8 +191,17 @@ internal sealed class UiServices : IDisposable
             return status.Trigger == RunTrigger.Scheduled ? UI.Strings.Shell.ScheduledRunning : UI.Strings.Shell.AlreadyRunning;
         }
 
-        return null;
+        return BackgroundRunActive() ? UI.Strings.Shell.ScheduledRunning : null;
     }
+
+    /// <summary>
+    /// True while a scheduled scan runs in another MediaVerifier process (subplan 13, GUI opened during a headless
+    /// run; task SCH-06). Never in the render harness.
+    /// </summary>
+    public bool BackgroundRunActive() => !IsDemo && !Scans.Status.IsActive && BackgroundProbe();
+
+    /// <summary>How a background run is detected; tests replace it.</summary>
+    public Func<bool> BackgroundProbe { get; init; } = PlanHost.BackgroundRunActive;
 
     /// <summary>
     /// Starts a manual scan of <paramref name="scopes"/> unless one cannot run (demo, no engine, a scan

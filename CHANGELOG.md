@@ -5,6 +5,15 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+- Windows notifications: scheduled scans report in the Windows notification centre, where the
+  notification stays after MediaVerifier exits; Review opens the run. A newer run replaces an unread
+  older notification. Quiet hours post silently, with From and To times in Settings → Notifications,
+  which also has Send a test notification and honours Notify about for scheduled scans.
+- Links of the form `mediaverifier://run/<id>`, `mediaverifier://finding/<id>` and
+  `mediaverifier://issues` open MediaVerifier at that view; anything else is ignored.
+- While a scheduled scan runs in the background, the open window shows its progress, the Scan button
+  says why it is unavailable, and Stop ends the background scan. A schedule that fires while the
+  window is open runs in the window.
 - Audio quality checks: lossless files made from MP3, AAC or Opus; hi-res files upsampled from CD
   rates; padded bit depth; MP3s re-encoded at a higher bitrate; low bitrates; clipping and samples
   above full scale; DC offset, silent or out-of-phase channels, silent tracks, long silences and

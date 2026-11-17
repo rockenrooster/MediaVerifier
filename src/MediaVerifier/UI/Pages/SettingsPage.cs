@@ -2,8 +2,10 @@ using System.Globalization;
 using MediaVerifier.App;
 using MediaVerifier.Core;
 using MediaVerifier.Core.Engine;
+using MediaVerifier.Core.Ipc;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
+using MediaVerifier.Core.Scheduling;
 using MediaVerifier.Core.Settings;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Theme;
@@ -39,6 +41,9 @@ internal sealed class SettingsPage : PageBase
         _nav = new SectionList(this) { TabIndex = 0 };
         _rules = new RulesView(this) { TabIndex = 1 };
         ScanSettings scan = services.State.Settings.Scanning;
+        SettingRow quietFrom = Time(Strings.Settings.From, () => scan.QuietFrom, v => scan.QuietFrom = v);
+        SettingRow quietTo = Time(Strings.Settings.To, () => scan.QuietTo, v => scan.QuietTo = v);
+        quietFrom.Collapsed = quietTo.Collapsed = !scan.QuietHours;
         _sections =
         [
             Section(Strings.Settings.General, Strings.Settings.GeneralIntro,
@@ -78,7 +83,15 @@ internal sealed class SettingsPage : PageBase
             [
                 Toggle(Strings.Settings.ShowWindowsNotifications, null, () => scan.ShowWindowsNotifications, v => scan.ShowWindowsNotifications = v),
                 Drop(Strings.Settings.NotifyAbout, null, [Strings.Settings.CriticalOnly, Strings.Settings.HighAndAbove, Strings.Settings.MediumAndAbove, Strings.Settings.Everything], () => (int)scan.NotifyAbout, i => scan.NotifyAbout = (NotifyThreshold)i),
-                Toggle(Strings.Settings.QuietHours, UiFormat.Facts(Strings.Settings.From + " " + scan.QuietFrom, Strings.Settings.To + " " + scan.QuietTo), () => scan.QuietHours, v => scan.QuietHours = v),
+                Toggle(Strings.Settings.QuietHours, null, () => scan.QuietHours, v =>
+                {
+                    scan.QuietHours = v;
+                    quietFrom.Collapsed = quietTo.Collapsed = !v;
+                    quietFrom.Parent?.Parent?.PerformLayout();
+                }),
+                quietFrom,
+                quietTo,
+                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.SendTestNotification, () => _ = SendTestNotificationAsync()),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
@@ -264,6 +277,56 @@ internal sealed class SettingsPage : PageBase
         }
     }
 
+    /// <summary>A 24-hour time box ("HH:mm"); an unreadable time is put back when the box loses focus.</summary>
+    private SettingRow Time(string label, Func<string> get, Action<string> set)
+    {
+        KitTextBox box = new() { Text = get(), AccessibleName = label, Inset = true, MaxLength = 5 };
+        box.TextCommitted += (_, _) =>
+        {
+            if (NotificationPolicy.TryParseTime(box.Text, out TimeOnly time))
+            {
+                set(time.ToString("HH:mm", CultureInfo.InvariantCulture));
+                Save();
+            }
+        };
+        box.Leave += (_, _) => box.Text = NotificationPolicy.TryParseTime(box.Text, out TimeOnly time) ? time.ToString("HH:mm", CultureInfo.InvariantCulture) : get();
+        return new SettingRow(label, null, box, null);
+    }
+
+    /// <summary>
+    /// Settings → Notifications, <c>Send a test notification</c> (task N-05): a Windows notification when they are on and
+    /// the channel works, otherwise the in-app toast; the bell keeps an entry either way.
+    /// </summary>
+    private async Task SendTestNotificationAsync()
+    {
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
+        bool system = State.Settings.Scanning.ShowWindowsNotifications;
+        bool shown = system && await Task.Run(() => ToastRegistration.Ensure(State)
+            && SystemToast.Show(CoreStrings.Notify.TestTitle, CoreStrings.Notify.TestBody, new ActivationUri(ActivationTarget.Issues, 0), silent: false, allowBalloon: false, tag: "test", group: "test")).ConfigureAwait(true);
+        try
+        {
+            await Services.Database.Notifications.AddAsync(new Core.Storage.NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = Severity.None, Title = CoreStrings.Notify.TestTitle, Body = CoreStrings.Notify.TestBody }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            State.Log.Warning("The test notification could not be stored", ex);
+        }
+
+        if (!shown)
+        {
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.None, CoreStrings.Notify.TestTitle, CoreStrings.Notify.TestBody));
+        }
+
+        if (FindForm() is MainForm main)
+        {
+            main.RefreshAll();
+        }
+    }
+
     private static SettingRow Button(string label, string? helper, string text, Action click)
     {
         KitButton button = new() { Kind = ButtonKind.Secondary, Text = text };
@@ -404,10 +467,26 @@ internal sealed class SettingsPage : PageBase
         {
             base.OnLayout(levent);
             int y = S(1);
+            int last = -1;
             for (int i = 0; i < _rows.Count; i++)
             {
-                _rows[i].Last = i == _rows.Count - 1;
-                _rows[i].Bounds = new Rectangle(S(1), y, Width - S(2), S(56));
+                if (!_rows[i].Collapsed)
+                {
+                    last = i;
+                }
+            }
+
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                SettingRow row = _rows[i];
+                row.Visible = !row.Collapsed;
+                if (row.Collapsed)
+                {
+                    continue;
+                }
+
+                row.Last = i == last;
+                row.Bounds = new Rectangle(S(1), y, Width - S(2), S(56));
                 y += S(56);
             }
 
@@ -447,6 +526,9 @@ internal sealed class SettingsPage : PageBase
 
         public bool Last { get; set; }
 
+        /// <summary>Left out of the section (the quiet-hours times while quiet hours are off).</summary>
+        public bool Collapsed { get; set; }
+
         protected override void OnLayout(LayoutEventArgs levent)
         {
             base.OnLayout(levent);
@@ -463,6 +545,7 @@ internal sealed class SettingsPage : PageBase
                 NumberBox => new Size(S(72), S(32)),
                 DropDown => new Size(S(180), S(32)),
                 KitButton button => new Size(S(button.PreferredLogicalWidth), S(32)),
+                KitTextBox => new Size(S(80), S(32)),
                 _ => new Size(S(200), S(32)),
             };
             _control.Bounds = new Rectangle(Width - S(16) - unitWidth - size.Width, (Height - size.Height) / 2, size.Width, size.Height);

@@ -109,6 +109,9 @@ internal interface IIssuesData
 
     FileDetail? LoadFileDetail(long fileId);
 
+    /// <summary>The file a finding belongs to; null when there is no such finding.</summary>
+    long? FileOfFinding(long findingId);
+
     /// <summary>
     /// The spectrogram and waveform behind a file's audio findings (subplan 10, Evidence views); null when
     /// they cannot be rendered. Decodes the file on a cache miss, so it never runs on the UI thread.

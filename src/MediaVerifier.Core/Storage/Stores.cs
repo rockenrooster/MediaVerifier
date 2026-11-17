@@ -189,6 +189,9 @@ public sealed class RunStore(Database database)
     /// <summary>The most recent run left Interrupted, which the Scans page offers to resume.</summary>
     public RunRecord? LatestInterrupted() => List(1, null, RunStatus.Interrupted).FirstOrDefault();
 
+    /// <summary>The most recent run still marked Running (a background run's checkpoints, subplan 13).</summary>
+    public RunRecord? LatestRunning() => List(1, null, RunStatus.Running).FirstOrDefault();
+
     private List<RunRecord> List(int limit, long? id, RunStatus? status = null) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();

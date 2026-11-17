@@ -166,6 +166,12 @@ internal sealed class IssuesPage : PageBase
 
     public override void HandleRequest(object request)
     {
+        if (request is IssueFindingRequest finding)
+        {
+            _ = ShowFindingAsync(finding.FindingId);
+            return;
+        }
+
         if (request is IssuesFilterRequest filter)
         {
             _firstRun = filter.FirstRun;
@@ -620,6 +626,16 @@ internal sealed class IssuesPage : PageBase
     }
 
     private void CloseDetail() => Services.ShowDrawer?.Invoke(null);
+
+    /// <summary>Opens the drawer of the file a finding belongs to (a notification's link); nothing for an unknown id.</summary>
+    private async Task ShowFindingAsync(long findingId)
+    {
+        long? fileId = await Task.Run(() => Services.Data.FileOfFinding(findingId)).ConfigureAwait(true);
+        if (fileId is long id && !IsDisposed)
+        {
+            await LoadDetailAsync(id).ConfigureAwait(true);
+        }
+    }
 
     private void OnListKey(object? sender, KeyEventArgs e)
     {

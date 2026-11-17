@@ -31,8 +31,9 @@ internal static class HeadlessLauncher
         using NamedMutexLock? engine = NamedMutexLock.TryAcquire(NamedMutexLock.EngineName, TimeSpan.Zero);
         if (engine is null)
         {
+            // Subplan 13, Headless run, step 2: another run holds the engine; this one leaves it alone.
             state.Log.Warning($"Plan {planId} not started: another MediaVerifier process is scanning");
-            return ExitFailure;
+            return ExitForwarded;
         }
 
         if (PlanRunner is null)

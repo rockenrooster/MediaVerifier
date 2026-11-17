@@ -111,7 +111,8 @@ Never show a window or message box. All output goes to the log.
 shows "A scheduled scan is running in the background" with progress read from the run row (which the
 engine checkpoints every 5 seconds), disables its own Scan button with that reason, and offers
 *Stop*, which signals the named event `Local\MediaVerifier.StopRun`. The headless engine treats the
-event as Cancel.
+event as Cancel. The GUI detects the run by opening that event (the headless run creates it before
+checking conditions), never by probing the engine mutex, which would briefly own it.
 
 ## Notification policy
 
@@ -127,9 +128,10 @@ event as Cancel.
 | Nothing new | No toast unless `when` is `Always` |
 | Quiet hours (optional setting, default off) | Posted silently to the notification centre |
 
-One toast per run, tagged with the run id so a newer run replaces an unread older one. Every
-notification is also written to the `notifications` table (the in-app bell). Manual runs with the
-window focused use in-app toasts instead of system toasts.
+One toast per run. All run toasts share one tag (`scan`, group `runs`) so a newer run replaces an
+unread older one; the run id travels in the launch link. Every notification is also written to the
+`notifications` table (the in-app bell). Manual runs with the window focused use in-app toasts
+instead of system toasts.
 
 Text: title states the outcome ("3 new problems found", "Scheduled scan could not run"); body gives
 counts and context ("1 critical, 2 high in Music. Scan finished 03:12."). No file names in system
@@ -156,7 +158,8 @@ would add about 25 MB to the exe): `RoGetActivationFactory` for
 `Windows.UI.Notifications.ToastNotificationManager`, an `XmlDocument` from
 `Windows.Data.Xml.Dom`, `CreateToastNotifierWithId(aumid)`, `Show`. Declare the interfaces as
 `IUnknown`-based with three placeholder slots for the `IInspectable` methods (the built-in COM
-marshaller no longer supports `IInspectable` directly), manage `HSTRING`s with
+marshaller no longer supports `IInspectable` directly) or call the same v-table slots through
+function pointers (the implementation does this; slot 6 is each interface's first own method), manage `HSTRING`s with
 `WindowsCreateString`/`WindowsDeleteString`, and take every interface ID from the Windows SDK IDL
 files rather than from memory. Every failure is caught, logged once, and falls through to the next
 channel.

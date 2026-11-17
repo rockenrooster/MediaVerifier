@@ -21,11 +21,16 @@ public static class CoreStrings
         public const string Skipped = "Scheduled scan skipped";
         public const string OnBattery = "The computer was running on battery.";
         public const string FullScreen = "A full-screen program was running.";
+        public const string Stopped = "It was stopped before it started.";
         public const string CriticalCount = "{0} critical";
         public const string HighCount = "{0} high";
         public const string MediumCount = "{0} medium";
         public const string LowCount = "{0} low";
         public const string FinishedAt = "Scan finished {0}.";
+        public const string Review = "Review";
+        public const string TestTitle = "Test notification";
+        public const string TestBody = "Notifications from MediaVerifier look like this.";
+        public const string Open = "Open";
     }
 
     /// <summary>Why an operation did not run or failed (subplan 12, safe-operation protocol).</summary>

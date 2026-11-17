@@ -211,6 +211,38 @@ internal sealed class MainForm : Form
         base.OnHandleCreated(e);
         ApplyTitleBarTheme();
         UpdateMinimumSize();
+        if (_options.ActivationUri is string link)
+        {
+            // Started by a notification or a link: open its view once the window exists.
+            BeginInvoke(() => OpenActivation(link));
+        }
+    }
+
+    /// <summary>
+    /// Opens the view an activation link names (subplan 13, Activation URIs; task N-02). Links are untrusted: only
+    /// the three forms <see cref="ActivationUri.Parse"/> accepts select a view; anything else is logged and ignored.
+    /// </summary>
+    internal void OpenActivation(string? text)
+    {
+        ActivationUri? link = ActivationUri.Parse(text);
+        if (link is null)
+        {
+            _state.Log.Warning("Activation link rejected (" + (text?.Length ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture) + " characters)");
+            return;
+        }
+
+        switch (link.Target)
+        {
+            case ActivationTarget.Run:
+                _services.Navigate?.Invoke(PageId.Scans, new ScanRunRequest(link.Id));
+                break;
+            case ActivationTarget.Finding:
+                _services.Navigate?.Invoke(PageId.Issues, new IssueFindingRequest(link.Id));
+                break;
+            default:
+                _services.Navigate?.Invoke(PageId.Issues, new IssuesFilterRequest(null, null));
+                break;
+        }
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -396,12 +428,34 @@ internal sealed class MainForm : Form
         switch (message.Command)
         {
             case IpcMessage.Activate:
-            case IpcMessage.Open:
                 BringToFrontFromAnywhere();
                 break;
-            case IpcMessage.RunPlan:
-                _state.Log.Info($"Plan {message.PlanId} was forwarded by a scheduled launch");
+            case IpcMessage.Open:
+                BringToFrontFromAnywhere();
+                OpenActivation(message.Uri);
                 break;
+            case IpcMessage.RunPlan when message.PlanId is long planId:
+                _state.Log.Info($"Plan {planId} was forwarded by a scheduled launch");
+                _ = GuiPlanRunner.RunAsync(_services, planId, () => !IsDisposed && ActiveForm == this, ShowRunNotification);
+                break;
+        }
+    }
+
+    /// <summary>A forwarded plan's notification as an in-app toast (called from a pool thread).</summary>
+    private void ShowRunNotification(Core.Scheduling.RunNotification notification)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke(() => _toasts.Show(new UI.Kit.Popups.ToastContent(notification.Level, notification.Title, notification.Body)));
+        }
+        catch (InvalidOperationException)
+        {
+            // The window is closing.
         }
     }
 

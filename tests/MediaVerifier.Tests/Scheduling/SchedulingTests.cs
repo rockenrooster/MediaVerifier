@@ -140,10 +140,35 @@ public sealed class SchedulingTests
 
         RunSummary findings = Run(new SeverityCounts(0, 1, 2, 0), []);
         RunNotification quiet = NotificationPolicy.Decide(findings, notify, new Dictionary<long, DateTimeOffset>(), now, quietHours: true, "Scan finished 03:12.")!;
-        Assert.False(quiet.Toast);
+        Assert.True(quiet.Toast);
+        Assert.True(quiet.Silent);
         Assert.Equal("3 new problems found", quiet.Title);
         Assert.Equal("1 high, 2 medium. Scan finished 03:12.", quiet.Body);
+        Assert.False(NotificationPolicy.Decide(findings, notify, new Dictionary<long, DateTimeOffset>(), now, quietHours: false, string.Empty)!.Silent);
+        Assert.False(NotificationPolicy.Decide(findings, new PlanNotify { When = NotifyWhen.Never }, new Dictionary<long, DateTimeOffset>(), now, quietHours: true, string.Empty)?.Silent ?? false);
     }
+
+    [Theory]
+    [InlineData(true, "22:00", "07:00", "23:30", true)]
+    [InlineData(true, "22:00", "07:00", "06:59", true)]
+    [InlineData(true, "22:00", "07:00", "07:00", false)]
+    [InlineData(true, "22:00", "07:00", "12:00", false)]
+    [InlineData(true, "9:00", "17:30", "12:00", true)]
+    [InlineData(true, "09:00", "17:30", "17:30", false)]
+    [InlineData(false, "22:00", "07:00", "23:30", false)]
+    [InlineData(true, "25:00", "07:00", "23:30", false)]
+    [InlineData(true, "22:00", "22:00", "22:00", false)]
+    [InlineData(true, null, "07:00", "03:00", false)]
+    public void Quiet_hours_wrap_midnight_and_ignore_unreadable_times(bool enabled, string? from, string? to, string now, bool expected) =>
+        Assert.Equal(expected, NotificationPolicy.InQuietHours(enabled, from, to, TimeOnly.ParseExact(now, "HH:mm", System.Globalization.CultureInfo.InvariantCulture)));
+
+    [Theory]
+    [InlineData(Severity.Medium, MediaVerifier.Core.Settings.NotifyThreshold.CriticalOnly, Severity.Critical)]
+    [InlineData(Severity.Medium, MediaVerifier.Core.Settings.NotifyThreshold.Everything, Severity.Medium)]
+    [InlineData(Severity.Low, MediaVerifier.Core.Settings.NotifyThreshold.HighAndAbove, Severity.High)]
+    [InlineData(Severity.Critical, MediaVerifier.Core.Settings.NotifyThreshold.MediumAndAbove, Severity.Critical)]
+    public void The_global_threshold_only_makes_a_plan_stricter(Severity plan, MediaVerifier.Core.Settings.NotifyThreshold global, Severity expected) =>
+        Assert.Equal(expected, NotificationPolicy.WithThreshold(new PlanNotify { MinSeverity = plan }, global).MinSeverity);
 
     private static RunSummary Run(SeverityCounts counts, IReadOnlyList<RunAlert> alerts) =>
         new(1, RunStatus.Completed, RunTrigger.Scheduled, 1, new RunCounters(0, 0, 0, 0, 0, 0, 0), counts, alerts, TimeSpan.FromMinutes(5), null);

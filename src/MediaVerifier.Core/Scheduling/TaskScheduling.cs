@@ -186,8 +186,11 @@ public static class PlanReconciler
     }
 }
 
-/// <summary>One notification decided for a run (subplan 13, Notification policy).</summary>
-public sealed record RunNotification(Severity Level, string Title, string Body, bool Toast);
+/// <summary>
+/// One notification decided for a run (subplan 13, Notification policy). <paramref name="Silent"/> posts the toast
+/// straight to the notification centre without a pop-up (quiet hours).
+/// </summary>
+public sealed record RunNotification(Severity Level, string Title, string Body, bool Toast, bool Silent = false);
 
 /// <summary>Who to tell what after a run (subplan 13, task N-01); pure.</summary>
 public static class NotificationPolicy
@@ -199,9 +202,47 @@ public static class NotificationPolicy
     public static RunNotification? Decide(RunSummary run, PlanNotify notify, IReadOnlyDictionary<long, DateTimeOffset> offlineNotified, DateTimeOffset now, bool quietHours, string finishedText)
     {
         ArgumentNullException.ThrowIfNull(run);
+        RunNotification? decided = DecideLoud(run, notify, offlineNotified, now, finishedText);
+        return quietHours && decided is { Toast: true } ? decided with { Silent = true } : decided;
+    }
+
+    /// <summary>
+    /// True when <paramref name="now"/> falls in the quiet hours from <paramref name="from"/> to <paramref name="to"/>
+    /// ("HH:mm", local); a span that passes midnight wraps. Unreadable times mean no quiet hours.
+    /// </summary>
+    public static bool InQuietHours(bool enabled, string? from, string? to, TimeOnly now)
+    {
+        if (!enabled || !TryParseTime(from, out TimeOnly start) || !TryParseTime(to, out TimeOnly end) || start == end)
+        {
+            return false;
+        }
+
+        return start < end ? now >= start && now < end : now >= start || now < end;
+    }
+
+    /// <summary>Reads a 24-hour "H:mm" or "HH:mm" time.</summary>
+    public static bool TryParseTime(string? text, out TimeOnly time) =>
+        TimeOnly.TryParseExact(text?.Trim(), ["H:mm", "HH:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out time);
+
+    /// <summary>The stricter of a plan's minimum tier and the global <c>Notify about</c> setting.</summary>
+    public static PlanNotify WithThreshold(PlanNotify notify, Settings.NotifyThreshold threshold)
+    {
+        ArgumentNullException.ThrowIfNull(notify);
+        Severity global = threshold switch
+        {
+            Settings.NotifyThreshold.CriticalOnly => Severity.Critical,
+            Settings.NotifyThreshold.HighAndAbove => Severity.High,
+            Settings.NotifyThreshold.MediumAndAbove => Severity.Medium,
+            _ => Severity.Low,
+        };
+        return global > notify.MinSeverity ? notify with { MinSeverity = global } : notify;
+    }
+
+    private static RunNotification? DecideLoud(RunSummary run, PlanNotify notify, IReadOnlyDictionary<long, DateTimeOffset> offlineNotified, DateTimeOffset now, string finishedText)
+    {
         ArgumentNullException.ThrowIfNull(notify);
         ArgumentNullException.ThrowIfNull(offlineNotified);
-        bool toast = notify.When != NotifyWhen.Never && !quietHours;
+        bool toast = notify.When != NotifyWhen.Never;
         if (run.Status == RunStatus.Failed)
         {
             return new RunNotification(Severity.High, CoreStrings.Notify.CouldNotRun, run.Error ?? string.Empty, toast);

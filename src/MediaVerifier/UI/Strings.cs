@@ -102,6 +102,7 @@ internal static class Strings
         public const string AddFolderFirst = "Add a folder first";
         public const string AlreadyRunning = "A scan is already running";
         public const string ScheduledRunning = "A scheduled scan is running in the background";
+        public const string BackgroundChecked = "{0} files checked so far";
         public const string EngineMissing = "The media engine is missing or damaged";
         public const string Scanning = "Scanning {0} of {1} files";
         public const string ScanningDetails = "· {0} · about {1} left";
@@ -739,6 +740,8 @@ internal static class Strings
         public const string Everything = "Everything";
         public const string QuietHours = "Quiet hours";
         public const string From = "From";
+        public const string TestNotificationLabel = "Check that notifications arrive";
+        public const string SendTestNotification = "Send a test notification";
         public const string To = "To";
         public const string TestNotification = "Send a test notification";
         public const string Updates = "Updates";

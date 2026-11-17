@@ -26,6 +26,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Subplan 13, Registration: before any window or toast exists.
+        ToastRegistration.SetProcessId();
         if (!CommandLineParser.TryParse(args, out LaunchOptions options, out string error))
         {
             return ReportBadArguments(error);

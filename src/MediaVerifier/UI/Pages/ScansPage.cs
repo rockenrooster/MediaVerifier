@@ -14,6 +14,9 @@ namespace MediaVerifier.UI.Pages;
 /// Scans (subplan 09, Scans; task UI-07): the running scan in every phase, the interrupted-scan bar, the
 /// history of runs and a run's details in the drawer.
 /// </summary>
+/// <summary>Opens one run's detail (a notification's link, subplan 13).</summary>
+internal sealed record ScanRunRequest(long RunId);
+
 internal sealed class ScansPage : PageBase
 {
     private static readonly ListColumn[] HistoryColumns =
@@ -87,6 +90,14 @@ internal sealed class ScansPage : PageBase
         }
     }
 
+    public override void HandleRequest(object request)
+    {
+        if (request is ScanRunRequest run)
+        {
+            _ = ShowRunAsync(run.RunId);
+        }
+    }
+
     protected override object? LoadData() => Services.Data.LoadScans();
 
     protected override void ApplyData(object data)
@@ -142,7 +153,12 @@ internal sealed class ScansPage : PageBase
             return;
         }
 
-        long runId = _data.History[index].Id;
+        await ShowRunAsync(_data.History[index].Id).ConfigureAwait(true);
+    }
+
+    /// <summary>Shows a run's detail in the drawer; nothing when the run does not exist.</summary>
+    private async Task ShowRunAsync(long runId)
+    {
         RunDetail? detail = await Task.Run(() => Services.Data.LoadRunDetail(runId)).ConfigureAwait(true);
         if (detail is null || IsDisposed)
         {

@@ -62,6 +62,8 @@ internal sealed partial class DemoUiData
 
     public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids) => [.. ids.Select(id => Rows.First(r => r.Id == id))];
 
+    public long? FileOfFinding(long findingId) => Rows.FirstOrDefault(r => r.Id == findingId)?.FileId;
+
     public FileDetail? LoadFileDetail(long fileId)
     {
         IssueRow row = Rows.FirstOrDefault(r => r.FileId == fileId) ?? Rows[3];

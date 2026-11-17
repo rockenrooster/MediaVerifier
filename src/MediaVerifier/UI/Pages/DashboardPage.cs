@@ -582,9 +582,11 @@ internal sealed class DashboardPage : PageBase
     }
 }
 
-/// <summary>Navigation request to Issues with a tier and kind filter.</summary>
 /// <summary>Opens Issues filtered by tier and kind, or to the findings first raised in one run.</summary>
 internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long? FirstRun = null);
+
+/// <summary>Opens Issues with one finding's file in the drawer (a notification's link, subplan 13).</summary>
+internal sealed record IssueFindingRequest(long FindingId);
 
 /// <summary>Navigation requests to the Library page.</summary>
 internal enum LibraryRequest

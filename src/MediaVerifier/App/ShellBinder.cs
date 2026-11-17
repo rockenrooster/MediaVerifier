@@ -14,7 +14,9 @@ namespace MediaVerifier.App;
 /// <summary>
 /// The shell's bindings (subplan 09, Shell; task UI-02): the Issues badge, the bell, the Scan split
 /// button with its menu and disabled reasons, the search box, and the status strip in every scan phase.
-/// Polls the engine's status snapshot at 4 Hz while a scan runs and every 2 s otherwise.
+/// Polls the engine's status snapshot at 4 Hz while a scan runs and every 2 s otherwise. A scheduled scan in another
+/// process (subplan 13, task SCH-06) shows in the strip with its checkpointed counts, polled every second, and its
+/// Stop signals that process.
 /// </summary>
 internal sealed class ShellBinder : IDisposable
 {
@@ -23,7 +25,10 @@ internal sealed class ShellBinder : IDisposable
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 250 };
     private ShellCounts? _counts;
     private bool _wasActive;
+    private bool _wasBackground;
     private bool _loading;
+    private bool _readingRun;
+    private RunRecord? _backgroundRun;
 
     public ShellBinder(MainForm form, UiServices services)
     {
@@ -91,22 +96,75 @@ internal sealed class ShellBinder : IDisposable
     {
         EngineStatus status = _services.Scans.Status;
         bool active = status.IsActive;
-        _poll.Interval = active ? 250 : 2000;
-        // The Scans page shows the run itself, so the strip hides there (as in the scans mockup).
-        _form.Shell.StatusStripVisible = active && _form.CurrentPageControl?.Id != UI.Pages.PageId.Scans;
+        bool background = !active && _services.BackgroundRunActive();
+        _poll.Interval = active ? 250 : background ? 1000 : 2000;
+        // The Scans page shows the run itself, so the strip hides there (as in the scans mockup). A background run
+        // has no card of its own, so the strip shows it everywhere.
+        _form.Shell.StatusStripVisible = (active && _form.CurrentPageControl?.Id != UI.Pages.PageId.Scans) || background;
+        _form.StatusStrip.Pause.Visible = !background;
         if (active)
         {
             UpdateStrip(status);
         }
-
-        if (_wasActive != active)
+        else if (background)
         {
+            UpdateBackgroundStrip();
+        }
+
+        if (_wasActive != active || _wasBackground != background)
+        {
+            bool backgroundEnded = _wasBackground && !background;
             _wasActive = active;
+            _wasBackground = background;
             UpdateScanButton();
-            if (!active)
+            if (backgroundEnded)
+            {
+                _backgroundRun = null;
+                _form.RefreshAll();
+            }
+            else if (!active && !background)
             {
                 Refresh();
             }
+        }
+    }
+
+    /// <summary>The strip for a scheduled scan in another process: its counts as last checkpointed (every 5 s).</summary>
+    private void UpdateBackgroundStrip()
+    {
+        if (!_readingRun)
+        {
+            _readingRun = true;
+            _ = ReadBackgroundRunAsync();
+        }
+
+        string facts = Strings.Shell.ScheduledRunning;
+        string details = _backgroundRun is RunRecord run
+            ? string.Format(CultureInfo.CurrentCulture, Strings.Shell.BackgroundChecked, UiFormat.Count(run.FilesAnalysed + run.FilesVerified))
+            : string.Empty;
+        ScanStatusStrip strip = _form.StatusStrip;
+        strip.Progress = null;
+        strip.SetText(facts, details, facts);
+        strip.PerformLayout();
+    }
+
+    private async Task ReadBackgroundRunAsync()
+    {
+        try
+        {
+            RunRecord? run = await Task.Run(_services.Database.Runs.LatestRunning).ConfigureAwait(true);
+            if (!_form.IsDisposed && _wasBackground)
+            {
+                _backgroundRun = run;
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            _services.State.Log.Warning("The background run could not be read", ex);
+        }
+        finally
+        {
+            _readingRun = false;
         }
     }
 
@@ -255,9 +313,19 @@ internal sealed class ShellBinder : IDisposable
 
     private void AskStop()
     {
+        bool background = !_services.Scans.Status.IsActive && _services.BackgroundRunActive();
         if (MessageDialog.Confirm(_form, Strings.Shell.StopTitle, Strings.Shell.StopText, Strings.Shell.KeepScanning, Strings.Shell.StopButton, destructive: false))
         {
-            _services.Scans.Cancel();
+            if (background)
+            {
+                // The headless run treats its stop event as Cancel (subplan 13, GUI opened during a headless run).
+                _ = PlanHost.StopBackgroundRun();
+            }
+            else
+            {
+                _services.Scans.Cancel();
+            }
+
             Poll();
         }
     }
