@@ -150,4 +150,5 @@ public sealed class ProbeArtifactProvider() : ArtifactProvider<ProbeArtifact>(ne
 [JsonSerializable(typeof(AudioDecodeArtifact))]
 [JsonSerializable(typeof(StreamHashArtifact))]
 [JsonSerializable(typeof(StructureArtifact))]
+[JsonSerializable(typeof(FrameSamplesArtifact))]
 internal sealed partial class ProviderJsonContext : JsonSerializerContext;

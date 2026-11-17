@@ -211,6 +211,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** An upscaled file looks no sharper than its source and takes much more space. This check finds ordinary enlargements; it cannot reliably detect AI upscaling.
 - **What you can do:** Replace it from a genuine source at this resolution if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `ssim` 0.985  (0.9–0.999); `minSpatialInfo` 25 SI (0–200)
 
 ### `VID-INFLATED` Bitrate higher than the picture quality
 
@@ -218,6 +219,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The extra bits cannot bring back lost detail; the file is just larger than its quality deserves.
 - **What you can do:** Replace it from a better source if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `bpp` 0.2 bits per pixel (0.01–5)
 
 ### `IMG-UPSCALED` Image is larger than its detail
 
@@ -225,6 +227,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** It looks no sharper than the smaller original and takes more space. This check cannot reliably detect AI upscaling.
 - **What you can do:** Look for the original photo if you need the full detail.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `ssim` 0.985  (0.9–0.999); `minSpatialInfo` 25 SI (0–200)
 
 ## Quality
 
@@ -322,6 +325,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Starved encodes show blocks, banding and smearing, especially in dark or fast scenes.
 - **What you can do:** Replace it from a better source if you notice the artifacts.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `lowBpp` 0.035 bits per pixel (0.001–1); `mediumBpp` 0.02 bits per pixel (0.001–1)
 
 ### `VID-BLOCKY` Heavy compression artifacts
 
@@ -329,6 +333,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** The blocks are part of the picture now and cannot be removed.
 - **What you can do:** Replace it from a better source if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `low` 2.6  (0.5–20); `medium` 3.4  (0.5–20); `blur` 8  (1–50)
 
 ### `VID-FROZEN` Frozen picture
 
@@ -357,6 +362,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Strong compression adds blocks and smears fine detail, and saving it again makes it worse.
 - **What you can do:** Look for the original photo if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `lowQuality` 50  (1–100); `mediumQuality` 30  (1–100)
 
 ### `IMG-LOW-RES` Low resolution
 
@@ -364,6 +370,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** It may be a thumbnail or a reduced copy rather than the original.
 - **What you can do:** Look for the original photo.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `megapixels` 0.3 megapixels (0.01–10)
 
 ## Structure
 

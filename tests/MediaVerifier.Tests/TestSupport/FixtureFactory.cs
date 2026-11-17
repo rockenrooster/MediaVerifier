@@ -210,6 +210,9 @@ public static class FixtureFactory
         // Photos.
         Add("img.jpg", "-ss 2 -i native1080.mp4 -frames:v 1 -q:v 3 -f image2 -update 1 {out}", "native1080.mp4");
         Add("img.png", "-ss 2 -i native1080.mp4 -frames:v 1 -c:v png -f image2 -update 1 {out}", "native1080.mp4");
+        Add("img2x.jpg", "-i img.png -vf scale=iw*2:ih*2:flags=bicubic -frames:v 1 -q:v 2 -f image2 -update 1 {out}", "img.png");
+        Add("shot.png", "-f lavfi -i \"color=c=0xF0F0F0:s=1920x1080,drawbox=x=100:y=100:w=600:h=400:color=0x3366CC:t=fill,drawbox=x=800:y=120:w=900:h=40:color=0x202020:t=fill\" -frames:v 1 -c:v png -f image2 -update 1 {out}");
+        Add("hdr8.mp4", "-f lavfi -i \"testsrc2=s=640x360:r=24\" -t 2 -c:v libx264 -pix_fmt yuv420p -bsf:v h264_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9 -f mp4 {out}");
         Add("img.webp", "-ss 2 -i native1080.mp4 -frames:v 1 -c:v libwebp -q:v 80 -f webp {out}", "native1080.mp4");
         return r;
     }

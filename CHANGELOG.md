@@ -11,6 +11,9 @@ All notable changes to MediaVerifier are documented here.
   dropouts. The drawer shows the file's spectrogram with the cutoff marked, and a waveform with the
   clipped spots and dropouts; click a mark to see the 20 ms around it.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
+- Video and photo quality checks: videos and photos enlarged from a smaller source, videos with too
+  little bitrate for their resolution, heavy block artifacts, high bitrates on weak pictures, HDR
+  marked on 8-bit video, heavily compressed JPEGs and (off by default) low-resolution photos.
 - Fixed: Settings did not open after the audio rules were added. Rule settings with decimals (for
   example 0.5 seconds) keep their decimals when edited.
 - MediaVerifier uses the .NET 10 Desktop Runtime (x64) installed on the PC instead of carrying its

@@ -21,6 +21,7 @@ public static class EngineFactory
         new AudioDecodeProvider(),
         new ImageDecodeProvider(),
         new VideoDecodeProvider(),
+        new FrameSampleProvider(),
     ];
 
     /// <summary>
@@ -36,6 +37,8 @@ public static class EngineFactory
         new AudioDecodeDetector(),
         new AudioQualityDetector(),
         new LowBitrateDetector(),
+        new VideoQualityDetector(),
+        new PhotoQualityDetector(),
         new ImageDecodeDetector(),
         new VideoDecodeDetector(),
     ];
