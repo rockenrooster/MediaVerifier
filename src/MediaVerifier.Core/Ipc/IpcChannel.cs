@@ -153,7 +153,11 @@ public sealed class IpcServer : IDisposable
         PipeSecurity security = new();
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         SecurityIdentifier user = identity.User ?? throw new UnauthorizedAccessException("No user SID.");
-        security.SetOwner(user);
+
+        // The client's CurrentUserOnly check compares the pipe's owner with its token's default owner, which is the
+        // Administrators group in an elevated process: own the pipe the same way, as .NET's own CurrentUserOnly
+        // servers do. Only this user may open it either way.
+        security.SetOwner(identity.Owner ?? user);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new PipeAccessRule(user, PipeAccessRights.FullControl, AccessControlType.Allow));
         return NamedPipeServerStreamAcl.Create(

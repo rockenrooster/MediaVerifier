@@ -61,6 +61,8 @@ All notable changes to MediaVerifier are documented here.
   fail after about 10 seconds with "database is locked". A full disk now ends a scan with "database or
   disk is full" instead of an unrelated message, and a clock set back no longer gives runs that end
   before they start.
+- Fixed: when MediaVerifier ran as administrator, starting it again (or opening a link) did nothing
+  instead of bringing the open window forward.
 - Fixed: files in folders whose names end in a space or a dot (common on copies from a NAS, macOS
   or Linux) were skipped by scans.
 - Video and photo quality checks: videos and photos enlarged from a smaller source, videos with too
