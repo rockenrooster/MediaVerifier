@@ -45,11 +45,30 @@ internal static class Remediator
             return;
         }
 
-        List<FileRecord> files = await Task.Run(() => services.Database.Files.GetMany(fileIds)).ConfigureAwait(true);
-        if (!Confirm(form, action, files, services.State.Settings.Scanning.EmptyQuarantineAfterDays, services.Scans.Status.IsActive))
+        (List<FileRecord> all, List<string> changed) = await Task.Run(() =>
+        {
+            List<FileRecord> records = services.Database.Files.GetMany(fileIds);
+            Dictionary<long, RootRecord> roots = services.Database.Roots.List().ToDictionary(r => r.Id);
+            List<string> moved = [];
+            foreach (FileRecord file in records)
+            {
+                if (action.Class != ActionClass.Meta && roots.TryGetValue(file.RootId, out RootRecord? root)
+                    && WindowsFileSystem.Instance.Stat(Core.Integrity.HealthyCopyFinder.FullPath(root, file)) is FileStat stat
+                    && (stat.Size != file.Size || stat.LastWriteUtcTicks != file.MtimeUtc))
+                {
+                    moved.Add(file.Name);
+                }
+            }
+
+            return (records, moved);
+        }).ConfigureAwait(true);
+        if (!Confirm(form, action, all, changed, services.State.Settings.Scanning.EmptyQuarantineAfterDays, services.Scans.Status.IsActive))
         {
             return;
         }
+
+        // Files that changed since the scan are skipped, as the dialog said.
+        List<FileRecord> files = [.. all.Where(f => !changed.Contains(f.Name))];
 
         long batch = services.Clock.UtcNow.UtcTicks;
 
@@ -128,34 +147,53 @@ internal static class Remediator
             : new ToastContent(Severity.Critical, Strings.Repair.UndoFailed, failure));
     }
 
-    private static bool Confirm(Form form, IRemediationAction action, IReadOnlyList<FileRecord> files, int quarantineDays, bool scanning)
+    private static bool Confirm(Form form, IRemediationAction action, IReadOnlyList<FileRecord> files, IReadOnlyList<string> changed, int quarantineDays, bool scanning)
     {
         if (action.Id == ActionIds.AcceptBaseline)
         {
-            return MessageDialog.Confirm(form, Strings.Dialogs.AcceptTitle, Strings.Dialogs.AcceptText, Strings.Kit.Cancel, Strings.Dialogs.AcceptCheck, destructive: false);
+            return Pages.AcceptDialog.Ask(form);
         }
 
         string things = Things(files);
-        string title = string.Format(CultureInfo.CurrentCulture, TitleFormat(action.Id), things);
-        List<string> lines =
-        [
+        long bytes = files.Sum(f => f.Size);
+        string? whereOriginalsGo = action.Class switch
+        {
+            ActionClass.Lossless or ActionClass.Move when action.Id != ActionIds.FixExtension => string.Format(CultureInfo.CurrentCulture, Strings.Repair.OriginalsToQuarantine, quarantineDays),
+            ActionClass.Recycle => Strings.Repair.OriginalsToRecycle,
+            _ => null,
+        };
+        Pages.RepairPreview preview = new(
+            string.Format(CultureInfo.CurrentCulture, TitleFormat(action.Id), things),
             Paragraph(action.Id),
-            string.Empty,
-            string.Format(CultureInfo.CurrentCulture, Strings.Repair.WhatAndSize, things, UiFormat.Size(files.Sum(f => f.Size))),
-        ];
-        if (action.Class is ActionClass.Lossless or ActionClass.Move && action.Id != ActionIds.FixExtension)
-        {
-            lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Repair.OriginalsToQuarantine, quarantineDays));
-        }
-
-        if (scanning)
-        {
-            lines.Add(Strings.Repair.PausesScan);
-        }
-
-        lines.Add(action.Class == ActionClass.Recycle ? Strings.Repair.CannotUndo : Strings.Repair.CanUndo);
-        return MessageDialog.Confirm(form, title, string.Join(Environment.NewLine, lines), Strings.Kit.Cancel, Verb(action.Id), destructive: false);
+            KindIcon(files),
+            string.Format(CultureInfo.CurrentCulture, Strings.Repair.FactsTotal, things, UiFormat.Size(bytes)),
+            UiFormat.About(Estimate(action, bytes, files.Count)),
+            whereOriginalsGo,
+            action.Class != ActionClass.Recycle,
+            changed.Count,
+            changed,
+            scanning,
+            Verb(action.Id));
+        return Pages.RepairDialog.Ask(form, preview);
     }
+
+    /// <summary>A rough duration from the bytes involved: copies and remuxes run at disk speed, re-encodes slower.</summary>
+    private static TimeSpan Estimate(IRemediationAction action, long bytes, int files)
+    {
+        double perSecond = action.Id switch
+        {
+            ActionIds.ShrinkBitDepth or ActionIds.ReencodeFlac or ActionIds.DeclipCopy => 40_000_000,
+            ActionIds.Quarantine or ActionIds.FixExtension or ActionIds.Recycle => double.PositiveInfinity,
+            _ => 200_000_000,
+        };
+        return TimeSpan.FromSeconds(Math.Max(1, (bytes / perSecond) + (files * 0.2)));
+    }
+
+    private static IconName KindIcon(IReadOnlyList<FileRecord> files) =>
+        files.All(f => f.MediaKind == MediaKind.Video) ? IconName.Video
+        : files.All(f => f.MediaKind == MediaKind.Photo) ? IconName.Photo
+        : files.All(f => f.MediaKind == MediaKind.Audio) ? IconName.Music
+        : IconName.Folder;
 
     private static void Report(UiServices services, IRemediationAction action, IReadOnlyList<OperationOutcome> outcomes, long batch)
     {
@@ -186,7 +224,12 @@ internal static class Remediator
         }
     }
 
-    private static string Things(IReadOnlyList<FileRecord> files) => UiFormat.Plural(files.Count, Strings.Repair.OneFile, Strings.Repair.ManyFiles);
+    /// <summary><c>38 videos</c>, <c>1 photo</c>, <c>12 audio files</c>, or <c>files</c> for a mix.</summary>
+    private static string Things(IReadOnlyList<FileRecord> files) =>
+        files.Count > 0 && files.All(f => f.MediaKind == MediaKind.Video) ? UiFormat.Plural(files.Count, Strings.Repair.OneVideo, Strings.Repair.ManyVideos)
+        : files.Count > 0 && files.All(f => f.MediaKind == MediaKind.Photo) ? UiFormat.Plural(files.Count, Strings.Repair.OnePhoto, Strings.Repair.ManyPhotos)
+        : files.Count > 0 && files.All(f => f.MediaKind == MediaKind.Audio) ? UiFormat.Plural(files.Count, Strings.Repair.OneAudio, Strings.Repair.ManyAudio)
+        : UiFormat.Plural(files.Count, Strings.Repair.OneFile, Strings.Repair.ManyFiles);
 
     private static string Verb(string actionId) => actionId switch
     {

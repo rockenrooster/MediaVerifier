@@ -72,3 +72,39 @@ public sealed class FileDetailViewTests
     private static FindingDetail Finding(long id, string rule, EvidenceView view, IReadOnlyDictionary<string, object> evidence) =>
         new(id, rule, Severity.Medium, 0.85f, rule, "summary", "what", "why", "do", view, evidence, "caption");
 }
+
+/// <summary>Dialog A lays out its facts, the skipped-files bar and the pause check box (subplan 09, A).</summary>
+[Collection(UiCollection.Name)]
+public sealed class RepairDialogTests
+{
+    [Fact]
+    public void Dialog_a_paints_with_every_optional_part()
+    {
+        RepairPreview preview = new(
+            "Rebuild the index of 38 videos?",
+            "Each video is rewritten into a new file with a working index. The picture and sound are copied bit for bit and checked before anything is replaced.",
+            MediaVerifier.UI.Kit.IconName.Video,
+            "38 videos, 61.4 GB in total",
+            "About 4 minutes",
+            "Originals go to quarantine for 30 days",
+            true,
+            2,
+            ["a.mp4", "b.mp4"],
+            true,
+            "Rebuild index");
+        using RepairDialog dialog = RepairDialog.Create(preview);
+        dialog.StartPosition = FormStartPosition.Manual;
+        dialog.Location = new Point(-32000, -32000);
+        dialog.Size = new Size(dialog.LogicalWidth, dialog.TotalLogicalHeight());
+        dialog.Show();
+        dialog.PerformLayout();
+        Application.DoEvents();
+        if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
+        {
+            MediaVerifier.Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "dialog-a.png"));
+        }
+
+        Assert.True(dialog.Height >= 380, $"{dialog.Height}");
+        dialog.Close();
+    }
+}

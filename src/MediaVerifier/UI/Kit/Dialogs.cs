@@ -168,6 +168,13 @@ internal class KitDialog : Form
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
+
+        // The form's own constructor lays out once (AutoScaleMode) before the body exists.
+        if (_body is null)
+        {
+            return;
+        }
+
         _body.Bounds = new Rectangle(S(24), S(60), Math.Max(0, Width - S(48)), S(_bodyHeight));
         int x = Width - S(24);
         int y = Height - S(24) - S(32);
@@ -221,7 +228,7 @@ internal class KitDialog : Form
         base.Dispose(disposing);
     }
 
-    private int TotalLogicalHeight() => 60 + _bodyHeight + 24 + 32 + 24;
+    internal int TotalLogicalHeight() => 60 + _bodyHeight + 24 + 32 + 24;
 
     private void OnThemeChanged(object? sender, EventArgs e)
     {
