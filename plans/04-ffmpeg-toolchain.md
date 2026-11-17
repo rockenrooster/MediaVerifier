@@ -9,7 +9,8 @@ untrusted and possibly corrupt files, and turns their output into typed data. No
 layer starts a process or parses FFmpeg text.
 
 Read [appendix A](appendix-a-ffmpeg-verified-behavior.md) before starting. It records what FFmpeg 8.0.1
-actually does with corrupt inputs, including several cases where the obvious command reports nothing.
+and the bundled 9.0.2 actually do with corrupt inputs, including several cases where the obvious
+command reports nothing.
 
 ## The bundled build
 

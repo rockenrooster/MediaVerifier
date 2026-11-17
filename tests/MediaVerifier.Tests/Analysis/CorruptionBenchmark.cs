@@ -15,6 +15,12 @@ namespace MediaVerifier.Tests.Analysis;
 /// the detection rate per depth and through the fingerprint, written to docs/detection-rates.md
 /// (MEDIAVERIFIER_UPDATE_DOCS=1). Targets from the plan are asserted; every other rate may not fall more than five
 /// points below the committed report. Healthy fixtures staying clean is CorruptionMatrixTests' job.
+/// <para>
+/// The committed report was measured on the developer's fixtures, and x264 output (so the video fixtures and the
+/// images taken from them) differs between machines. To compare two FFmpeg builds elsewhere, write one build's
+/// report with <c>MEDIAVERIFIER_BENCHMARK_OUT</c> and measure the other with <c>MEDIAVERIFIER_BENCHMARK_BASELINE</c>
+/// naming that file: the same fixtures, so only the build differs (CI does this when "benchmark" is ticked).
+/// </para>
 /// </summary>
 [Trait("Category", "Perf")]
 public sealed partial class CorruptionBenchmark(ITestOutputHelper output)
@@ -61,11 +67,17 @@ public sealed partial class CorruptionBenchmark(ITestOutputHelper output)
         }
 
         string path = RepositoryPaths.Combine("docs", "detection-rates.md");
-        Dictionary<(string, string), Rates> committed = File.Exists(path) ? Parse(await File.ReadAllTextAsync(path)) : [];
+        string baseline = Environment.GetEnvironmentVariable("MEDIAVERIFIER_BENCHMARK_BASELINE") is { Length: > 0 } other ? other : path;
+        Dictionary<(string, string), Rates> committed = File.Exists(baseline) ? Parse(await File.ReadAllTextAsync(baseline)) : [];
         string report = Report(measured);
         if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_UPDATE_DOCS") == "1")
         {
             await File.WriteAllTextAsync(path, report);
+        }
+
+        if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_BENCHMARK_OUT") is { Length: > 0 } copy)
+        {
+            await File.WriteAllTextAsync(copy, report);
         }
 
         List<string> failures = [];

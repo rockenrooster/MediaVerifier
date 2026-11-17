@@ -116,9 +116,10 @@ jobs:
           MEDIAVERIFIER_APPENDIX_REPORT: ${{ inputs.appendix && format('{0}\appendix-a.md', runner.temp) || '' }}
         run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Perf&Category!=Fuzz&Category!=Calibration"
 
-      # Subplan 17, "Updating FFmpeg": the corruption benchmark with the bundle, then with the tooling build on the
-      # same fixtures, so that a change in a detection rate can be told apart from a change in the fixtures.
-      - name: Corruption benchmark, bundle and tooling build
+      # Subplan 17, "Updating FFmpeg": the corruption benchmark with the tooling build, then with the bundle measured
+      # against those rates. The same fixtures, so a fall in a rate comes from the bundle, not from fixtures that
+      # differ from the developer's (x264 output depends on the machine); the plan's targets apply to both.
+      - name: Corruption benchmark, tooling build then bundle
         if: ${{ always() && inputs.benchmark }}
         timeout-minutes: 120
         shell: pwsh
@@ -127,15 +128,21 @@ jobs:
           TEMP: ${{ runner.temp }}
         run: |
           $filter = 'FullyQualifiedName~CorruptionBenchmark'
-          dotnet test MediaVerifier.sln -c Release --no-build --filter $filter --logger 'console;verbosity=detailed'
-          $bundle = $LASTEXITCODE
+          $rates = Join-Path $env:RUNNER_TEMP 'rates-tooling.md'
           Rename-Item deps\ffmpeg\bin bin-bundle
           $probe = Get-ChildItem (Join-Path $env:ChocolateyInstall 'lib\ffmpeg-full') -Recurse -Filter ffprobe.exe | Select-Object -First 1
           $env:MEDIAVERIFIER_FFMPEG_DIR = $probe.DirectoryName
+          $env:MEDIAVERIFIER_BENCHMARK_OUT = $rates
+          # Compared with the committed report here, so a fall only means these fixtures differ from the developer's.
           dotnet test MediaVerifier.sln -c Release --no-build --filter $filter --logger 'console;verbosity=detailed'
           $tooling = $LASTEXITCODE
           Rename-Item deps\ffmpeg\bin-bundle bin
-          Write-Host "Benchmark exit codes: bundle $bundle, tooling build $tooling"
+          Remove-Item Env:MEDIAVERIFIER_FFMPEG_DIR, Env:MEDIAVERIFIER_BENCHMARK_OUT
+          if (-not (Test-Path $rates)) { throw 'The tooling build wrote no rates to compare the bundle with.' }
+          $env:MEDIAVERIFIER_BENCHMARK_BASELINE = $rates
+          dotnet test MediaVerifier.sln -c Release --no-build --filter $filter --logger 'console;verbosity=detailed'
+          $bundle = $LASTEXITCODE
+          Write-Host "Benchmark exit codes: tooling build against the committed report $tooling, bundle against the tooling build $bundle"
           if ($bundle -ne 0) { exit 1 }
 
       - name: Appendix A report

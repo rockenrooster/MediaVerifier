@@ -16,7 +16,7 @@ developer override.
 | Decision | Reason |
 |----------|--------|
 | Build our own instead of shipping a prebuilt download | The common prebuilt Windows builds are either GPL (gyan.dev) or LGPL **version 3** with dozens of extra libraries, network protocols and capture devices (BtbN `lgpl` variants configure with `--enable-version3`; their `win64-lgpl-shared-9.0` zip is 76.5 MB compressed). Each extra library is another licence obligation and more attack surface for an app that opens untrusted files |
-| FFmpeg 9.0.2 (tag `n9.0.2`) | Current release (tag verified to exist on 2026-11-16). The behaviour in appendix A was measured on 8.0.1; task FFB-05 re-measures it on this build |
+| FFmpeg 9.0.2 (tag `n9.0.2`) | Current release (tag verified to exist on 2026-11-16). The behaviour in appendix A was measured on 8.0.1 and re-measured on this build (task FFB-05, 2026-11-17) |
 | LGPL v2.1 or later; no `--enable-gpl`, `--enable-version3`, `--enable-nonfree` | Only FFmpeg's own source then needs to be offered. Every filter, decoder, encoder and muxer listed below was checked against the tag's `configure`, `allcodecs.c`, `allformats.c` and `allfilters.c`: none is GPL-only (the GPL-only filters include `cropdetect` and `tinterlace`, which the app does not use) |
 | External libraries: zlib, dav1d, libjxl only | zlib: PNG, compressed MOV headers, Matroska compression. dav1d (BSD-2-Clause): AV1 and AVIF; FFmpeg's own `av1` decoder needs hardware. libjxl (BSD-3-Clause): JPEG XL; FFmpeg has no native JPEG XL decoder. None of these needs `--enable-version3` |
 | Shared libraries (DLLs) plus `ffmpeg.exe` and `ffprobe.exe` | The code is stored once for both programs, and the LGPL requirement that users can replace the library is met by replaceable DLLs |
@@ -230,7 +230,9 @@ Workflow `.github/workflows/ffmpeg-bundle.yml`, started by hand with inputs `ver
 2. Re-run the appendix A experiments with the new bundle (run CI by hand with **appendix** ticked)
    and update the appendix and the log corpus.
 3. Run the full test suite and the corruption benchmark against the new bundle; investigate any
-   detection-rate change.
+   detection-rate change. Run CI by hand with **benchmark** ticked: it measures the tooling build and
+   then the bundle on the same fixtures, and fails if a rate of the bundle falls more than five points
+   below the tooling build's or misses a target.
 4. The workflow commits the lock file (see the deviations log); the next app release ships it.
 
 A configure change without a version change increments `revision` (`mv2`, `mv3`, …).

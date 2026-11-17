@@ -1,8 +1,17 @@
 # Appendix A — FFmpeg behaviour verified by experiment
 
-Everything in this appendix was run, not assumed. Environment: Windows 11, FFmpeg 8.0.1
-(`ffmpeg version 8.0.1-full_build-www.gyan.dev`), November 2026. Fixtures were generated with the
-recipes in subplan 15 and damaged with `dd`. Hex addresses in log lines are replaced by `X`.
+Everything in this appendix was run, not assumed. First run: Windows 11, FFmpeg 8.0.1
+(`ffmpeg version 8.0.1-full_build-www.gyan.dev`), November 2026, fixtures generated with the recipes in
+subplan 15 and damaged with `dd`. Sections 2–4 and 7–12 were repeated on 2026-11-17 by
+`AppendixAMeasurements` (task FFB-05) with the bundle the app ships, **`ffmpeg-bundle-9.0.2-mv2`**
+(`ffmpeg version 9.0.2-mediaverifier-2`), and with the 8.0.1 build on the same fixtures, on a GitHub
+Windows runner (Windows Server 2025); the damage came from the `Mutate` helpers. Where 9.0.2 behaves
+differently, the text says so; everything else held on both. Hex addresses in log lines are replaced
+by `X`.
+
+x264's output depends on the machine (its thread count follows the core count), so the video fixtures,
+and the images taken from them, differ in their bytes between machines, and the same damage can land in
+different data. Compare FFmpeg versions on the same fixtures, as the measurement does.
 
 Re-run these experiments when changing the supported FFmpeg version, and update this file. The test
 `AppendixAMeasurements` repeats sections 2–4 and 7–12 and writes what FFmpeg printed to a report:
@@ -35,7 +44,7 @@ ffmpeg -v error -err_detect crccheck -i bad1.flac -f null -     -> [flac @ X] CR
 ```
 
 `ffmpeg -h full` confirms the defaults: decoder `err_detect` default is `0`; demuxer `err_detect`
-default is `crccheck`.
+default is `crccheck`. The same on 9.0.2.
 
 ### H.264, 2,000 random bytes at 50 % (video-only MP4)
 
@@ -45,8 +54,11 @@ ffmpeg -v repeat+level+warning ... -i badmid.mp4 -map 0:v:0 -f null -
     [vist#0:0/h264 @ X] [dec:h264 @ X] [warning] corrupt decoded frame
 ```
 
-A single flipped byte at 30 % gives the same single warning. With `-skip_frame nokey` neither case
-printed anything: the damage was in non-key frames.
+The same on 9.0.2. A single flipped byte at 30 % gave the same single warning on 8.0.1; on 9.0.2 the
+same damaged file printed nothing at all. Over 50 positions, though, the corruption benchmark finds a
+single flipped byte in H.264 as often on 9.0.2 as on 8.0.1 with the same fixtures (6 % at Standard,
+100 % at Deep). With `-skip_frame nokey` neither case printed anything on either version: the damage
+was in non-key frames.
 
 ### PNG, one byte changed
 
@@ -57,8 +69,10 @@ Without `-max_error_rate 1`:
 [vist#0:0/png @ X] [dec:png @ X] [fatal] Decode error rate 1 exceeds maximum 0.666667
 ```
 
-With `-max_error_rate 1 -err_detect crccheck+bitstream+buffer`: the errors are listed
-(`CRC mismatch in chunk, skipping`, `inflate returned error -3`) and FFmpeg carries on, exit 0.
+The run ends with exit code 69. With `-max_error_rate 1 -err_detect crccheck+bitstream+buffer`: the
+errors are listed (`CRC mismatch in chunk, skipping`, `inflate returned error -3`,
+`Decoding error: Generic error in an external library`) and FFmpeg carries on, exit 0. The same on
+9.0.2.
 
 ## 3. Line format with `-loglevel repeat+level+warning`
 
@@ -73,29 +87,47 @@ With `-max_error_rate 1 -err_detect crccheck+bitstream+buffer`: the errors are l
 [fatal] Error opening input files: Invalid data found when processing input
 ```
 
+FFmpeg 9.0.2's `ffmpeg` logs demuxer messages under the input: `[in#0 @ X]` while it opens the file and
+`[in#0/<demuxer> @ X]` once the demuxer runs. ffprobe still names the demuxer:
+
+```
+[in#0 @ X] [error] moov atom not found                          (ffmpeg 9.0.2; ffprobe: [mov,mp4,m4a,3gp,3g2,mj2 @ X])
+[in#0/ogg @ X] [error] CRC mismatch!                            (ffmpeg 9.0.2; 8.0.1: [ogg @ X])
+[in#0/matroska,webm @ X] [error] File ended prematurely         (ffmpeg 9.0.2; 8.0.1: [matroska,webm @ X])
+```
+
+Filters log as `[Parsed_<filter>_<n> @ X]` on 9.0.2, including `freezedetect` and `blackdetect`, which
+8.0.1 logged as `[freezedetect @ X]` and `[blackdetect @ X]`. The classifier matches on the message, not
+on these prefixes; the corpus has the 9.0.2 forms (`ffmpeg9-input-contexts`). On Windows, text on stdout
+ends its lines with CRLF on both versions; the parsers split on either.
+
 ## 4. Messages per format and damage
 
 | Format | Damage | Messages (normalised) |
 |--------|--------|-----------------------|
 | FLAC | One byte | `CRC error at PTS N` (needs `crccheck`) |
-| FLAC | 4 KiB zeros | `invalid residual`; `decode_frame() failed`; `Decoding error: Invalid data found when processing input` |
-| MP3 | Truncated at 55 % | `[mp3] [warning] filesize and duration do not match (growing file?)`; `[mp3float] [error] invalid new backstep -N`. ffprobe still reports 20.0 s; decode reaches 10.998617 s |
-| MP3 | 3,000 random bytes | `Header missing` ×3; `Error submitting packet to decoder: Invalid data found when processing input` ×3 |
-| AAC in M4A | 1,500 random bytes | `Prediction is not allowed in AAC-LC.`; `invalid band type`; `channel element N.N is not allocated`; `Number of bands (N) exceeds limit (N).`; `Error submitting packet to decoder` ×5 |
-| Opus in Ogg | Two bytes | `[ogg] [error] CRC mismatch!` ×2 (demuxer checks page CRC by default) |
+| FLAC | 4 KiB zeros | `invalid residual` or `qlevel N not supported, maybe buggy stream`, depending on where the zeros land; `decode_frame() failed`; `Decoding error: Invalid data found when processing input` |
+| MP3 | Truncated at 55 % | `[mp3] [warning] filesize and duration do not match (growing file?)`; `[mp3float] [error] invalid new backstep -N` (the 2026-11-17 cut printed only the first). ffprobe still reports 20.0 s; decode reaches 10.998617 s on both versions |
+| MP3 | 3,000 random bytes | `Header missing` ×3; `Error submitting packet to decoder: Invalid data found when processing input` ×3; also `bits_left=N` (counts depend on where the bytes land) |
+| AAC in M4A | 1,500 random bytes | `Prediction is not allowed in AAC-LC.`; `invalid band type`; `channel element N.N is not allocated`; `Number of bands (N) exceeds limit (N).`; `Reserved bit set.`; `Error submitting packet to decoder` ×5. Final `out_time`: 20.015601 s on 8.0.1, 20.000000 s on 9.0.2 |
+| Opus in Ogg | Two bytes | `[ogg] [error] CRC mismatch!` ×2, ×4 in the 2026-11-17 run (demuxer checks page CRC by default) |
 | MP4, index at end | Truncated at 60 % | `moov atom not found`; cannot open |
 | MP4, index at front | Truncated at 60 % | `Invalid NAL unit size (N > N).`; `missing picture in access unit with size N`; `Error splitting the input into NAL units.`; `Decoding error: Invalid data found when processing input`. ffprobe still reports 6.0 s and 144 frames; decode stops at frame 96, `out_time` 4.0 s |
-| MP4 with AAC audio | 2,000 random bytes at 50 % | Standard pass (key frames + audio): `Invalid NAL unit size` ×2, `missing picture in access unit`, `Error splitting the input into NAL units.`, decoder errors on both the video and the audio stream. Deep pass adds `corrupt decoded frame` and `mmco: unref short failure`; 143 of 144 frames decoded |
+| MP4 with AAC audio | 2,000 random bytes at 50 % | Standard pass (key frames + audio): `Invalid NAL unit size` ×2, `missing picture in access unit`, `Error splitting the input into NAL units.`, decoder errors on both the video and the audio stream. Deep pass adds `corrupt decoded frame` and `mmco: unref short failure`; 143 of 144 frames decoded. On the 2026-11-17 fixtures the bytes hit only non-key video frames: Standard printed nothing and Deep only `corrupt decoded frame`, 144 of 144 frames, on both versions |
 | MKV | Truncated at 60 % | `[matroska,webm] [error] File ended prematurely`; ffprobe still reports 6.0 s; decode stops at frame 96 |
-| JPEG | Truncated at 60 % | `[mjpeg] [warning] EOI missing, emulating` ×2; `[mjpeg] [error] overread N` |
-| JPEG | 4 KiB zeros | `[mjpeg] [error] error y=N x=N`; `error count: N` |
+| JPEG | Truncated at 60 % | `[mjpeg] [warning] EOI missing, emulating` (×2 on 8.0.1, once on 9.0.2); `[mjpeg] [error] overread N` |
+| JPEG | 4 KiB zeros | 8.0.1: `[mjpeg] [error] error y=N x=N` with `error count: N` or `error dc` (after `[warning] mjpeg_decode_dc: bad vlc`). 9.0.2 on the same file: only `[mjpeg] [error] overread N` |
 | JPEG | One byte | **nothing** |
 | PNG | One byte | `CRC mismatch in chunk, skipping`; `inflate returned error -N`; `nb_read_frames` is `N/A` |
 | PNG | Truncated | `chunk too big` ×2 |
 | WebP (lossy) | Three bytes | **nothing** |
 | WebP | Truncated | `Could not find codec parameters for stream N (Video: webp, none): unspecified size` |
 | Text named `.mp3` | — | `Format mp3 detected only with low score of 1, misdetection possible!`; `Failed to find two consecutive MPEG audio frames.` |
-| Empty `.flac` | — | `Format flac detected only with low score of 1`; ffprobe still returns `format_name: flac` |
+| Empty `.flac` | — | `Format flac detected only with low score of 1`; `Could not find codec parameters for stream 0 (Audio: flac, 0 channels): unspecified sample format`; ffprobe still returns `format_name: flac` |
+
+The corruption benchmark (every cell of the corruption matrix at 50 positions, `docs/detection-rates.md`)
+gave the same detection rates on 9.0.2 as on 8.0.1 with the same fixtures in every cell but one: a JPEG
+with one flipped byte, 30 % against 32 % (one position in 50). Every target of the benchmark held on both.
 
 ## 5. FLAC audio MD5
 
@@ -134,8 +166,10 @@ ffmpeg -hide_banner -nostdin -loglevel repeat+level+warning -protocol_whitelist 
 ```
 
 Healthy 6-second 1080p file with AAC: about 200 ms, no stderr, final progress block
-`frame=4 ... out_time_us=5916667 ... progress=end`, and `streamhash.txt` contains
-`0,v,MD5=...` and `1,a,MD5=...`.
+`frame=4 ... out_time_us=5916667 ... progress=end` on 8.0.1 and `out_time_us=6000000` on 9.0.2, and
+`streamhash.txt` contains `0,v,MD5=...` and `1,a,MD5=...`. On 9.0.2 the final `out_time` reaches the end
+of the stream: 6.000000 s for this file in both the key-frame pass and a full decode (8.0.1: 5.916667 s
+and 5.990748 s).
 
 Progress block shape (one `key=value` per line):
 `frame=144 fps=0.00 stream_0_0_q=-0.0 bitrate=N/A total_size=N/A out_time_us=6000000 out_time_ms=6000000 out_time=00:00:06.000000 dup_frames=0 drop_frames=0 speed=48.2x progress=end`
@@ -147,7 +181,7 @@ ffmpeg ... -i pad24.flac -map 0:a:0 -c:a pcm_f32le -f wav -
 ```
 
 First bytes: `RIFF ffffffff WAVE fmt  12000000 0300 0200 44ac0000 ...` then a `LIST` chunk
-(`INFO ISFT Lavf62.3.100`), then `data ffffffff`, then samples. Format tag 3 is IEEE float; the RIFF
+(`INFO ISFT Lavf62.3.100`; `Lavf63.1.102` on 9.0.2, the same size), then `data ffffffff`, then samples. Format tag 3 is IEEE float; the RIFF
 and data sizes are `0xFFFFFFFF` on a pipe. `-map_metadata -1 -fflags +bitexact` removes the `LIST`
 chunk, but the reader must skip unknown chunks regardless.
 
@@ -155,10 +189,11 @@ chunk, but the reader must skip unknown chunks regardless.
 
 Top-level format keys: `bit_rate, duration, filename, format_long_name, format_name, nb_programs, nb_stream_groups, nb_streams, probe_score, size, start_time, tags`. Video stream keys include
 `avg_frame_rate, bit_rate, bits_per_raw_sample, codec_name, codec_type, coded_height, coded_width, disposition, duration, field_order, height, nb_frames, pix_fmt, profile, r_frame_rate, width`. All
-numbers arrive as strings.
+numbers arrive as strings. 9.0.2 adds `mime_codec_string` and no longer writes `refs`; MediaVerifier
+reads neither.
 
 A 24-bit FLAC reports `"sample_fmt":"s32"`, `"bits_per_sample":0`, `"bits_per_raw_sample":"24"`.
-An MP3 reports `probe_score` 51; that is normal.
+An MP3 reports `probe_score` 51 (52 on 9.0.2); that is normal.
 
 ## 10. Still-image demuxers and awkward names
 
@@ -173,13 +208,15 @@ A PNG renamed `.jpg` is identified correctly (`png`, `png_pipe`).
 | File name | Plain `ffprobe` | With `-pattern_type none` |
 |-----------|-----------------|---------------------------|
 | `a%b.jpg`, `100% real.jpg` | Works | Works |
-| `a%d.jpg`, `a%03d.jpg`, `x%d.png` | **Fails**: `Could find no file with path 'a%d.jpg' and index in the range 0-4` | Works |
+| `a%d.jpg`, `a%03d.jpg`, `x%d.png` | **Fails** on 8.0.1: `Could find no file with path 'a%d.jpg' and index in the range 0-4`. Works on 9.0.2 | Works |
 
 `-pattern_type none` before a non-image input: `ffprobe` tolerates it; `ffmpeg` fails with
 `Option pattern_type not found.` (exit 8). Forcing the demuxer (`-f jpeg_pipe`, or
 `-f image2 -pattern_type none`) works for the `%d` names.
 
-A 393-character path containing accented Latin, Japanese and symbol characters probes correctly.
+A path of about 400 characters containing accented Latin, Japanese and symbol characters probes
+correctly on both versions. MediaVerifier still names the demuxer for photos (subplan 05), so it does not
+depend on the 9.0.2 behaviour above.
 
 `-protocol_whitelist file,pipe` works for file input and pipe output.
 
@@ -190,20 +227,26 @@ A 393-character path containing accented Latin, Japanese and symbol characters p
 | `ssim=stats_file=NAME` | One line per frame in the file: `n:1 Y:0.994236 U:0.968169 V:0.966805 All:0.985319 (18.332549)`. Summary line at info level: `[Parsed_ssim_N @ X] SSIM Y:0.994183 (22.353202) U:... All:...` |
 | `siti`, `blockdetect`, `blurdetect` + `metadata=mode=print:file=NAME` | Per frame: `frame:0 pts:0 pts_time:0`, then `lavfi.siti.si=53.83`, `lavfi.siti.ti=0.00`, `lavfi.block=2.068609`, `lavfi.blur=5.825063` |
 | `idet` | Info level: `[Parsed_idet_0 @ X] Multi frame detection: TFF: 0 BFF: 0 Progressive: 48 Undetermined: 1` |
-| `freezedetect` | Info level: `[freezedetect @ X] lavfi.freezedetect.freeze_start: 0`, `...freeze_duration: 3`, `...freeze_end: 3` |
-| `blackdetect` | Info level: `[blackdetect @ X] black_start:0 black_end:3 black_duration:3` |
-| `cropdetect` | Info level: `[Parsed_cropdetect_0 @ X] x1:0 x2:319 y1:0 y2:239 w:320 h:240 x:0 y:0 pts:48640 t:3.958333 limit:0.094118 crop=320:240:0:0` |
+| `freezedetect` | Info level: `[freezedetect @ X] lavfi.freezedetect.freeze_start: 0`, `...freeze_duration: 3`, `...freeze_end: 3` (`[Parsed_freezedetect_0 @ X]` on 9.0.2) |
+| `blackdetect` | Info level: `[blackdetect @ X] black_start:0 black_end:3 black_duration:3` (`[Parsed_blackdetect_0 @ X]` on 9.0.2) |
+| `cropdetect` | Info level: `[Parsed_cropdetect_0 @ X] x1:0 x2:319 y1:0 y2:239 w:320 h:240 x:0 y:0 pts:48640 t:3.958333 limit:0.094118 crop=320:240:0:0`. Not in the bundle (`No such filter: 'cropdetect'`); the app does not use it |
 | `volumedetect` | Info level: `[Parsed_volumedetect_0 @ X] [info] mean_volume: -23.5 dB`, `max_volume: ...` |
 | `ebur128=peak=true:framelog=quiet` | Info level summary: `Integrated loudness: I: -6.7 LUFS ... Loudness range: LRA: 0.1 LU ... True peak: Peak: 1.1 dBFS` |
 | `astats` (overall) | Info level: `DC offset: 0.003124`, `Peak level dB: -10.291644`, `Flat factor: 0.000000`, `Peak count: 2.000000`, `Bit depth: 14/16/16/16` (for the padded 24-bit file) |
 
 Measured on the generated 1080p clips: blockiness 1.50 (CRF 20) versus 2.90 (starved to about
-450 kbps); blur 5.76 versus 9.54.
+450 kbps); blur 5.76 versus 9.54. Over all 144 frames of the 2026-11-17 fixtures: blockiness 1.77 versus
+3.25, blur 5.67 versus 9.13, on both versions. `ssim`, `siti`, `idet`, `volumedetect`, `ebur128` and
+`astats` printed the same values on 8.0.1 and 9.0.2.
 
 ## 12. Down-up SSIM for upscale detection
 
 The exact filter graph in subplan 11 (three key frames, centre crop 1152 × 648, candidates 720p and
-540p) ran with no stderr output in about 0.3 s per file:
+540p) ran with no stderr output in about 0.3 s per file. The frame-sampling provider's graph as built
+today (six samples from 5 % to 95 %, which in these 6-second clips land on the three key frames twice
+over, and a 360p candidate as well) gave the same values to three decimals on 8.0.1 and 9.0.2, in 0.4 to
+0.9 s per file on the runner; the 360p values are 0.942, 0.919, 0.921 (`native1080.mp4`), 0.956, 0.944,
+0.947 (`up720.mp4`) and 0.969, 0.961, 0.963 (`up540.mp4`):
 
 | File | Rebuilt from 720p (three frames) | Rebuilt from 540p (three frames) |
 |------|----------------------------------|----------------------------------|
@@ -231,4 +274,7 @@ Filters present: `adeclick adeclip aspectralstats astats ebur128 loudnorm silenc
 
 Decoders present include: `flac mp3float aac opus vorbis alac ape wavpack tak wmalossless truehd dca ac3 eac3 dsd_lsbf h264 hevc av1 libdav1d vp9 mpeg2video mpeg4 vc1 prores mjpeg png webp gif bmp tiff libjxl`. Hardware acceleration methods listed: `cuda vaapi dxva2 qsv d3d11va opencl vulkan d3d12va amf`.
 
-Smaller builds may lack some of these; the capability probe (subplan 04) decides at run time.
+Smaller builds may lack some of these; the capability probe (subplan 04) decides at run time. The
+bundle (subplan 17) has only the components in its build script: of the filters above it lacks
+`aspectralstats`, `loudnorm`, `silencedetect`, `bitplanenoise`, `cropdetect`, `entropy`, `signalstats`,
+`vmafmotion`, `xpsnr` and `showspectrumpic`, and it has no hardware acceleration.
