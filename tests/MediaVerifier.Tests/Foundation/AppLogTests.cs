@@ -76,7 +76,7 @@ public sealed class AppLogTests
         }
         finally
         {
-            ErrorLog.Configure(MediaVerifier.Core.AppPaths.Default.LogsDirectory);
+            ErrorLog.Configure(TestLogs.Directory);
         }
     }
 }
