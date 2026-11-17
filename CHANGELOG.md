@@ -19,3 +19,5 @@ All notable changes to MediaVerifier are documented here.
 - Scans page: the running scan with progress, speed, time left, problems found and the files being
   worked on; history of runs with results; a run's details in the drawer; a confirmation with time
   estimates before a large scan.
+- Settings page: General, Scanning, Rules, Integrity, Notifications, Updates, Advanced and About.
+  Rules can be switched off, capped and tuned; findings are re-judged at once without a rescan.

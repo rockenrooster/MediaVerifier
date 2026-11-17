@@ -520,6 +520,7 @@ internal static class PageFactory
         PageId.Issues => new IssuesPage(services),
         PageId.Library => new LibraryPage(services),
         PageId.Scans => new ScansPage(services),
+        PageId.Settings => new SettingsPage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

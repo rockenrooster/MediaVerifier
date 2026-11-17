@@ -255,6 +255,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** Clipping is heard as harsh distortion on loud passages. It happened during recording or mastering, so every copy of this release has it.
 - **What you can do:** Look for a better master of the same recording. A de-clipped copy can be made as an estimate; it never replaces the original.
 - **Actions:** `ACT-DECLIP-COPY`, `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
+- **Limits:** `lowPerMinute` 5 clipped peaks per minute (1–10000); `mediumPerMinute` 60 clipped peaks per minute (1–10000); `highPerMinute` 600 clipped peaks per minute (1–100000)
 
 ### `AUD-OVERS` Decodes above full scale
 

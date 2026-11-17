@@ -26,6 +26,9 @@ internal interface IScanControl
     void Resume();
 
     void Cancel();
+
+    /// <summary>Re-judges stored analysis after a rule setting changed (no file is read again).</summary>
+    Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds);
 }
 
 /// <summary>The real engine behind <see cref="IScanControl"/>.</summary>
@@ -36,6 +39,8 @@ internal sealed class EngineScanControl(ScanEngine engine) : IScanControl, IDisp
     public EngineStatus Status => engine.Status;
 
     public string ScopeText => _scope;
+
+    public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => engine.ReevaluateAsync(ruleIds);
 
     public event Action<RunSummary>? RunCompleted
     {

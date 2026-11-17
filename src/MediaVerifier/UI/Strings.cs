@@ -738,6 +738,10 @@ internal static class Strings
         public const string ChipQuality = "Quality";
         public const string ChipStructure = "Structure";
         public const string RuleMeta = "{0} · {1} · {2} depth";
+        public const string KindAudio = "Audio";
+        public const string KindVideo = "Video";
+        public const string KindPhoto = "Photo";
+        public const string KindAll = "All media";
         public const string UpToCritical = "Up to Critical";
         public const string UpToHigh = "Up to High";
         public const string UpToMedium = "Up to Medium";

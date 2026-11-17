@@ -62,6 +62,11 @@ public static class RuleDefaults
             new("COR-STREAM-LENGTH", "seconds", 2, 0.5, 600, "Allowed length difference", "seconds", 1),
             new("COR-STREAM-LENGTH", "percent", 2, 0.1, 50, "or share of the length", "%", 1),
             new("COR-STREAM-LENGTH", "mediumPercent", 10, 1, 100, "Medium above this difference", "%", 1),
+
+            // Audio quality (subplan 10); *calibrate*.
+            new("AUD-CLIPPING", "lowPerMinute", 5, 1, 10000, "Low from", "clipped peaks per minute"),
+            new("AUD-CLIPPING", "mediumPerMinute", 60, 1, 10000, "Medium from", "clipped peaks per minute"),
+            new("AUD-CLIPPING", "highPerMinute", 600, 1, 100000, "High from", "clipped peaks per minute"),
         ];
         ByKey = All.ToDictionary(p => p.Key, StringComparer.Ordinal);
     }

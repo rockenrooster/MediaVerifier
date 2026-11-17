@@ -33,6 +33,7 @@ internal sealed partial class DemoUiData : IUiData
             Scans = new DemoScanControl(),
             MediaEngine = new MediaEngineInfo(location, new Core.Ffmpeg.BundleCheck(Core.Ffmpeg.BundleState.Ok, info, [], [], null)),
             Data = new DemoUiData(),
+            Rules = new Core.Rules.RuleSettings(),
             IsDemo = true,
         };
         services.Own(database);
@@ -137,6 +138,9 @@ internal sealed class DemoScanControl : IScanControl
     }
 
     public Task<long> StartAsync(ScanRequest request, string scopeText) => Task.FromResult(0L);
+
+    /// <summary>The settings-rules mockup: seven findings changed tier.</summary>
+    public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => Task.FromResult(new ReevaluationResult(7, 0, 0));
 
     public void Pause()
     {

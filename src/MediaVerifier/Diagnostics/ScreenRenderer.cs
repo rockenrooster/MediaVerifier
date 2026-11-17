@@ -80,6 +80,14 @@ internal static class ScreenRenderer
                         string name = $"{page.ToString().ToLowerInvariant()}-{theme}.png";
                         Save(form.Shell, Path.Combine(directory, name));
                         renders.Add(("Screens", $"{page} {theme}", name, ReferenceFor(page, theme)));
+                        if (form.CurrentPageControl is SettingsPage settingsPage)
+                        {
+                            WaitFor(settingsPage.ShowDemoRulesAsync());
+                            form.Shell.PerformLayout();
+                            Application.DoEvents();
+                            Save(form.Shell, Path.Combine(directory, name));
+                        }
+
                         if (form.CurrentPageControl is LibraryPage library)
                         {
                             library.ShowDemoBrowse();
