@@ -5,6 +5,9 @@ All notable changes to MediaVerifier are documented here.
 ## Unreleased
 
 - Add upcoming user-visible changes here before tagging a release.
+
+## 0.1.0.9 - 2026-11-17
+
 - Fixed: Open file and Open folder opened Documents instead when the path held a comma and no
   spaces (for example a folder named "Artist,Album").
 - Fixed: the window could freeze while it waited for a network folder that was offline: in Tools →
