@@ -1,6 +1,7 @@
 # Builds the LGPL FFmpeg bundle (subplan 17, task FFB-04): compile in the pinned BtbN image, package only
-# what the app uses with bundle.json, verify on Windows, publish a pre-release with the exact source and
-# build script, and commit the updated deps/ffmpeg/bundle.lock.json to the branch the workflow ran from.
+# what the app uses with bundle.json, verify on Windows (every check of subplan 17's verification table), publish a
+# pre-release with the exact source and build script, and commit the updated deps/ffmpeg/bundle.lock.json to the
+# branch the workflow ran from.
 name: ffmpeg-bundle
 
 on:
@@ -21,10 +22,10 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 env:
   VERSION: ${{ inputs.version }}
+  REVISION: ${{ inputs.revision }}
   TAG: ffmpeg-bundle-${{ inputs.version }}-mv${{ inputs.revision }}
   ASSET: mediaverifier-ffmpeg-${{ inputs.version }}-mv${{ inputs.revision }}-win64.zip
 
@@ -33,16 +34,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch and mirror the source
+      - name: Fetch the source (the mirrored copy once one exists)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL -o "ffmpeg-$VERSION-source.tar.gz" "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.gz"
-          sha256sum "ffmpeg-$VERSION-source.tar.gz" | cut -d' ' -f1 > source.sha256
-          mkdir -p work/ffmpeg && tar -xzf "ffmpeg-$VERSION-source.tar.gz" -C work/ffmpeg --strip-components=1
+          archive="ffmpeg-$VERSION-source.tar.gz"
+          lock=deps/ffmpeg/bundle.lock.json
+          if [ -f "$lock" ] && [ "$(jq -r .ffmpegVersion "$lock")" = "$VERSION" ]; then
+            # Subplan 17: later builds use the archive mirrored into the first bundle release and verify its hash.
+            gh release download "$(jq -r .release "$lock")" --pattern "$archive"
+            expected=$(jq -r .sourceSha256 "$lock")
+            actual=$(sha256sum "$archive" | cut -d' ' -f1)
+            [ "$expected" = "$actual" ] || { echo "Mirrored source hash $actual does not match the lock ($expected)"; exit 1; }
+          else
+            curl -fsSL -o "$archive" "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.gz"
+          fi
+          sha256sum "$archive" | cut -d' ' -f1 > source.sha256
+          mkdir -p work/ffmpeg && tar -xzf "$archive" -C work/ffmpeg --strip-components=1
       - name: Build in the pinned image
         run: |
           docker pull "${{ inputs.image }}"
           docker inspect --format '{{index .RepoDigests 0}}' "${{ inputs.image }}" > image.digest
-          docker run --rm -v "$PWD/work:/ffbuild" -v "$PWD/deps/ffmpeg/build-ffmpeg.sh:/build-ffmpeg.sh:ro" "${{ inputs.image }}" bash /build-ffmpeg.sh
+          docker run --rm -e MV_REVISION="$REVISION" -v "$PWD/work:/ffbuild" -v "$PWD/deps/ffmpeg/build-ffmpeg.sh:/build-ffmpeg.sh:ro" "${{ inputs.image }}" bash /build-ffmpeg.sh
       - name: Package
         run: |
           mkdir -p bundle
@@ -56,7 +69,7 @@ jobs:
           bundle = {
               "schemaVersion": 1,
               "ffmpegVersion": os.environ["VERSION"],
-              "extraVersion": "mediaverifier-${{ inputs.revision }}",
+              "extraVersion": "mediaverifier-" + os.environ["REVISION"],
               "licence": "LGPL-2.1-or-later",
               "sourceArchive": f"ffmpeg-{os.environ['VERSION']}-source.tar.gz",
               "sourceSha256": open('source.sha256').read().strip(),
@@ -67,6 +80,31 @@ jobs:
           json.dump(bundle, open('bundle/bundle.json', 'w'), indent=2)
           PY
           (cd bundle && zip -9 -r "../$ASSET" .)
+      - name: Check the imports (self-contained)
+        run: |
+          # Subplan 17: the executables and DLLs import only Windows system DLLs and each other.
+          docker run --rm -v "$PWD/bundle:/bundle:ro" "${{ inputs.image }}" bash -c \
+            'for f in /bundle/*.exe /bundle/*.dll; do x86_64-w64-mingw32-objdump -p "$f" | sed -n "s/^\s*DLL Name: //p" | sed "s|^|$(basename "$f") |"; done' > imports.txt
+          python3 - <<'PY'
+          import os, re, sys
+          own = {f.lower() for f in os.listdir('bundle') if f.lower().endswith('.dll')}
+          system = {'kernel32.dll', 'user32.dll', 'advapi32.dll', 'shell32.dll', 'ole32.dll', 'psapi.dll', 'bcrypt.dll'}
+          used, bad = set(), []
+          for line in open('imports.txt'):
+              binary, dll = line.split()
+              name = dll.lower()
+              if name in own:
+                  continue
+              if name in system or re.fullmatch(r'api-ms-win-crt-[a-z0-9-]+\.dll', name):
+                  used.add(dll)
+              else:
+                  bad.append(f'{binary} imports {dll}')
+          if bad:
+              print('Imports outside the allowed set:\n' + '\n'.join(bad))
+              sys.exit(1)
+          open('imports.summary', 'w').write(', '.join(sorted(used, key=str.lower)))
+          print('System imports: ' + ', '.join(sorted(used, key=str.lower)))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: bundle
@@ -75,31 +113,93 @@ jobs:
             ffmpeg-${{ inputs.version }}-source.tar.gz
             source.sha256
             image.digest
+            imports.summary
 
   verify:
     needs: build
     runs-on: windows-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
       - uses: actions/download-artifact@v4
         with:
           name: bundle
       - name: Verify the bundle on Windows
         shell: pwsh
         run: |
+          # Every check of subplan 17's verification table except Behaviour, which the CI integration tests cover.
           Expand-Archive $env:ASSET -DestinationPath bin
+          $ffmpeg = Resolve-Path bin\ffmpeg.exe
+          $ffprobe = Resolve-Path bin\ffprobe.exe
+          $failures = [System.Collections.Generic.List[string]]::new()
+
           $bundle = Get-Content bin\bundle.json -Raw | ConvertFrom-Json
           foreach ($f in $bundle.files.PSObject.Properties) {
-            if ((Get-FileHash "bin\$($f.Name)" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $f.Value) { throw "Hash mismatch: $($f.Name)" }
+            if ((Get-FileHash "bin\$($f.Name)" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $f.Value) { $failures.Add("Hash mismatch: $($f.Name)") }
           }
-          $conf = & bin\ffmpeg.exe -hide_banner -buildconf | Out-String
-          if ($conf -match '--enable-network') { throw "The bundle must not enable networking." }
-          $filters = & bin\ffmpeg.exe -hide_banner -filters | Out-String
-          foreach ($name in @('ssim','siti','blockdetect','blurdetect','idet','yadif','freezedetect','blackdetect','volumedetect','ebur128','astats','adeclip')) {
-            if ($filters -notmatch "\s$name\s") { throw "Missing filter: $name" }
+
+          # Version
+          $first = (& $ffmpeg -hide_banner -version | Select-Object -First 1)
+          if ($first -notmatch [regex]::Escape($env:VERSION) -or $first -notmatch "mediaverifier-$env:REVISION") { $failures.Add("Version line: $first") }
+
+          # Licence
+          $licence = & $ffmpeg -hide_banner -L | Out-String
+          if ($licence -notmatch 'GNU Lesser General Public' -or $licence -notmatch 'version 2\.1') { $failures.Add('ffmpeg -L does not state LGPL 2.1 or later') }
+          $conf = & $ffmpeg -hide_banner -buildconf | Out-String
+          foreach ($option in '--enable-gpl', '--enable-version3', '--enable-nonfree', '--enable-network') {
+            if ($conf -match [regex]::Escape($option)) { $failures.Add("Build configuration contains $option") }
           }
-          & bin\ffprobe.exe -hide_banner -version | Select-Object -First 1
+
+          # Protocols: exactly file and pipe, for input and for output
+          $protocols = (& $ffmpeg -hide_banner -protocols | Out-String) -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+          $reading = $protocols[([array]::IndexOf($protocols, 'Input:') + 1)..([array]::IndexOf($protocols, 'Output:') - 1)]
+          $writing = $protocols[([array]::IndexOf($protocols, 'Output:') + 1)..($protocols.Length - 1)]
+          foreach ($side in @(@{ Name = 'input'; List = $reading }, @{ Name = 'output'; List = $writing })) {
+            if ((($side.List | Sort-Object) -join ',') -ne 'file,pipe') { $failures.Add("Protocols for $($side.Name): $($side.List -join ', ')") }
+          }
+
+          # No network: an https input fails at once
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $probe = & $ffprobe -hide_banner -v error -i 'https://example.com/a.mp4' 2>&1 | Out-String
+          if ($probe -notmatch 'Protocol not found' -or $watch.Elapsed.TotalSeconds -gt 5) { $failures.Add("https input: $($probe.Trim()) after $($watch.Elapsed.TotalSeconds) s") }
+
+          # Required components
+          function Names([string]$option) {
+            $set = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($line in (& $ffmpeg -hide_banner $option)) {
+              if ($line -match '^\s*[A-Z.]{1,6}\s+(\S+)\s') { foreach ($n in $Matches[1] -split ',') { [void]$set.Add($n) } }
+            }
+            return , $set
+          }
+          $script = Get-Content repo\deps\ffmpeg\build-ffmpeg.sh -Raw
+          $encoders = ([regex]::Match($script, '--enable-encoder=([^\s\\]+)').Groups[1].Value -split ',')
+          $filters = ([regex]::Match($script, '--enable-filter=([^\s\\]+)').Groups[1].Value -split ',')
+          $required = @{
+            '-decoders' = 'h264 hevc vvc vp8 vp9 libdav1d mpeg2video mpeg4 vc1 wmv3 prores dnxhd ffv1 theora mjpeg png apng gif bmp tiff webp jpeg2000 libjxl flac alac ape wavpack tak tta mp3float aac opus vorbis ac3 eac3 dca truehd wmalossless wmapro wmav2 dsd_lsbf dsd_msbf amrnb amrwb mpc7 mpc8' -split ' '
+            '-demuxers' = 'mov matroska avi asf flv mpegts mpegps ogg flac mp3 wav aiff w64 caf ape wv tta dsf iff image2 image_jpeg_pipe image_png_pipe image_webp_pipe image_tiff_pipe image_bmp_pipe image_jpegxl_pipe gif' -split ' '
+            '-muxers' = 'null wav md5 streamhash framemd5 mp4 mov ipod matroska webm ogg opus flac mp3 adts aiff avi mpegts asf flv ac3 eac3 dts truehd w64 caf image2 apng' -split ' '
+            '-encoders' = $encoders
+            '-filters' = $filters
+          }
+          foreach ($option in $required.Keys) {
+            $present = Names $option
+            foreach ($name in $required[$option]) {
+              if (-not $present.Contains($name)) { $failures.Add("Missing in ${option}: $name") }
+            }
+          }
+
+          # Size
           $size = (Get-ChildItem bin -Recurse | Measure-Object Length -Sum).Sum
-          if ($size -gt 60MB) { throw "The bundle is $size bytes; the budget is 60 MB." }
+          if ($size -gt 60MB) { $failures.Add("The bundle is $size bytes; the budget is 60 MB.") }
+          '{0:N1}' -f ($size / 1MB) | Set-Content size.mb
+
+          if ($failures.Count -gt 0) { $failures | ForEach-Object { Write-Host "::error::$_" }; throw "$($failures.Count) verification checks failed" }
+          Write-Host "All checks passed: $first; $([math]::Round($size / 1MB, 1)) MB"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified
+          path: size.mb
 
   publish:
     needs: verify
@@ -109,14 +209,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: bundle
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified
       - name: Publish the pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" "$ASSET" "ffmpeg-$VERSION-source.tar.gz" deps/ffmpeg/build-ffmpeg.sh --prerelease --title "$TAG" --notes "FFmpeg $VERSION (LGPL), built for MediaVerifier. The complete source and the build script are attached."
+          notes="FFmpeg $VERSION (LGPL 2.1 or later), built for MediaVerifier. The complete source and the build script are attached.
+
+          Verified on Windows (subplan 17): version, licence, protocols file and pipe only, no network, required components, file hashes.
+          Size: $(cat size.mb) MB (budget 60 MB).
+          Imports outside the bundle: $(cat imports.summary)."
+          gh release create "$TAG" "$ASSET" "ffmpeg-$VERSION-source.tar.gz" deps/ffmpeg/build-ffmpeg.sh --prerelease --title "$TAG" --notes "$notes"
       - name: Commit the lock file
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           size=$(stat -c%s "$ASSET")
           sha=$(sha256sum "$ASSET" | cut -d' ' -f1)

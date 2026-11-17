@@ -60,7 +60,7 @@ cd /ffbuild/ffmpeg
   --cc="$CC" --cxx="$CXX" --ar="$AR" --ranlib="$RANLIB" --nm="$NM" \
   --extra-cflags="$FF_CFLAGS" --extra-cxxflags="$FF_CXXFLAGS" \
   --extra-ldflags="$FF_LDFLAGS" --extra-ldexeflags="$FF_LDEXEFLAGS" --extra-libs="$FF_LIBS" \
-  --extra-version="mediaverifier-1" \
+  --extra-version="mediaverifier-${MV_REVISION:-1}" \
   --enable-shared --disable-static \
   --disable-debug --disable-doc --disable-ffplay --disable-avdevice \
   --disable-autodetect --disable-network --disable-everything \
