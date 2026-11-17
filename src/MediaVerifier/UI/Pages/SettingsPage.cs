@@ -33,7 +33,12 @@ internal sealed class SettingsPage : PageBase
     private readonly SectionList _nav;
     private readonly KitControl[] _sections;
     private readonly RulesView _rules;
+    private readonly SettingRow _updateRow;
+    private readonly KitLink _releaseNotes = new() { Text = Strings.Settings.ReleaseNotes };
+    private readonly KitButton _checkNow = new() { Kind = ButtonKind.Secondary, Text = Strings.Settings.CheckNow };
+    private readonly KitButton _install = new() { Kind = ButtonKind.Primary, Text = Strings.Settings.DownloadInstall };
     private int _current;
+    private bool _portable;
 
     public SettingsPage(UiServices services)
         : base(services)
@@ -44,6 +49,15 @@ internal sealed class SettingsPage : PageBase
         SettingRow quietFrom = Time(Strings.Settings.From, () => scan.QuietFrom, v => scan.QuietFrom = v);
         SettingRow quietTo = Time(Strings.Settings.To, () => scan.QuietTo, v => scan.QuietTo = v);
         quietFrom.Collapsed = quietTo.Collapsed = !scan.QuietHours;
+        _updateRow = new SettingRow(string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText), Strings.Settings.NotChecked, [_releaseNotes, _checkNow, _install]);
+        _releaseNotes.Click += (_, _) => ShellActions.OpenUrl(ReleaseNotesUrl());
+        _checkNow.Click += (_, _) => _ = CheckForUpdatesAsync();
+        _install.Click += (_, _) => _ = InstallUpdateAsync();
+        if (services.Updates is not null)
+        {
+            services.Updates.StatusChanged += OnUpdateStatusChanged;
+        }
+
         _sections =
         [
             Section(Strings.Settings.General, Strings.Settings.GeneralIntro,
@@ -64,6 +78,8 @@ internal sealed class SettingsPage : PageBase
                 Number(Strings.Settings.ReadersHdd, null, null, 1, 16, () => scan.ReadersPerHdd, v => scan.ReadersPerHdd = v),
                 Number(Strings.Settings.ReadersSsd, null, null, 1, 32, () => scan.ReadersPerSsd, v => scan.ReadersPerSsd = v),
                 Number(Strings.Settings.ReadersNetwork, null, null, 1, 16, () => scan.ReadersPerNetwork, v => scan.ReadersPerNetwork = v),
+                Button(Strings.Settings.FileTypes, null, Strings.Settings.EditEllipsis, () => EditFileTypes(scan)),
+                Button(Strings.Settings.AlwaysSkip, null, Strings.Settings.EditEllipsis, () => EditAlwaysSkip(scan)),
                 Toggle(Strings.Settings.CloudFiles, Strings.Settings.CloudFilesHelper, () => scan.ScanCloudFiles, v => scan.ScanCloudFiles = v),
                 Drop(Strings.Settings.SkipLarger, null, [Strings.Settings.NoLimit, Strings.Settings.Gb10, Strings.Settings.Gb50, Strings.Settings.Gb100], () => SizeIndex(scan.SkipFilesLargerThan), i => scan.SkipFilesLargerThan = i switch { 1 => 10L << 30, 2 => 50L << 30, 3 => 100L << 30, _ => null }),
                 Number(Strings.Settings.StallSeconds, null, Strings.Units.SecondsUnit, 10, 3600, () => scan.StallSeconds, v => scan.StallSeconds = v),
@@ -91,23 +107,26 @@ internal sealed class SettingsPage : PageBase
                 }),
                 quietFrom,
                 quietTo,
-                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.SendTestNotification, () => _ = SendTestNotificationAsync()),
+                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.TestNotification, () => _ = SendTestNotificationAsync()),
                 Webhook(scan),
                 Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, () => _ = SendWebhookTestAsync()),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
-                Info(string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText), Strings.Settings.NotChecked),
+                _updateRow,
                 Toggle(Strings.Settings.CheckOnStart, null, () => State.Settings.CheckForUpdatesOnStartup, v => State.Settings.CheckForUpdatesOnStartup = v),
-                Button(Strings.Settings.CheckNowLabel, null, Strings.Settings.CheckNow, () => _ = CheckForUpdatesAsync()),
             ]),
             Section(Strings.Settings.Advanced, Strings.Settings.AdvancedIntro,
             [
                 Button(Strings.Settings.DatabaseLocation, State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath), Strings.Settings.Change, () => Services.Navigate?.Invoke(PageId.Tools, null)),
                 Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
-                Button(Strings.Settings.Diagnostics, null, Strings.Settings.CopyReport, () => ShellActions.CopyText([AppInfo.WindowTitle, Environment.OSVersion.VersionString, ".NET " + Environment.Version])),
+                Buttons(Strings.Settings.Diagnostics, null,
+                [
+                    (Strings.Settings.RunSelfCheck, () => _ = RunSelfCheckAsync()),
+                    (Strings.Settings.CopyReport, () => ShellActions.CopyText([AppInfo.WindowTitle, Environment.OSVersion.VersionString, ".NET " + Environment.Version])),
+                ]),
             ]),
-            Section(Strings.Settings.About, UiFormat.Facts(AppInfo.ProductName, string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText)), []),
+            Section(Strings.Settings.About, string.Empty, [new AboutRow(this)]),
         ];
         Controls.Add(_nav);
         for (int i = 0; i < _sections.Length; i++)
@@ -160,14 +179,26 @@ internal sealed class SettingsPage : PageBase
 
     protected override void ApplyData(object data)
     {
-        UpdateAvailable = ((Data.ShellCounts)data).UpdateAvailable;
+        UpdateAvailable = ((Data.ShellCounts)data).UpdateAvailable || Services.UpdateAvailable;
         _nav.Invalidate();
+        RefreshUpdateUi();
     }
 
     protected override void OnActivated()
     {
         base.OnActivated();
         Reload();
+        _ = DetectInstallAsync();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && Services.Updates is not null)
+        {
+            Services.Updates.StatusChanged -= OnUpdateStatusChanged;
+        }
+
+        base.Dispose(disposing);
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
@@ -184,7 +215,7 @@ internal sealed class SettingsPage : PageBase
 
     private static int SizeIndex(long? limit) => limit switch { null => 0, <= 10L << 30 => 1, <= 50L << 30 => 2, _ => 3 };
 
-    private SettingsSection Section(string title, string intro, IReadOnlyList<SettingRow> rows) => new(this, title, intro, rows);
+    private SettingsSection Section(string title, string intro, IReadOnlyList<SectionRow> rows) => new(this, title, intro, rows);
 
     private SettingRow Toggle(string label, string? helper, Func<bool> get, Action<bool> set)
     {
@@ -242,41 +273,158 @@ internal sealed class SettingsPage : PageBase
         return new SettingRow(label, helper, drop, null);
     }
 
-    /// <summary>
-    /// Checks the signed release (subplan 14); when a newer verified installer exists, asks, downloads it
-    /// (size and hash checked) and starts it silently. Fails closed: an unverified manifest only reports.
-    /// </summary>
-    private async Task CheckForUpdatesAsync()
+    /// <summary>The release page of the latest check, or the releases list.</summary>
+    private string ReleaseNotesUrl() => Services.Updates?.LastResult?.ReleaseUrl ?? ShellActions.ReleasesUrl;
+
+    private void OnUpdateStatusChanged(object? sender, EventArgs e)
     {
-        if (Services.IsDemo || FindForm() is not Form owner)
-        {
-            return;
-        }
-
-        using Core.Updates.UpdateService updates = new();
-        Core.Updates.UpdateCheckResult result = await updates.CheckAsync().ConfigureAwait(true);
-        if (!result.CanDownload)
-        {
-            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.None, Strings.Settings.Updates, result.Message));
-            return;
-        }
-
-        string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText);
-        if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+        if (IsDisposed || !IsHandleCreated)
         {
             return;
         }
 
         try
         {
-            string setup = await updates.DownloadInstallerAsync().ConfigureAwait(true);
-            updates.InstallDownloadedUpdate(setup);
-            owner.Close();
+            BeginInvoke(RefreshUpdateUi);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or HttpRequestException or System.Security.Cryptography.CryptographicException)
+        catch (InvalidOperationException)
         {
-            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.High, Strings.Settings.Updates, ex.Message));
+            // The page is closing.
         }
+    }
+
+    /// <summary>
+    /// The update card (subplan 14; task U-08): the status line for every state, Check now while nothing runs, and
+    /// Download and install (installed) or Install MediaVerifier (portable) exactly when the check allows it.
+    /// </summary>
+    internal void RefreshUpdateUi()
+    {
+        Core.Updates.UpdateService? updates = Services.Updates;
+        bool checking = updates?.IsChecking == true;
+        bool downloading = updates?.IsDownloading == true;
+        Core.Updates.UpdateCheckResult? result = updates?.LastResult;
+        _updateRow.Helper = UpdateStatusText.For(checking, downloading, updates?.DownloadProgress ?? 0, result);
+        _checkNow.Enabled = updates is not null && !checking && !downloading;
+        _install.Text = _portable ? Strings.Settings.InstallApp : Strings.Settings.DownloadInstall;
+        _install.Enabled = updates is not null && !checking && !downloading && (_portable ? result?.CanInstall == true : result?.CanDownload == true);
+        bool available = Services.UpdateAvailable;
+        if (available != UpdateAvailable)
+        {
+            UpdateAvailable = available || UpdateAvailable;
+            _nav.Invalidate();
+        }
+
+        _updateRow.PerformLayout();
+    }
+
+    private async Task DetectInstallAsync()
+    {
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
+        bool installed = await Task.Run(InstallDetection.IsInstalledCopy).ConfigureAwait(true);
+        _portable = !installed;
+        RefreshUpdateUi();
+    }
+
+    /// <summary><c>Check now</c>: always allowed (subplan 14); the card follows the service's status events.</summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        if (Services.Updates is not Core.Updates.UpdateService updates)
+        {
+            return;
+        }
+
+        _ = await updates.CheckAsync().ConfigureAwait(true);
+        RefreshUpdateUi();
+        if (FindForm() is MainForm main)
+        {
+            main.RefreshUpdateIndicator();
+        }
+    }
+
+    private async Task InstallUpdateAsync()
+    {
+        if (Services.IsDemo || Services.Updates is not Core.Updates.UpdateService updates || FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        await UpdateInstaller.RunAsync(owner, Services, updates, _portable).ConfigureAwait(true);
+        RefreshUpdateUi();
+    }
+
+    /// <summary><c>Run self-check</c>: runs <c>--self-check</c> as its own process and reports the result.</summary>
+    private async Task RunSelfCheckAsync()
+    {
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
+        int exit = await Task.Run(() =>
+        {
+            System.Diagnostics.ProcessStartInfo start = new(Environment.ProcessPath ?? Application.ExecutablePath) { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add("--self-check");
+            using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(start);
+            if (process is null || !process.WaitForExit(TimeSpan.FromMinutes(2)))
+            {
+                return -1;
+            }
+
+            return process.ExitCode;
+        }).ConfigureAwait(true);
+        Services.ShowToast?.Invoke(exit == 0
+            ? new Kit.Popups.ToastContent(Severity.None, Strings.Settings.Diagnostics, Strings.Settings.SelfCheckPassed)
+            : new Kit.Popups.ToastContent(Severity.High, Strings.Settings.Diagnostics, Strings.Settings.SelfCheckFailed, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)));
+    }
+
+    /// <summary><c>File types</c>: the photo, video and music extensions scans look at.</summary>
+    private void EditFileTypes(ScanSettings scan)
+    {
+        if (FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        List<string>[]? lists = ListEditDialog.Ask(owner, Strings.Settings.FileTypes, Strings.Settings.FileTypesHelper,
+        [
+            (Strings.Kinds.Photos, scan.PhotoExtensions, Core.Engine.MediaClassifier.DefaultPhoto),
+            (Strings.Kinds.Videos, scan.VideoExtensions, Core.Engine.MediaClassifier.DefaultVideo),
+            (Strings.Kinds.Music, scan.AudioExtensions, Core.Engine.MediaClassifier.DefaultAudio),
+        ]);
+        if (lists is null)
+        {
+            return;
+        }
+
+        scan.PhotoExtensions = lists[0].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[0]) : [.. Core.Engine.MediaClassifier.DefaultPhoto];
+        scan.VideoExtensions = lists[1].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[1]) : [.. Core.Engine.MediaClassifier.DefaultVideo];
+        scan.AudioExtensions = lists[2].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[2]) : [.. Core.Engine.MediaClassifier.DefaultAudio];
+        Save();
+    }
+
+    /// <summary><c>Always skip</c>: folder-name patterns no scan enters.</summary>
+    private void EditAlwaysSkip(ScanSettings scan)
+    {
+        if (FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        List<string>[]? lists = ListEditDialog.Ask(owner, Strings.Settings.AlwaysSkip, Strings.Settings.AlwaysSkipHelper,
+        [
+            (Strings.Settings.FolderNames, scan.AlwaysSkip, Core.Engine.EnumerationRules.DefaultExcludedDirectories),
+        ]);
+        if (lists is null)
+        {
+            return;
+        }
+
+        scan.AlwaysSkip = lists[0];
+        Save();
     }
 
     /// <summary>A 24-hour time box ("HH:mm"); an unreadable time is put back when the box loses focus.</summary>
@@ -391,14 +539,26 @@ internal sealed class SettingsPage : PageBase
         }
     }
 
+    private static SettingRow Buttons(string label, string? helper, IReadOnlyList<(string Text, Action Click)> buttons)
+    {
+        Control[] controls = new Control[buttons.Count];
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            (string text, Action click) = buttons[i];
+            KitButton button = new() { Kind = ButtonKind.Secondary, Text = text };
+            button.Click += (_, _) => click();
+            controls[i] = button;
+        }
+
+        return new SettingRow(label, helper, controls);
+    }
+
     private static SettingRow Button(string label, string? helper, string text, Action click)
     {
         KitButton button = new() { Kind = ButtonKind.Secondary, Text = text };
         button.Click += (_, _) => click();
         return new SettingRow(label, helper, button, null);
     }
-
-    private static SettingRow Info(string label, string helper) => new(label, helper, null, null);
 
     /// <summary>The section list at the left (168 px), drawn like the navigation rail's items.</summary>
     private sealed class SectionList : KitControl
@@ -510,15 +670,15 @@ internal sealed class SettingsPage : PageBase
         private readonly string _title;
         private readonly string _intro;
         private readonly Card _card = new();
-        private readonly IReadOnlyList<SettingRow> _rows;
+        private readonly IReadOnlyList<SectionRow> _rows;
 
-        public SettingsSection(SettingsPage page, string title, string intro, IReadOnlyList<SettingRow> rows)
+        public SettingsSection(SettingsPage page, string title, string intro, IReadOnlyList<SectionRow> rows)
         {
             _title = title;
             _intro = intro;
             _rows = rows;
             TabStop = false;
-            foreach (SettingRow row in rows)
+            foreach (SectionRow row in rows)
             {
                 _card.Controls.Add(row);
             }
@@ -542,7 +702,7 @@ internal sealed class SettingsPage : PageBase
 
             for (int i = 0; i < _rows.Count; i++)
             {
-                SettingRow row = _rows[i];
+                SectionRow row = _rows[i];
                 row.Visible = !row.Collapsed;
                 if (row.Collapsed)
                 {
@@ -550,8 +710,8 @@ internal sealed class SettingsPage : PageBase
                 }
 
                 row.Last = i == last;
-                row.Bounds = new Rectangle(S(1), y, Width - S(2), S(56));
-                y += S(56);
+                row.Bounds = new Rectangle(S(1), y, Width - S(2), S(row.LogicalHeight));
+                y += S(row.LogicalHeight);
             }
 
             _card.Bounds = new Rectangle(0, S(64), Width, y + S(1));
@@ -567,54 +727,90 @@ internal sealed class SettingsPage : PageBase
         }
     }
 
-    /// <summary>A 56 px setting row: label (and helper) on the left, its control right-aligned.</summary>
-    private sealed class SettingRow : KitControl
+    /// <summary>A row of a section's card: its height and whether it is left out for now.</summary>
+    private abstract class SectionRow : KitControl
     {
-        private readonly string _label;
-        private readonly string? _helper;
-        private readonly Control? _control;
-        private readonly string? _unit;
-        private readonly int? _width;
-
-        public SettingRow(string label, string? helper, Control? control, string? unit, int? width = null)
-        {
-            _label = label;
-            _helper = helper;
-            _control = control;
-            _unit = unit;
-            _width = width;
-            TabStop = false;
-            if (control is not null)
-            {
-                Controls.Add(control);
-            }
-        }
-
         public bool Last { get; set; }
 
         /// <summary>Left out of the section (the quiet-hours times while quiet hours are off).</summary>
         public bool Collapsed { get; set; }
 
+        public virtual int LogicalHeight => 56;
+
+        protected void PaintSeparator(Graphics g)
+        {
+            if (!Last)
+            {
+                KitPaint.HorizontalLine(g, Tokens.Stroke, S(16), Width - S(16), Height - SF(1), SF(1));
+            }
+        }
+
+        protected override void OnThemeChanged()
+        {
+            BackColor = Tokens.Surface;
+            base.OnThemeChanged();
+        }
+    }
+
+    /// <summary>A 56 px setting row: label (and helper) on the left, its controls right-aligned 8 px apart.</summary>
+    private sealed class SettingRow : SectionRow
+    {
+        private readonly string _label;
+        private readonly Control[] _controls;
+        private readonly string? _unit;
+        private readonly int? _width;
+        private string? _helper;
+
+        public SettingRow(string label, string? helper, Control? control, string? unit, int? width = null)
+            : this(label, helper, control is null ? [] : [control], unit, width)
+        {
+        }
+
+        public SettingRow(string label, string? helper, Control[] controls, string? unit = null, int? width = null)
+        {
+            _label = label;
+            _helper = helper;
+            _controls = controls;
+            _unit = unit;
+            _width = width;
+            TabStop = false;
+            foreach (Control control in controls)
+            {
+                Controls.Add(control);
+            }
+        }
+
+        /// <summary>The second line (the update card's status changes it).</summary>
+        public string? Helper
+        {
+            get => _helper;
+            set
+            {
+                if (!string.Equals(_helper, value, StringComparison.Ordinal))
+                {
+                    _helper = value;
+                    Invalidate();
+                }
+            }
+        }
+
         protected override void OnLayout(LayoutEventArgs levent)
         {
             base.OnLayout(levent);
-            if (_control is null)
+            if (_controls.Length == 0)
             {
                 return;
             }
 
             int unitWidth = _unit is null ? 0 : KitPaint.MeasureWidth(_unit, Type.Body) + S(12);
-            Size size = _width is int logical ? new Size(S(logical), S(32)) : _control switch
+            int right = Width - S(16) - unitWidth;
+            for (int i = _controls.Length - 1; i >= 0; i--)
             {
-                ToggleSwitch toggle => toggle.GetPreferredSize(Size.Empty),
-                SegmentedControl segmented => new Size(S(segmented.PreferredLogicalWidth), S(32)),
-                NumberBox => new Size(S(72), S(32)),
-                DropDown => new Size(S(180), S(32)),
-                KitButton button => new Size(S(button.PreferredLogicalWidth), S(32)),
-                KitTextBox => new Size(S(80), S(32)),
-                _ => new Size(S(200), S(32)),
-            };
-            _control.Bounds = new Rectangle(Width - S(16) - unitWidth - size.Width, (Height - size.Height) / 2, size.Width, size.Height);
+                Control control = _controls[i];
+                Size size = _width is int logical && _controls.Length == 1 ? new Size(S(logical), S(32)) : SizeOf(control);
+                control.Bounds = new Rectangle(right - size.Width, (Height - size.Height) / 2, size.Width, size.Height);
+                right = control.Left - S(8);
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -623,7 +819,7 @@ internal sealed class SettingsPage : PageBase
             Graphics g = e.Graphics;
             g.Clear(t.Surface);
             TypeRamp type = Type;
-            int labelWidth = (_control?.Left ?? Width) - S(32);
+            int labelWidth = (_controls.Length > 0 ? _controls[0].Left : Width) - S(32);
             if (_helper is null)
             {
                 KitPaint.DrawText(g, _label, type.Body, t.Text, S(16), Height / 2, labelWidth);
@@ -634,21 +830,87 @@ internal sealed class SettingsPage : PageBase
                 KitPaint.DrawText(g, _helper, type.Caption, t.Text3, S(16), S(38), labelWidth);
             }
 
-            if (_unit is not null && _control is not null)
+            if (_unit is not null && _controls.Length > 0)
             {
-                KitPaint.DrawText(g, _unit, type.Body, t.Text2, _control.Right + S(12), Height / 2, Width - _control.Right - S(16));
+                Control last = _controls[^1];
+                KitPaint.DrawText(g, _unit, type.Body, t.Text2, last.Right + S(12), Height / 2, Width - last.Right - S(16));
             }
 
-            if (!Last)
+            PaintSeparator(g);
+        }
+
+        private Size SizeOf(Control control) => control switch
+        {
+            ToggleSwitch toggle => toggle.GetPreferredSize(Size.Empty),
+            SegmentedControl segmented => new Size(S(segmented.PreferredLogicalWidth), S(32)),
+            NumberBox => new Size(S(72), S(32)),
+            DropDown => new Size(S(180), S(32)),
+            KitButton button => new Size(S(button.PreferredLogicalWidth), S(32)),
+            KitLink link => new Size(S(link.PreferredLogicalWidth), S(32)),
+            KitTextBox => new Size(S(80), S(32)),
+            _ => new Size(S(200), S(32)),
+        };
+    }
+
+    /// <summary>
+    /// About (subplan 09, Settings): the app icon at 48 px, <c>MediaVerifier</c> in Subtitle, <c>Version {v}</c> in Body
+    /// Text2, and the links <c>Website</c>, <c>Release notes</c> and <c>Licences</c> 16 px apart.
+    /// </summary>
+    private sealed class AboutRow : SectionRow
+    {
+        private readonly KitLink[] _links;
+
+        public AboutRow(SettingsPage page)
+        {
+            TabStop = false;
+            _links =
+            [
+                Link(Strings.Settings.Website, () => ShellActions.OpenUrl(ShellActions.WebsiteUrl)),
+                Link(Strings.Settings.ReleaseNotes, () => ShellActions.OpenUrl(page.ReleaseNotesUrl())),
+                Link(Strings.Settings.Licences, OpenLicences),
+            ];
+            Controls.AddRange(_links);
+        }
+
+        public override int LogicalHeight => 112;
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            base.OnLayout(levent);
+            int x = S(80);
+            foreach (KitLink link in _links)
             {
-                KitPaint.HorizontalLine(g, t.Stroke, S(16), Width - S(16), Height - SF(1), SF(1));
+                int width = S(link.PreferredLogicalWidth);
+                link.Bounds = new Rectangle(x - S(2), S(68), width, S(28));
+                x += width + S(16);
             }
         }
 
-        protected override void OnThemeChanged()
+        protected override void OnPaint(PaintEventArgs e)
         {
-            BackColor = Tokens.Surface;
-            base.OnThemeChanged();
+            ThemeTokens t = Tokens;
+            Graphics g = e.Graphics;
+            g.Clear(t.Surface);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            IconRenderer.DrawAppIcon(g, new RectangleF(S(16), S(16), S(48), S(48)), small: false);
+            TypeRamp type = Type;
+            KitPaint.DrawText(g, AppInfo.ProductName, type.Subtitle, t.Text, S(80), S(28), Width - S(96));
+            KitPaint.DrawText(g, string.Format(CultureInfo.CurrentCulture, Strings.Settings.VersionLine, AppInfo.VersionText), type.Body, t.Text2, S(80), S(52), Width - S(96));
+            PaintSeparator(g);
+        }
+
+        private static KitLink Link(string text, Action click)
+        {
+            KitLink link = new() { Text = text };
+            link.Click += (_, _) => click();
+            return link;
+        }
+
+        /// <summary>The notices shipped next to the exe; the repository's copy when running from a build folder.</summary>
+        private static void OpenLicences()
+        {
+            string notices = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.md");
+            ShellActions.OpenUrl(File.Exists(notices) ? notices : ShellActions.NoticesUrl);
         }
     }
 }

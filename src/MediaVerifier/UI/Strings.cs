@@ -741,7 +741,6 @@ internal static class Strings
         public const string QuietHours = "Quiet hours";
         public const string From = "From";
         public const string TestNotificationLabel = "Check that notifications arrive";
-        public const string SendTestNotification = "Send a test notification";
         public const string Webhook = "Webhook";
         public const string WebhookHelper = "Receives a summary after each scheduled scan. No file names are sent";
         public const string WebhookPlaceholder = "https://";
@@ -777,6 +776,14 @@ internal static class Strings
         public const string OpenLogs = "Open logs folder";
         public const string Diagnostics = "Diagnostics";
         public const string RunSelfCheck = "Run self-check";
+        public const string SelfCheckPassed = "The self-check passed.";
+        public const string SelfCheckFailed = "The self-check found a problem.";
+        public const string InstallApp = "Install MediaVerifier";
+        public const string ScanRunningTitle = "Interrupt the scan?";
+        public const string ScanRunningUpdate = "A scan is running. It will be interrupted and can be resumed after the update.";
+        public const string FileTypesHelper = "Extensions, separated by commas.";
+        public const string AlwaysSkipHelper = "Folder names, separated by commas. * matches any characters.";
+        public const string FolderNames = "Folder names";
         public const string CopyReport = "Copy system report";
         public const string About = "About";
         public const string Website = "Website";

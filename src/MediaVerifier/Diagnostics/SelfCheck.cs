@@ -28,6 +28,7 @@ internal static class SelfCheck
         results.Add(Check("Log write", () => LogWrite(paths)));
         results.Add(Check("IPC loopback", IpcLoopback));
         results.Add(Check("App state lifecycle", () => AppStateLifecycle(paths)));
+        results.Add(Check("Update trust round trip", UpdateTrustRoundTrip));
         if (checkMediaEngine)
         {
             results.Add(Check("Media engine", () => MediaEngine(paths)));
@@ -56,6 +57,27 @@ internal static class SelfCheck
         {
             return new CheckResult(name, false, ex.GetType().Name + ": " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Task U-10 (ported from FastTaskMgr's UpdateTrustSelfCheck): a manifest signed with a fresh key verifies and a
+    /// tampered one does not, so a broken signature check fails the self-check.
+    /// </summary>
+    internal static string? UpdateTrustRoundTrip()
+    {
+        byte[] manifestBytes = System.Text.Encoding.UTF8.GetBytes("""{"schemaVersion":1,"version":"1.2.3.4"}""");
+        byte[] tamperedBytes = System.Text.Encoding.UTF8.GetBytes("""{"schemaVersion":1,"version":"1.2.3.5"}""");
+        using System.Security.Cryptography.RSA rsa = System.Security.Cryptography.RSA.Create(2048);
+        byte[] signature = rsa.SignData(manifestBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        string publicKey = rsa.ExportSubjectPublicKeyInfoPem();
+        if (!Core.Updates.UpdateTrust.VerifyManifestSignature(manifestBytes, signature, publicKey))
+        {
+            return "A correctly signed manifest was rejected";
+        }
+
+        return Core.Updates.UpdateTrust.VerifyManifestSignature(tamperedBytes, signature, publicKey)
+            ? "A tampered manifest was accepted"
+            : null;
     }
 
     private static string? PathsWritable(AppPaths paths)

@@ -116,6 +116,12 @@ internal sealed class UiServices : IDisposable
     /// <summary>The only writer of user media (subplan 12); null in the render harness.</summary>
     public Core.Remediation.OperationRunner? Operations { get; init; }
 
+    /// <summary>The signed updater (subplan 14); null in the render harness, which never checks.</summary>
+    public Core.Updates.UpdateService? Updates { get; init; }
+
+    /// <summary>The last check found a newer release (the rail's Update item and the Settings dot).</summary>
+    public bool UpdateAvailable => Updates?.LastResult?.IsUpdateAvailable == true;
+
     /// <summary>Opens the user's library, the bundled media engine and the scan engine.</summary>
     public static UiServices CreateLive(AppState state)
     {
@@ -146,7 +152,9 @@ internal sealed class UiServices : IDisposable
             Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence")), new Core.Analysis.PictureRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "pictures"))),
             Rules = rules,
             Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
+            Updates = new Core.Updates.UpdateService(),
         };
+        services._owned.Add(services.Updates);
 
         // A crash during an operation leaves at most its journaled temporary file: clean it up now.
         _ = Task.Run(async () =>

@@ -216,6 +216,8 @@ internal sealed class MainForm : Form
             // Started by a notification or a link: open its view once the window exists.
             BeginInvoke(() => OpenActivation(link));
         }
+
+        _ = StartupUpdateCheckAsync();
     }
 
     /// <summary>
@@ -393,6 +395,47 @@ internal sealed class MainForm : Form
     private void OnRailItemInvoked(object? sender, RailItem item)
     {
         Navigate(item.Page);
+        if (item.Kind == RailItemKind.Update)
+        {
+            _current?.HandleRequest(new SettingsSectionRequest(SettingsPage.UpdatesSection));
+        }
+    }
+
+    /// <summary>Shows or hides the rail's Update item after a check (subplan 14, Where it shows).</summary>
+    internal void RefreshUpdateIndicator()
+    {
+        if (_services.UpdateAvailable)
+        {
+            _rail.UpdateAvailable = true;
+        }
+    }
+
+    /// <summary>Closes for good after the installer started (even with Keep running in the notification area on).</summary>
+    internal void ExitForUpdate() => ExitApplication();
+
+    /// <summary>
+    /// Task U-09: one check per window launch, about 10 seconds after the window is shown, when Check for updates
+    /// when MediaVerifier starts is on. Headless runs never get here.
+    /// </summary>
+    private async Task StartupUpdateCheckAsync()
+    {
+        if (_services.IsDemo || _services.Updates is not Core.Updates.UpdateService updates || !_state.Settings.CheckForUpdatesOnStartup)
+        {
+            return;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(10)).ConfigureAwait(true);
+        if (IsDisposed || updates.LastResult is not null || updates.IsChecking)
+        {
+            return;
+        }
+
+        Core.Updates.UpdateCheckResult result = await updates.CheckAsync().ConfigureAwait(true);
+        _state.Log.Info("Update check at start-up: " + result.Message);
+        if (!IsDisposed)
+        {
+            RefreshUpdateIndicator();
+        }
     }
 
     private void OnThemeChanged(object? sender, EventArgs e)

@@ -1,0 +1,182 @@
+using System.Globalization;
+using System.Security;
+using MediaVerifier.Core.Engine;
+using MediaVerifier.Core.Updates;
+using MediaVerifier.UI;
+using MediaVerifier.UI.Kit;
+using Microsoft.Win32;
+
+namespace MediaVerifier.App;
+
+/// <summary>
+/// Installed or portable (subplan 14, Installed versus portable): installed when the exe's folder equals the
+/// <c>InstallLocation</c> of the installer's uninstall key, per user (HKCU) or for all users (HKLM).
+/// </summary>
+internal static class InstallDetection
+{
+    /// <summary>Inno Setup's uninstall key for the AppId in installer/MediaVerifier.iss.</summary>
+    public const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AE2FDF62-8004-4807-BFF0-83A2C996BB18}_is1";
+
+    public static bool IsInstalledCopy() => IsInstalledCopy(Environment.ProcessPath ?? Application.ExecutablePath, ReadLocations());
+
+    /// <summary>True when the folder of <paramref name="exePath"/> is one of the recorded install locations.</summary>
+    public static bool IsInstalledCopy(string exePath, IEnumerable<string?> installLocations)
+    {
+        string? folder = Normalize(Path.GetDirectoryName(exePath));
+        return folder is not null && installLocations.Any(location => string.Equals(Normalize(location), folder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string?> ReadLocations()
+    {
+        List<string?> locations = [];
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+        {
+            try
+            {
+                using RegistryKey root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+                using RegistryKey? key = root.OpenSubKey(UninstallKey);
+                locations.Add(key?.GetValue("InstallLocation") as string);
+            }
+            catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
+            {
+                locations.Add(null);
+            }
+        }
+
+        return locations;
+    }
+
+    private static string? Normalize(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path.Trim().Trim('"')));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>The update card's status line (subplan 09, Settings; task U-08), from the service's state.</summary>
+internal static class UpdateStatusText
+{
+    public static string For(bool checking, bool downloading, double progress, UpdateCheckResult? result)
+    {
+        CultureInfo culture = CultureInfo.CurrentCulture;
+        if (downloading)
+        {
+            return string.Format(culture, Strings.Settings.Downloading, Math.Clamp((int)Math.Floor(progress), 0, 100));
+        }
+
+        if (checking)
+        {
+            return Strings.Settings.Checking;
+        }
+
+        if (result is null)
+        {
+            return Strings.Settings.NotChecked;
+        }
+
+        if (result.CanDownload)
+        {
+            return string.Format(culture, Strings.Settings.Available, result.LatestVersionText.TrimStart('v', 'V'));
+        }
+
+        if (result.IsUpdateAvailable)
+        {
+            // A newer release whose signed metadata is missing or invalid: nothing can be installed.
+            return Strings.Settings.NotVerified;
+        }
+
+        if (result.LatestVersion is null)
+        {
+            const string Prefix = "Update check failed: ";
+            string reason = result.Message.StartsWith(Prefix, StringComparison.Ordinal) ? result.Message[Prefix.Length..] : result.Message;
+            return string.Format(culture, Strings.Settings.CheckFailed, reason);
+        }
+
+        return Strings.Settings.UpToDate;
+    }
+}
+
+/// <summary>
+/// Download and install, or Install MediaVerifier on a portable copy (subplan 14; tasks U-08, U-09): confirm, stop a
+/// running scan cleanly after saying so, download and verify, start the installer silently and close.
+/// </summary>
+internal static class UpdateInstaller
+{
+    public static async Task RunAsync(Form owner, UiServices services, UpdateService updates, bool portable)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(updates);
+        UpdateCheckResult? result = updates.LastResult;
+        if (result is null || (portable ? !result.CanInstall : !result.CanDownload))
+        {
+            return;
+        }
+
+        string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText.TrimStart('v', 'V'));
+        if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+        {
+            return;
+        }
+
+        bool ownScan = services.Scans.Status.IsActive;
+        bool backgroundScan = !ownScan && services.BackgroundRunActive();
+        if ((ownScan || backgroundScan)
+            && !MessageDialog.Confirm(owner, Strings.Settings.ScanRunningTitle, Strings.Settings.ScanRunningUpdate, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+        {
+            return;
+        }
+
+        try
+        {
+            string setup = portable ? await updates.DownloadInstallerAsync().ConfigureAwait(true) : await updates.DownloadLatestAsync().ConfigureAwait(true);
+            if (ownScan)
+            {
+                // Cancel cleanly: the run is checkpointed and left resumable before the installer closes the app.
+                services.Scans.Cancel();
+                await WaitIdleAsync(services, TimeSpan.FromSeconds(30)).ConfigureAwait(true);
+            }
+            else if (backgroundScan)
+            {
+                _ = PlanHost.StopBackgroundRun();
+            }
+
+            updates.InstallDownloadedUpdate(setup);
+            services.State.Log.Info($"Installer for {result.LatestVersionText} started; closing");
+            if (owner is MainForm main)
+            {
+                main.ExitForUpdate();
+            }
+            else
+            {
+                owner.Close();
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or HttpRequestException or TaskCanceledException
+            or System.ComponentModel.Win32Exception or System.Security.Cryptography.CryptographicException)
+        {
+            services.State.Log.Warning("The update could not be installed", ex);
+            services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.High, Strings.Settings.Updates, Strings.Settings.NotVerified));
+        }
+    }
+
+    private static async Task WaitIdleAsync(UiServices services, TimeSpan limit)
+    {
+        DateTime until = DateTime.UtcNow + limit;
+        while (services.Scans.Status.Phase != EnginePhase.Idle && DateTime.UtcNow < until)
+        {
+            await Task.Delay(100).ConfigureAwait(true);
+        }
+    }
+}

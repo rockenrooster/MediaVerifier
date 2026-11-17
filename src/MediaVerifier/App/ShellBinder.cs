@@ -79,7 +79,7 @@ internal sealed class ShellBinder : IDisposable
             _counts = counts;
             _form.Rail.SetIssuesBadge(counts.OpenMediumOrAbove, counts.Worst);
             _form.Header.Bell.Badge = counts.UnreadNotifications;
-            _form.Rail.UpdateAvailable = counts.UpdateAvailable;
+            _form.Rail.UpdateAvailable = counts.UpdateAvailable || _services.UpdateAvailable;
             UpdateScanButton();
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)

@@ -247,7 +247,7 @@ public sealed class NotificationSettingsTests
         List<MediaVerifier.UI.Kit.KitTextBox> times = [.. Descendants<MediaVerifier.UI.Kit.KitTextBox>(page).Where(b => b.AccessibleName is "From" or "To")];
         Assert.Equal(2, times.Count);
         Assert.All(times, t => Assert.False(t.Parent!.Visible));
-        Assert.Contains(Descendants<MediaVerifier.UI.Kit.KitButton>(page), b => b.Text == MediaVerifier.UI.Strings.Settings.SendTestNotification);
+        Assert.Contains(Descendants<MediaVerifier.UI.Kit.KitButton>(page), b => b.Text == MediaVerifier.UI.Strings.Settings.TestNotification);
 
         MediaVerifier.UI.Kit.ToggleSwitch quiet = Descendants<MediaVerifier.UI.Kit.ToggleSwitch>(page).Single(t => t.AccessibleName == MediaVerifier.UI.Strings.Settings.QuietHours);
         quiet.Checked = true;

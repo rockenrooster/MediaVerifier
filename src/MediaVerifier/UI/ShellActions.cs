@@ -34,6 +34,10 @@ internal static class ShellActions
     /// <summary>Opens a web page in the default browser (Explorer hands the address on).</summary>
     public static void OpenUrl(string url) => OpenFolder(url);
 
+    public const string WebsiteUrl = "https://github.com/rockenrooster/MediaVerifier";
+    public const string ReleasesUrl = "https://github.com/rockenrooster/MediaVerifier/releases";
+    public const string NoticesUrl = "https://github.com/rockenrooster/MediaVerifier/blob/master/THIRD-PARTY-NOTICES.md";
+
     /// <summary>The help page for a rule (its section of docs/rules.md), or the help index.</summary>
     public static string HelpUrl(string? ruleId)
     {

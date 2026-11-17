@@ -15,7 +15,9 @@ public sealed class UpdateService : IDisposable
     private const string ManifestSignatureAssetName = "MediaVerifier-Setup.exe.manifest.sig";
     private const string LatestReleaseApi = $"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases/latest";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly HttpClient _http = new();
+    private readonly HttpClient _http;
+    private readonly string _updatesDirectory;
+    private readonly string _publicKeyPem;
     private readonly Lock _lock = new();
     private Task<UpdateCheckResult>? _checkTask;
     private bool _isChecking;
@@ -23,8 +25,20 @@ public sealed class UpdateService : IDisposable
     private double _downloadProgress;
 
     public UpdateService()
+        : this(null, AppPaths.Default.UpdatesDirectory, null)
     {
-        Version rawVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// Tests: a local HTTP handler, a temporary update folder, a chosen current version and a test public key
+    /// (tasks U-04, U-08). The app always uses <see cref="UpdateTrust.PublicKeyPem"/>.
+    /// </summary>
+    internal UpdateService(HttpMessageHandler? handler, string updatesDirectory, Version? currentVersion, string? publicKeyPem = null)
+    {
+        _http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+        _updatesDirectory = updatesDirectory;
+        _publicKeyPem = publicKeyPem ?? UpdateTrust.PublicKeyPem;
+        Version rawVersion = currentVersion ?? Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
         CurrentVersion = Normalize(rawVersion);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"MediaVerifier/{CurrentVersion}");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
@@ -104,7 +118,7 @@ public sealed class UpdateService : IDisposable
         return await DownloadSetupAsync(result, cancellationToken);
     }
 
-    private async Task<string> DownloadSetupAsync(UpdateCheckResult result, CancellationToken cancellationToken)
+    internal async Task<string> DownloadSetupAsync(UpdateCheckResult result, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(result.AssetSha256) || result.AssetSizeBytes <= 0)
         {
@@ -112,7 +126,7 @@ public sealed class UpdateService : IDisposable
         }
 
         SetDownloading(true, 0);
-        string updateDir = AppPaths.Default.UpdatesDirectory;
+        string updateDir = _updatesDirectory;
         Directory.CreateDirectory(updateDir);
 
         string targetPath = Path.Combine(updateDir, "MediaVerifier-Setup.exe");
@@ -241,7 +255,7 @@ public sealed class UpdateService : IDisposable
                 {
                     byte[] manifestBytes = await DownloadBytesAsync(new Uri(manifestAsset.BrowserDownloadUrl), cancellationToken);
                     byte[] signatureBytes = await DownloadBytesAsync(new Uri(signatureAsset.BrowserDownloadUrl), cancellationToken);
-                    if (!UpdateTrust.VerifyManifestSignature(manifestBytes, signatureBytes, UpdateTrust.PublicKeyPem))
+                    if (!UpdateTrust.VerifyManifestSignature(manifestBytes, signatureBytes, _publicKeyPem))
                     {
                         throw new InvalidOperationException("manifest signature is invalid");
                     }
@@ -357,7 +371,7 @@ public sealed class UpdateService : IDisposable
         return assets.FirstOrDefault(asset => asset.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void ValidateManifest(UpdateManifest manifest, string releaseTag, Version releaseVersion, GitHubAsset setupAsset)
+    internal static void ValidateManifest(UpdateManifest manifest, string releaseTag, Version releaseVersion, GitHubAsset setupAsset)
     {
         if (manifest.SchemaVersion != 1)
         {
@@ -399,7 +413,7 @@ public sealed class UpdateService : IDisposable
         }
     }
 
-    private static bool IsExpectedGithubDownloadUri(Uri uri, string releaseTag)
+    internal static bool IsExpectedGithubDownloadUri(Uri uri, string releaseTag)
     {
         string expectedPath = $"/{RepositoryOwner}/{RepositoryName}/releases/download/{releaseTag}/{SetupAssetName}";
         return uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
@@ -407,7 +421,7 @@ public sealed class UpdateService : IDisposable
             && uri.AbsolutePath.Equals(expectedPath, StringComparison.Ordinal);
     }
 
-    private static string NormalizeSha256(string value)
+    internal static string NormalizeSha256(string value)
     {
         string hash = value.Trim().ToLowerInvariant();
         if (hash.Length != 64 || hash.Any(c => !Uri.IsHexDigit(c)))
@@ -438,7 +452,7 @@ public sealed class UpdateService : IDisposable
         }
     }
 
-    private static bool TryParseVersion(string tag, out Version? version)
+    internal static bool TryParseVersion(string tag, out Version? version)
     {
         string text = tag.Trim();
         if (text.StartsWith('v') || text.StartsWith('V'))

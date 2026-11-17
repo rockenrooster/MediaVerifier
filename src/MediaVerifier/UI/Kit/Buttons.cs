@@ -603,3 +603,65 @@ internal sealed class IconButton : KitControl
         }
     }
 }
+
+/// <summary>
+/// An inline link (subplan 08: links use Accent; the hand cursor is for inline links): BodyStrong in Accent with a
+/// 1 px underline, AccentHover on hover, the focus ring around the text. Enter or Space activates it.
+/// </summary>
+internal sealed class KitLink : KitControl
+{
+    public KitLink()
+    {
+        TabStop = true;
+        AccessibleRole = AccessibleRole.Link;
+        Cursor = Cursors.Hand;
+    }
+
+    /// <summary>Logical width of the text plus 2 px for the focus ring on each side.</summary>
+    public int PreferredLogicalWidth => (int)Math.Ceiling(KitPaint.MeasureWidth(Text, Type.BodyStrong) * 96f / DeviceDpi) + 4;
+
+    protected override bool Interactive => true;
+
+    public override Size GetPreferredSize(Size proposedSize) => new(S(PreferredLogicalWidth), S(32));
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        base.OnTextChanged(e);
+        AccessibleName = Text;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        ThemeTokens t = Tokens;
+        Graphics g = e.Graphics;
+        VisualState state = PaintState;
+        Color colour = !Enabled ? t.TextDisabled : state.HasFlag(VisualState.Hover) || state.HasFlag(VisualState.Pressed) ? t.AccentHover : t.Accent;
+        int width = KitPaint.MeasureWidth(Text, Type.BodyStrong);
+        int x = S(2);
+        int centreY = Height / 2;
+        KitPaint.DrawText(g, Text, Type.BodyStrong, colour, x, centreY, width + 2);
+        KitPaint.HorizontalLine(g, colour, x, x + width, centreY + SF(8.5f), SF(1));
+        if (state.HasFlag(VisualState.Focused))
+        {
+            KitPaint.DrawFocusRing(g, new Rectangle(0, centreY - S(11), width + S(4), S(22)), SF(2), DeviceDpi);
+        }
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs pevent)
+    {
+        pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
+    }
+
+    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space && Enabled)
+        {
+            e.Handled = true;
+            OnClick(EventArgs.Empty);
+        }
+    }
+}

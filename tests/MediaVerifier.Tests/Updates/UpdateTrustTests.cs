@@ -36,3 +36,10 @@ public sealed class UpdateTrustTests
         Assert.False(UpdateTrust.VerifyManifestSignature(manifest, signature, UpdateTrust.PublicKeyPem));
     }
 }
+
+/// <summary>Task U-10: the self-check fails when signature verification is broken.</summary>
+public sealed class UpdateTrustSelfCheckTests
+{
+    [Fact]
+    public void The_self_check_round_trips_a_signature() => Assert.Null(MediaVerifier.Diagnostics.SelfCheck.UpdateTrustRoundTrip());
+}

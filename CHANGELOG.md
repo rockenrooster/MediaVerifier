@@ -9,6 +9,12 @@ All notable changes to MediaVerifier are documented here.
   notification stays after MediaVerifier exits; Review opens the run. A newer run replaces an unread
   older notification. Quiet hours post silently, with From and To times in Settings → Notifications,
   which also has Send a test notification and honours Notify about for scheduled scans.
+- Settings → Updates shows the version, what the last check found and its progress, with Check now,
+  Download and install (Install MediaVerifier on a portable copy) and Release notes; the rail shows
+  Update available when a newer release exists. MediaVerifier checks about 10 seconds after it starts
+  (when allowed), and a running scan is interrupted, after asking, before an update installs.
+- Settings → Scanning: edit the file types and the folder names scans always skip. Settings →
+  Advanced: Run self-check. Settings → About: website, release notes and licences.
 - Webhook: Settings → Notifications can post a summary of each scheduled scan (counts only, no file
   names) to an HTTPS address, or plain HTTP on the local network after confirming; Send test checks
   it. The payload is described in docs/webhook.md.
