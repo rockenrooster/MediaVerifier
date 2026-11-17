@@ -7,7 +7,7 @@ using MediaVerifier.Core.Storage;
 namespace MediaVerifier.UI.Data;
 
 /// <summary>Page snapshots from the library database. Every method runs off the UI thread.</summary>
-internal sealed partial class LiveUiData(Database database, Func<ScanSettings> settings, IClock clock, EvidenceRenderer? evidenceRenderer = null) : IUiData
+internal sealed partial class LiveUiData(Database database, Func<ScanSettings> settings, IClock clock, EvidenceRenderer? evidenceRenderer = null, Core.Analysis.PictureRenderer? pictures = null) : IUiData
 {
     public ShellCounts LoadShell()
     {

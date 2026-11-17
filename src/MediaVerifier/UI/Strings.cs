@@ -345,6 +345,12 @@ internal static class Strings
         public const string ZeroHz = "0 Hz";
         public const string TopOfScale = "Top of scale: {0} kHz";
         public const string ExpectedKilohertz = "{0} kHz expected";
+        public const string CompareOriginal = "Original · hold to see it rebuilt from {0}p";
+        public const string CompareRebuilt = "Rebuilt from {0}p";
+        public const string PickFrame = "Click a frame to compare it with its rebuilt copy";
+        public const string Mbps = "{0} Mbps";
+        public const string Kbps = "{0} kbps";
+        public const string BitsPerPixel = "{0} bits per pixel (H.264 equivalent)";
         public const string ZoomCaption = "{0} · 20 ms around the mark · click to go back";
         public const string FileFingerprint = "File fingerprint (XXH3-128)  ";
         public const string StreamFingerprint = "Stream fingerprint (MD5)  ";

@@ -7,7 +7,15 @@ using MediaVerifier.Core.Rules;
 namespace MediaVerifier.Core.Analysis.Detectors;
 
 /// <summary>The outcome of the down-up decision (subplan 11, Decision steps 1–5).</summary>
-public sealed record UpscaleVerdict(int EffectiveHeight, int ContainerHeight, double Percentile, double Margin, int UsableFrames, int ReproducibleFrames, int SampledFrames, float Confidence, bool FallOff);
+public sealed record UpscaleVerdict(int EffectiveHeight, int ContainerHeight, double Percentile, double Margin, int UsableFrames, int ReproducibleFrames, int SampledFrames, float Confidence, bool FallOff)
+{
+    /// <summary>Per sampled frame: time, SSIM at the effective height, and whether it was usable (frame strip, subplan 11).</summary>
+    public double[] FrameTimes { get; init; } = [];
+
+    public double[] FrameSsim { get; init; } = [];
+
+    public bool[] FrameUsable { get; init; } = [];
+}
 
 /// <summary>The down-up decision shared by video and photos (subplan 11, task V-02 and P-01).</summary>
 public static class UpscaleDecision
@@ -73,7 +81,12 @@ public static class UpscaleDecision
         }
 
         int reproducible = usable.Count(f => f.Ssim[chosen] >= threshold);
-        return new UpscaleVerdict(samples.Candidates[chosen], samples.Height, percentiles[chosen], margin, usable.Length, reproducible, samples.Frames.Length, Math.Max(0.3f, confidence), fallOff);
+        return new UpscaleVerdict(samples.Candidates[chosen], samples.Height, percentiles[chosen], margin, usable.Length, reproducible, samples.Frames.Length, Math.Max(0.3f, confidence), fallOff)
+        {
+            FrameTimes = [.. samples.Frames.Select(f => Math.Round(f.Time, 3))],
+            FrameSsim = [.. samples.Frames.Select(f => f.Ssim.Length > chosen ? Math.Round(f.Ssim[chosen], 4) : 0)],
+            FrameUsable = [.. samples.Frames.Select(f => f.SpatialInfo >= minSpatialInfo)],
+        };
     }
 }
 
@@ -190,7 +203,7 @@ public sealed class VideoQualityDetector : IDetector
         Starved(equivalent, bpp, bitRate, video, starvedLow, blocky, rules, sink);
         if (upscale is not null)
         {
-            Upscaled(upscale, starved, sink);
+            Upscaled(upscale, starved, samples!.Width, sink);
         }
 
         Inflated(equivalent, bitRate, upscale, blocky, rules, sink);
@@ -388,7 +401,7 @@ public sealed class VideoQualityDetector : IDetector
         return true;
     }
 
-    private static void Upscaled(UpscaleVerdict verdict, bool starved, FindingSink sink)
+    private static void Upscaled(UpscaleVerdict verdict, bool starved, int width, FindingSink sink)
     {
         double r = (double)verdict.EffectiveHeight / verdict.ContainerHeight;
         Severity severity = r <= 0.55 && verdict.Confidence >= 0.80f ? Severity.High
@@ -409,10 +422,14 @@ public sealed class VideoQualityDetector : IDetector
             {
                 ["effectiveHeight"] = verdict.EffectiveHeight,
                 ["containerHeight"] = verdict.ContainerHeight,
+                ["containerWidth"] = width,
                 ["ssimP10"] = Math.Round(verdict.Percentile, 4),
                 ["reproducibleFrames"] = verdict.ReproducibleFrames,
                 ["usableFrames"] = verdict.UsableFrames,
                 ["sampledFrames"] = verdict.SampledFrames,
+                ["frameTimes"] = verdict.FrameTimes,
+                ["frameSsim"] = verdict.FrameSsim,
+                ["frameUsable"] = verdict.FrameUsable,
             });
     }
 
@@ -597,6 +614,7 @@ public sealed class PhotoQualityDetector : IDetector
                 {
                     ["effectiveHeight"] = verdict.EffectiveHeight,
                     ["containerHeight"] = verdict.ContainerHeight,
+                    ["containerWidth"] = samples.Width,
                     ["ssim"] = Math.Round(verdict.Percentile, 4),
                 });
         }

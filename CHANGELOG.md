@@ -20,6 +20,9 @@ All notable changes to MediaVerifier are documented here.
   padded audio as 16-bit, rewrite FLAC files with a wrong checksum, restore from a verified backup
   copy, save a playable copy of damaged audio and video, and move files to quarantine. Every change
   is checked before it replaces anything, keeps the original in quarantine and can be undone.
+- The detail drawer shows a thumbnail (photo, video frame or cover art); upscale findings show the
+  sampled frames, and a press-and-hold comparison with the copy rebuilt from the lower resolution;
+  bitrate findings show where the file sits against the limits.
 - Video checks: interlacing marked wrongly (combing), a picture that stands still, long black sections
   (off by default) and a silent soundtrack.
 - Fixed: a video with black frames could fail to be analysed.

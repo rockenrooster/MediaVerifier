@@ -143,7 +143,7 @@ internal sealed class UiServices : IDisposable
             Clock = SystemClock.Instance,
             Scans = scans,
             MediaEngine = new MediaEngineInfo(location, BundleIntegrity.Check(location)),
-            Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence"))),
+            Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence")), new Core.Analysis.PictureRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "pictures"))),
             Rules = rules,
             Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
         };

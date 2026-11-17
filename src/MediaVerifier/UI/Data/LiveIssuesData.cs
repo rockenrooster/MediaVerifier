@@ -115,7 +115,12 @@ internal sealed partial class LiveUiData
                 RuleText.Render(rule.WhatYouCanDo, evidence),
                 view,
                 evidence,
-                view == EvidenceView.Spectrogram ? SpectralCaption(evidence) : finding.Summary));
+                view switch
+                {
+                    EvidenceView.Spectrogram => SpectralCaption(evidence),
+                    EvidenceView.Bitrate => string.Empty,
+                    _ => finding.Summary,
+                }));
         }
 
         List<(string, DateTimeOffset)> history = [.. database.Events.ForFile(fileId).OrderByDescending(e => e.Utc).Select(e => (EventText(e), Ticks(e.Utc)))];
@@ -168,6 +173,74 @@ internal sealed partial class LiveUiData
             return null;
         }
     }
+
+    public byte[]? LoadThumbnail(FileDetail detail, CancellationToken token)
+    {
+        if (pictures is null || database.Files.Get(detail.FileId) is not FileRecord file)
+        {
+            return null;
+        }
+
+        try
+        {
+            string key = EvidenceRenderer.CacheKey(file.Id, file.Hash, file.Size, file.MtimeUtc);
+            return pictures.ThumbnailAsync(detail.FullPath, key, file.MediaKind, (file.Media.DurationMs ?? 0) / 1000.0, token).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    public byte[]? LoadFrameStrip(FileDetail detail, FindingDetail finding, CancellationToken token)
+    {
+        if (pictures is null || database.Files.Get(detail.FileId) is not FileRecord file)
+        {
+            return null;
+        }
+
+        double[] times = FrameTimes(finding.Evidence);
+        try
+        {
+            string key = EvidenceRenderer.CacheKey(file.Id, file.Hash, file.Size, file.MtimeUtc);
+            return pictures.FrameStripAsync(detail.FullPath, key, file.MediaKind == MediaKind.Photo ? [0] : times, token).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    public byte[]? LoadCompare(FileDetail detail, FindingDetail finding, double time, CancellationToken token)
+    {
+        if (pictures is null || database.Files.Get(detail.FileId) is not FileRecord file)
+        {
+            return null;
+        }
+
+        IReadOnlyDictionary<string, object> e = finding.Evidence;
+        int width = e.TryGetValue("containerWidth", out object? w) ? Convert.ToInt32(w, CultureInfo.InvariantCulture) : file.Media.Width ?? 0;
+        int height = e.TryGetValue("containerHeight", out object? h) ? Convert.ToInt32(h, CultureInfo.InvariantCulture) : file.Media.Height ?? 0;
+        int effective = e.TryGetValue("effectiveHeight", out object? eh) ? Convert.ToInt32(eh, CultureInfo.InvariantCulture) : 0;
+        if (width <= 0 || height <= 0 || effective <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            string key = EvidenceRenderer.CacheKey(file.Id, file.Hash, file.Size, file.MtimeUtc);
+            return pictures.CompareAsync(detail.FullPath, key, file.MediaKind, time, width, height, effective, token).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The sampled frame times of an upscale finding.</summary>
+    internal static double[] FrameTimes(IReadOnlyDictionary<string, object> evidence) =>
+        evidence.TryGetValue("frameTimes", out object? value) && value is object[] list ? [.. list.Select(v => Convert.ToDouble(v, CultureInfo.InvariantCulture))] : [0];
 
     /// <summary>The positions marked on the waveform: clipped runs and dropouts, in time order.</summary>
     internal static double[] EvidenceMarks(FileDetail detail) =>
@@ -236,6 +309,9 @@ internal sealed partial class LiveUiData
         "GEN-ZEROFILL" or "INT-ROT" => EvidenceView.ByteMap,
         "AUD-FAKE-LOSSLESS" or "AUD-UPSAMPLED" or "AUD-BITRATE-INFLATED" when evidence.ContainsKey("kneeHz") => EvidenceView.Spectrogram,
         "AUD-CLIPPING" or "AUD-OVERS" or "COR-DROPOUT" or "COR-CLICKS" or "AUD-SILENT" or "AUD-LONG-SILENCE" => EvidenceView.Waveform,
+        "VID-UPSCALED" when evidence.ContainsKey("frameTimes") => EvidenceView.FrameStrip,
+        "IMG-UPSCALED" when evidence.ContainsKey("containerWidth") => EvidenceView.FrameStrip,
+        "VID-STARVED" or "VID-INFLATED" when evidence.ContainsKey("equivalentBpp") => EvidenceView.Bitrate,
         _ when evidence.ContainsKey("messages") => EvidenceView.Messages,
         _ => EvidenceView.None,
     };

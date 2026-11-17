@@ -136,6 +136,12 @@ internal sealed partial class DemoUiData
         };
     }
 
+    public byte[]? LoadThumbnail(FileDetail detail, CancellationToken token) => null;
+
+    public byte[]? LoadFrameStrip(FileDetail detail, FindingDetail finding, CancellationToken token) => null;
+
+    public byte[]? LoadCompare(FileDetail detail, FindingDetail finding, double time, CancellationToken token) => null;
+
     private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind) =>
         new(id, id, rule, severity, confidence, name, line2, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name));
 }

@@ -53,6 +53,7 @@ internal enum EvidenceView
     Spectrogram,
     FrameStrip,
     Waveform,
+    Bitrate,
 }
 
 /// <summary>A finding in the drawer, with the rule's three paragraphs.</summary>
@@ -113,4 +114,13 @@ internal interface IIssuesData
     /// they cannot be rendered. Decodes the file on a cache miss, so it never runs on the UI thread.
     /// </summary>
     AudioEvidence? LoadAudioEvidence(FileDetail detail, CancellationToken token);
+
+    /// <summary>The drawer header's thumbnail as PNG (cover art, the photo, a video frame); null when there is none.</summary>
+    byte[]? LoadThumbnail(FileDetail detail, CancellationToken token);
+
+    /// <summary>The sampled frames of an upscale finding side by side, as PNG (subplan 11, Evidence views).</summary>
+    byte[]? LoadFrameStrip(FileDetail detail, FindingDetail finding, CancellationToken token);
+
+    /// <summary>One frame's original and rebuilt crops side by side, as PNG.</summary>
+    byte[]? LoadCompare(FileDetail detail, FindingDetail finding, double time, CancellationToken token);
 }

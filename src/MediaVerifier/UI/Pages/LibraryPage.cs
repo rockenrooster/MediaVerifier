@@ -67,6 +67,9 @@ internal sealed class LibraryPage : PageBase
         _detailScroll = new ScrollPanel(_detail);
         _detail.CloseRequested += (_, _) => Services.ShowDrawer?.Invoke(null);
         _detail.EvidenceLoader = (detail, token) => Services.Data.LoadAudioEvidence(detail, token);
+        _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
+        _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
+        _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
         _detail.ShowInFolderRequested += (_, _) => ShellActions.ShowInFolder(_detail.Detail?.FullPath);
         _view.Segments.Add(Strings.Library.Folders);
         _view.Segments.Add(Strings.Library.Browse);

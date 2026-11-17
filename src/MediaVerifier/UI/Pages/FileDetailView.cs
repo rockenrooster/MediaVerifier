@@ -38,6 +38,17 @@ internal sealed class FileDetailView : KitControl
     private bool _evidenceLoading;
     private Bitmap? _spectrogramImage;
     private (long FindingId, int Mark)? _zoom;
+    private CancellationTokenSource? _pictureCancel;
+    private Bitmap? _thumbnail;
+    private Bitmap? _strip;
+    private Bitmap? _compare;
+    private int _stripCount;
+    private int _compareIndex = -1;
+    private bool _compareLoading;
+    private bool _holding;
+    private Rectangle _compareRect;
+    private readonly List<(Rectangle Hit, int Index)> _stripHits = [];
+    private static readonly System.Drawing.Imaging.ImageAttributes Faded = FadedAttributes();
 
     public FileDetailView()
     {
@@ -67,6 +78,15 @@ internal sealed class FileDetailView : KitControl
 
     /// <summary>Renders a file's spectrogram and waveform; called on a pool thread when a file with such evidence is shown.</summary>
     public Func<FileDetail, CancellationToken, AudioEvidence?>? EvidenceLoader { get; set; }
+
+    /// <summary>Loads the header thumbnail as PNG; called on a pool thread for every file shown.</summary>
+    public Func<FileDetail, CancellationToken, byte[]?>? ThumbnailLoader { get; set; }
+
+    /// <summary>Loads the frame strip of an upscale finding as PNG.</summary>
+    public Func<FileDetail, FindingDetail, CancellationToken, byte[]?>? StripLoader { get; set; }
+
+    /// <summary>Loads the original and rebuilt crops of one frame side by side as PNG.</summary>
+    public Func<FileDetail, FindingDetail, double, CancellationToken, byte[]?>? CompareLoader { get; set; }
 
     /// <summary>The evidence load started by the last <see cref="Bind"/> (the render harness waits for it).</summary>
     public Task EvidenceLoading { get; private set; } = Task.CompletedTask;
@@ -144,6 +164,11 @@ internal sealed class FileDetailView : KitControl
             _evidenceCancel = null;
             _spectrogramImage?.Dispose();
             _spectrogramImage = null;
+            _pictureCancel?.Cancel();
+            _pictureCancel?.Dispose();
+            _thumbnail?.Dispose();
+            _strip?.Dispose();
+            _compare?.Dispose();
         }
 
         base.Dispose(disposing);
@@ -170,10 +195,18 @@ internal sealed class FileDetailView : KitControl
 
         TypeRamp type = Type;
         Rectangle thumb = new(S(Pad), S(16), S(64), S(64));
-        KitPaint.FillRoundedRect(g, thumb, SF(4), t.Bg);
-        KitPaint.StrokeRoundedRect(g, thumb, SF(4), t.Stroke, SF(1));
-        IconName kindIcon = d.Kind switch { MediaKind.Video => IconName.Video, MediaKind.Photo => IconName.Photo, _ => IconName.Music };
-        IconRenderer.Draw(g, kindIcon, thumb.X + SF(20), thumb.Y + SF(20), 24, DeviceDpi, t.Text3);
+        if (_thumbnail is not null)
+        {
+            g.DrawImage(_thumbnail, thumb);
+            KitPaint.StrokeRoundedRect(g, thumb, SF(4), t.Stroke, SF(1));
+        }
+        else
+        {
+            KitPaint.FillRoundedRect(g, thumb, SF(4), t.Bg);
+            KitPaint.StrokeRoundedRect(g, thumb, SF(4), t.Stroke, SF(1));
+            IconName kindIcon = d.Kind switch { MediaKind.Video => IconName.Video, MediaKind.Photo => IconName.Photo, _ => IconName.Music };
+            IconRenderer.Draw(g, kindIcon, thumb.X + SF(20), thumb.Y + SF(20), 24, DeviceDpi, t.Text3);
+        }
         int textX = S(100);
         int textWidth = Width - textX - S(56);
         KitPaint.DrawText(g, d.Name, type.Subtitle, t.Text, textX, S(30), textWidth);
@@ -191,6 +224,22 @@ internal sealed class FileDetailView : KitControl
         if (e.Button != MouseButtons.Left)
         {
             return;
+        }
+
+        if (_holding)
+        {
+            _holding = false;
+            Invalidate();
+            return;
+        }
+
+        foreach ((Rectangle hit, int index) in _stripHits)
+        {
+            if (hit.Contains(e.Location))
+            {
+                SelectFrame(index);
+                return;
+            }
         }
 
         foreach ((Rectangle hit, long findingId, int mark) in _markHits)
@@ -229,11 +278,38 @@ internal sealed class FileDetailView : KitControl
         }
     }
 
+    /// <summary>Opens or closes a finding card, as a click on its header does.</summary>
+    internal void ToggleFinding(int index)
+    {
+        if (!_expanded.Remove(index))
+        {
+            _expanded.Add(index);
+        }
+
+        Relayout();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left && _compare is not null && _compareRect.Contains(e.Location))
+        {
+            // Press and hold shows the copy rebuilt from the effective resolution.
+            _holding = true;
+            Invalidate();
+        }
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
         bool overMark = false;
         foreach ((Rectangle hit, _, _) in _markHits)
+        {
+            overMark |= hit.Contains(e.Location);
+        }
+
+        foreach ((Rectangle hit, _) in _stripHits)
         {
             overMark |= hit.Contains(e.Location);
         }
@@ -318,6 +394,7 @@ internal sealed class FileDetailView : KitControl
         if (g is not null)
         {
             _markHits.Clear();
+            _stripHits.Clear();
         }
 
         for (int i = 0; i < d.Findings.Count; i++)
@@ -375,7 +452,7 @@ internal sealed class FileDetailView : KitControl
                         KitPaint.DrawText(g, Strings.Drawer.Evidence, type.CaptionStrong, t.Text3, x + S(12), by - S(6), inner);
                         Rectangle view = new(x + S(12), by + S(7), inner, EvidenceHeight(f));
                         DrawEvidence(g, f, view, d, t, type);
-                        string caption = ZoomCaption(f) ?? f.EvidenceCaption;
+                        string caption = ZoomCaption(f) ?? CompareCaption(f) ?? f.EvidenceCaption;
                         if (caption.Length > 0)
                         {
                             KitPaint.DrawText(g, caption, type.Caption, t.Text2, x + S(12), view.Bottom + S(29), inner);
@@ -427,7 +504,8 @@ internal sealed class FileDetailView : KitControl
     {
         EvidenceView.Messages => S(32) + (Math.Min(3, MessageCount(f)) * S(28)),
         EvidenceView.ByteMap => S(24),
-        EvidenceView.FrameStrip => S(54 + 20),
+        EvidenceView.FrameStrip => S(54 + 20) + (_compareIndex >= 0 ? S(8) + CompareHeight() : 0),
+        EvidenceView.Bitrate => S(44),
         _ => S(96),
     };
 
@@ -445,6 +523,12 @@ internal sealed class FileDetailView : KitControl
                 break;
             case EvidenceView.Waveform:
                 DrawWaveform(g, f, view, d, t);
+                break;
+            case EvidenceView.FrameStrip:
+                DrawFrameStrip(g, f, view, t, type);
+                break;
+            case EvidenceView.Bitrate:
+                DrawBitrate(g, f, view, t, type);
                 break;
             case EvidenceView.Spectrogram:
                 DrawSpectrogram(g, f, view, t, type);
@@ -759,8 +843,220 @@ internal sealed class FileDetailView : KitControl
             : null;
 
     /// <summary>Starts rendering the spectrogram and waveform when one of the findings shows them.</summary>
+    /// <summary>Starts the header thumbnail and, for an upscale finding, its frame strip.</summary>
+    private void StartPictures(FileDetail detail)
+    {
+        _pictureCancel?.Cancel();
+        _pictureCancel?.Dispose();
+        _pictureCancel = new CancellationTokenSource();
+        _thumbnail?.Dispose();
+        _thumbnail = null;
+        _strip?.Dispose();
+        _strip = null;
+        _compare?.Dispose();
+        _compare = null;
+        _compareIndex = -1;
+        _holding = false;
+        CancellationToken token = _pictureCancel.Token;
+        if (ThumbnailLoader is { } thumbnails)
+        {
+            _ = LoadPictureAsync(detail, () => thumbnails(detail, token), image => _thumbnail = image, token);
+        }
+
+        FindingDetail? finding = detail.Findings.FirstOrDefault(f => f.View == EvidenceView.FrameStrip);
+        _stripCount = finding is null ? 0 : Math.Max(1, UI.Data.LiveUiData.FrameTimes(finding.Evidence).Length);
+        if (StripLoader is { } strips && finding is not null)
+        {
+            _ = LoadPictureAsync(detail, () => strips(detail, finding, token), image => _strip = image, token);
+        }
+    }
+
+    private async Task LoadPictureAsync(FileDetail detail, Func<byte[]?> load, Action<Bitmap> apply, CancellationToken token)
+    {
+        byte[]? png;
+        try
+        {
+            png = await Task.Run(load, token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (png is null || token.IsCancellationRequested || IsDisposed || !ReferenceEquals(_detail, detail))
+        {
+            return;
+        }
+
+        try
+        {
+            using MemoryStream stream = new(png);
+            using Bitmap decoded = new(stream);
+            apply(new Bitmap(decoded));
+            Invalidate();
+        }
+        catch (ArgumentException)
+        {
+            // Not an image after all; the placeholder stays.
+        }
+    }
+
+    /// <summary>Shows (or, for the frame already shown, hides) the compare view of one sampled frame.</summary>
+    private void SelectFrame(int index)
+    {
+        if (_detail is not FileDetail detail || detail.Findings.FirstOrDefault(f => f.View == EvidenceView.FrameStrip) is not FindingDetail finding)
+        {
+            return;
+        }
+
+        _compare?.Dispose();
+        _compare = null;
+        _holding = false;
+        if (_compareIndex == index)
+        {
+            _compareIndex = -1;
+            Relayout();
+            return;
+        }
+
+        _compareIndex = index;
+        Relayout();
+        if (CompareLoader is not { } compare || _pictureCancel is null)
+        {
+            return;
+        }
+
+        double[] times = UI.Data.LiveUiData.FrameTimes(finding.Evidence);
+        double time = index < times.Length ? times[index] : 0;
+        CancellationToken token = _pictureCancel.Token;
+        _compareLoading = true;
+        _ = LoadPictureAsync(detail, () => compare(detail, finding, time, token), image =>
+        {
+            _compare = image;
+            _compareLoading = false;
+        }, token);
+    }
+
+    private int CompareHeight() => (int)Math.Round((Width - S(2 * Pad) - S(24)) * (double)Core.Analysis.PictureRenderer.CompareHeight / Core.Analysis.PictureRenderer.CompareWidth);
+
+    /// <summary>
+    /// The frame strip (subplan 08, Frame strip): thumbnails 96 × 54, radius 4, 8 px apart, the frame's score beneath,
+    /// unusable frames at 40 % opacity. A click opens the compare view below it.
+    /// </summary>
+    private void DrawFrameStrip(Graphics g, FindingDetail f, Rectangle view, ThemeTokens t, TypeRamp type)
+    {
+        object[] scores = f.Evidence.TryGetValue("frameSsim", out object? s) && s is object[] a ? a : [];
+        object[] usable = f.Evidence.TryGetValue("frameUsable", out object? u) && u is object[] b ? b : [];
+        int width = S(96);
+        int height = S(54);
+        int fit = Math.Max(1, (view.Width + S(8)) / (width + S(8)));
+        int count = Math.Min(fit, _stripCount);
+        for (int i = 0; i < count; i++)
+        {
+            Rectangle cell = new(view.X + (i * (width + S(8))), view.Y, width, height);
+            bool used = i >= usable.Length || usable[i] is not bool flag || flag;
+            if (_strip is not null)
+            {
+                int sourceWidth = _strip.Width / Math.Max(1, _stripCount);
+                Rectangle source = new(i * sourceWidth, 0, sourceWidth, _strip.Height);
+                if (used)
+                {
+                    g.DrawImage(_strip, cell, source, GraphicsUnit.Pixel);
+                }
+                else
+                {
+                    g.DrawImage(_strip, cell, source.X, source.Y, source.Width, source.Height, GraphicsUnit.Pixel, Faded);
+                }
+            }
+            else
+            {
+                KitPaint.FillRoundedRect(g, cell, SF(4), t.Hover);
+            }
+
+            KitPaint.StrokeRoundedRect(g, cell, SF(4), i == _compareIndex ? t.Accent : t.Stroke, SF(1));
+            if (i < scores.Length)
+            {
+                string score = Convert.ToDouble(scores[i], CultureInfo.InvariantCulture).ToString("0.000", CultureInfo.CurrentCulture);
+                KitPaint.DrawText(g, score, type.Caption, used ? t.Text2 : t.Text3, cell.X, cell.Bottom + S(10), width);
+            }
+
+            _stripHits.Add((cell, i));
+        }
+
+        _compareRect = Rectangle.Empty;
+        if (_compareIndex < 0)
+        {
+            return;
+        }
+
+        Rectangle compare = new(view.X, view.Y + S(54 + 20 + 8), view.Width, CompareHeight());
+        _compareRect = compare;
+        if (_compare is not null)
+        {
+            int half = _compare.Width / 2;
+            Rectangle source = new(_holding ? half : 0, 0, half, _compare.Height);
+            g.DrawImage(_compare, compare, source, GraphicsUnit.Pixel);
+        }
+        else if (_compareLoading)
+        {
+            KitPaint.FillRoundedRect(g, compare, SF(4), t.Hover);
+        }
+
+        KitPaint.StrokeRoundedRect(g, compare, SF(4), t.Stroke, SF(1));
+    }
+
+    private string? CompareCaption(FindingDetail f)
+    {
+        if (f.View != EvidenceView.FrameStrip)
+        {
+            return null;
+        }
+
+        int effective = f.Evidence.TryGetValue("effectiveHeight", out object? e) ? Convert.ToInt32(e, CultureInfo.InvariantCulture) : 0;
+        return _compareIndex < 0 ? Strings.Drawer.PickFrame
+            : string.Format(CultureInfo.CurrentCulture, _holding ? Strings.Drawer.CompareRebuilt : Strings.Drawer.CompareOriginal, effective);
+    }
+
+    /// <summary>
+    /// The bitrate card (subplan 11, Evidence views): resolution, frame rate, codec and bitrate, then the H.264-equivalent
+    /// bits per pixel on a logarithmic scale from 0.005 to 0.5 with the rule's limits marked.
+    /// </summary>
+    private void DrawBitrate(Graphics g, FindingDetail f, Rectangle view, ThemeTokens t, TypeRamp type)
+    {
+        IReadOnlyDictionary<string, object> e = f.Evidence;
+        double Number(string key) => e.TryGetValue(key, out object? v) ? Convert.ToDouble(v, CultureInfo.InvariantCulture) : 0;
+        double kbps = Number("bitrateKbps");
+        string rate = kbps >= 1000 ? string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Mbps, (kbps / 1000).ToString("0.0", CultureInfo.CurrentCulture)) : string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Kbps, kbps.ToString("0", CultureInfo.CurrentCulture));
+        string facts = UiFormat.Facts(
+            Number("width") > 0 ? string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Dimensions, Number("width"), Number("height")) : null,
+            Number("fps") > 0 ? string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Fps, Number("fps").ToString("0.##", CultureInfo.CurrentCulture)) : null,
+            e.TryGetValue("codec", out object? codec) ? UiFormat.CodecName(Convert.ToString(codec, CultureInfo.InvariantCulture)) : null,
+            rate);
+        KitPaint.DrawText(g, facts, type.Body, t.Text, view.X, view.Y + S(8), view.Width);
+        Rectangle bar = new(view.X, view.Y + S(24), view.Width, S(8));
+        KitPaint.FillRoundedRect(g, bar, SF(2), t.Hover);
+        float X(double bpp) => bar.X + (float)(bar.Width * Math.Clamp(Math.Log10(Math.Max(bpp, 0.005) / 0.005) / 2, 0, 1));
+        foreach ((double limit, Color color) in new[] { (0.020, t.High.Fill), (0.035, t.Medium.Fill), (0.20, t.Text3) })
+        {
+            g.FillRectangle(GdiCache.Brush(color), X(limit) - SF(1), bar.Y - SF(3), SF(2), bar.Height + SF(6));
+        }
+
+        double value = Number("equivalentBpp");
+        float mx = X(value);
+        g.FillEllipse(GdiCache.Brush(t.Accent), mx - SF(5), bar.Y + (bar.Height / 2f) - SF(5), SF(10), SF(10));
+        KitPaint.DrawText(g, string.Format(CultureInfo.CurrentCulture, Strings.Drawer.BitsPerPixel, value.ToString("0.000", CultureInfo.CurrentCulture)), type.Caption, t.Text2, view.X, view.Y + S(42), view.Width);
+    }
+
+    private static System.Drawing.Imaging.ImageAttributes FadedAttributes()
+    {
+        System.Drawing.Imaging.ImageAttributes attributes = new();
+        attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.4f });
+        return attributes;
+    }
+
     private void StartEvidence(FileDetail detail)
     {
+        StartPictures(detail);
         _evidenceCancel?.Cancel();
         _evidenceCancel?.Dispose();
         _evidenceCancel = null;

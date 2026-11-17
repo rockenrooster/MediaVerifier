@@ -53,6 +53,9 @@ internal sealed class IssuesPage : PageBase
         _detailScroll = new ScrollPanel(_detail);
         _detail.CloseRequested += (_, _) => CloseDetail();
         _detail.EvidenceLoader = (detail, token) => Services.Data.LoadAudioEvidence(detail, token);
+        _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
+        _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
+        _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
         _detail.FindingAction += (_, action) => _ = OnFindingActionAsync(action.FindingId, action.Ignore);
         _detail.ShowInFolderRequested += (_, _) => ShowInFolder(_detail.Detail?.FullPath);
 
