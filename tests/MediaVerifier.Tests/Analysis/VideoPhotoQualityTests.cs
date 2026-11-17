@@ -204,7 +204,9 @@ public sealed class VideoPhotoQualityFixtureTests(ITestOutputHelper output)
             ("starved.mp4", "VID-STARVED VID-UPSCALED"),
             ("hdr8.mp4", "VID-HDR"),
             ("img.jpg", ""),
-            ("img2x.jpg", "IMG-UPSCALED@1080"),
+            // A 2× bicubic enlargement of a 1080-line image. At the threshold calibrated on real photos (0.996) its
+            // 1080 rung falls just short, so the estimate is the conservative 1440 lines: an upper bound on its detail.
+            ("img2x.jpg", "IMG-UPSCALED@1440"),
             ("shot.png", ""),
         ];
         using FfRunner runner = FfmpegEnvironment.CreateRunner();

@@ -36,6 +36,8 @@ All notable changes to MediaVerifier are documented here.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
 - Updates: Settings → Updates checks for a signed new version and installs it after verifying the
   download. Portable zip and installer builds (the installer checks for the .NET 10 Desktop Runtime).
+- The upscaling checks were calibrated on real films and photos: soft-focus films and high-resolution
+  or shallow-focus photos are no longer called upscaled, and only clear enlargements are reported.
 - Uninstalling removes MediaVerifier's scheduled tasks and their folder in the Task Scheduler, the
   start-with-Windows entry and the notification registration; your library and settings stay.
 - Schedule editor: name, folders, depth, repeat, days, time, time limit and conditions, with a

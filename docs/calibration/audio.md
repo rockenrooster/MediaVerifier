@@ -3,8 +3,18 @@
 Run: `dotnet test -c Release --filter "FullyQualifiedName~AudioQualityFixtureTests|FullyQualifiedName~EvidenceAndClickFixtureTests"`,
 2026-11-16, FFmpeg 8.0.1 (engine and fixture tooling). Corpus: the generated audio fixtures of
 subplan 15 (20-second pink-noise sources and their lossy, resampled, padded, clipped and filtered
-derivatives). No real recordings have been provided yet; when the owner supplies legally obtained
-samples, add them to these tables with the same columns and re-check every threshold below.
+derivatives).
+
+Real recordings (2026-11-17): five public-domain Musopen recordings (solo piano, strings, orchestra)
+and their variants, measured by `RealMaterialCalibration` ([real-material.md](real-material.md)).
+No recording raised a false finding at the thresholds below, which stay as they are. The two
+Goldberg recordings are 16-bit audio in 24-bit files and rightly raise `AUD-PADDED-BITS`. Copies of
+the orchestral recordings through MP3 128, AAC and Opus are found as fake lossless, as are the
+inflated MP3s and every clipped copy. Solo piano and the string piece carry almost nothing above
+16 kHz, so a lossy copy of them has no cutoff to find; and real music has too little energy near
+20 kHz for an upsampled copy to show a clear step. Those variants pass unflagged: a limit of the
+spectral method, not of its thresholds (lowering the 30 dB drop would make natural roll-offs, such
+as the string recording's 22 dB, look like cutoffs).
 
 ## Results per fixture
 

@@ -83,14 +83,16 @@ ffmpeg <std> -noaccurate_seek -ss <t0> -i <file> -noaccurate_seek -ss <t1> -i <f
 
 ### Decision
 
-1. **Usable frames**: spatial information (`lavfi.siti.si`) at or above `MinSpatialInfo` (start at 25,
-   *calibrate*). Dark, flat or defocused frames cannot tell an upscale from a native picture. Fewer
+1. **Usable frames**: spatial information (`lavfi.siti.si`) at or above `MinSpatialInfo` (started at 25;
+   calibrated on real material to 40 for video and kept at 25 for photos, see
+   `docs/calibration/real-material.md`). Dark, flat or defocused frames cannot tell an upscale from a native picture. Fewer
    than 4 usable frames → `insufficient`, no finding.
 2. For each candidate take the **10th percentile** of SSIM-Y over usable frames. Using a low
    percentile means nearly every frame must be reproducible; a few natively rendered titles do not
    mask an upscaled film, and a few soft shots do not condemn a native one.
-3. A candidate **passes** when that percentile is at or above `UpscaleSsim` (start at 0.985,
-   *calibrate*).
+3. A candidate **passes** when that percentile is at or above `UpscaleSsim` (started at 0.985;
+   calibrated on real material to 0.990 for video and 0.996 for photos: soft-focus films and
+   high-resolution or shallow-focus photos reach 0.988 and 0.995 without any enlargement).
 4. **Effective height** = the smallest passing candidate, provided the next smaller candidate fails
    or drops by at least 0.008 (the fall-off that marks the true source size). If every candidate
    passes with no fall-off, report the smallest and lower the confidence.

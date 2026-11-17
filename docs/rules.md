@@ -211,7 +211,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** An upscaled file looks no sharper than its source and takes much more space. This check finds ordinary enlargements; it cannot reliably detect AI upscaling.
 - **What you can do:** Replace it from a genuine source at this resolution if quality matters to you.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
-- **Limits:** `ssim` 0.985  (0.9–0.999); `minSpatialInfo` 25 SI (0–200)
+- **Limits:** `ssim` 0.99  (0.9–0.999); `minSpatialInfo` 40 SI (0–200)
 
 ### `VID-INFLATED` Bitrate higher than the picture quality
 
@@ -227,7 +227,7 @@ Generated from `RuleCatalog` by the test suite (`RuleCatalogTests`); do not edit
 - **Why it matters:** It looks no sharper than the smaller original and takes more space. This check cannot reliably detect AI upscaling.
 - **What you can do:** Look for the original photo if you need the full detail.
 - **Actions:** `ACT-EXPORT-LIST`, `ACT-IGNORE`, `ACT-IGNORE-FOLDER-RULE`, `ACT-RESCAN`, `ACT-OPEN`, `ACT-REVEAL`, `ACT-COPY-PATH`
-- **Limits:** `ssim` 0.985  (0.9–0.999); `minSpatialInfo` 25 SI (0–200)
+- **Limits:** `ssim` 0.996  (0.9–0.999); `minSpatialInfo` 25 SI (0–200)
 
 ## Quality
 

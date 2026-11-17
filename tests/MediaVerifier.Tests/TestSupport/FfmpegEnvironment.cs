@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using MediaVerifier.Core.Ffmpeg;
 
 namespace MediaVerifier.Tests.TestSupport;
@@ -17,6 +18,32 @@ public static class FfmpegEnvironment
 
     /// <summary>Full path of the tooling ffmpeg.exe on PATH, or null.</summary>
     public static string? Tooling => ToolingPath.Value;
+
+    /// <summary>What the engine is, for generated reports: the bundle with its version, or the override's version line.</summary>
+    public static string EngineDescription
+    {
+        get
+        {
+            if (Engine is not FfmpegLocation engine)
+            {
+                return "no FFmpeg engine";
+            }
+
+            if (!engine.IsOverride && File.Exists(engine.BundleManifest) && JsonNode.Parse(File.ReadAllText(engine.BundleManifest)) is JsonObject manifest)
+            {
+                return $"the bundled FFmpeg {manifest["ffmpegVersion"]} ({manifest["extraVersion"]})";
+            }
+
+            ProcessStartInfo start = new(engine.FfmpegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            start.ArgumentList.Add("-hide_banner");
+            start.ArgumentList.Add("-version");
+            using Process process = Process.Start(start)!;
+            string first = process.StandardOutput.ReadLine() ?? "unknown version";
+            process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            return $"FFmpeg from {FfmpegLocator.OverrideVariable} ({first.Split(" Copyright")[0]})";
+        }
+    }
 
     public static FfRunner CreateRunner() =>
         new(Engine ?? throw new InvalidOperationException("No FFmpeg engine; the test should have been skipped."));

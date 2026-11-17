@@ -18,7 +18,9 @@ namespace MediaVerifier.Tests.Analysis;
 /// Task T-09 (subplan 15, Calibration) for video and photos on the generated corpus: labelled variants (upscales from
 /// each lower rung with three scalers, a bitrate ladder, a quality ladder) measured by the product's own providers.
 /// With MEDIAVERIFIER_UPDATE_DOCS=1 it writes docs/calibration/video.md and docs/calibration/photo.md. It asserts that
-/// the current RuleDefaults raise nothing on native variants and find every variant the method can see.
+/// the current RuleDefaults raise nothing on native variants and find every starved encode. The upscale thresholds are
+/// chosen on real material (RealMaterialCalibration), where soft natives come closer; how many of these generated
+/// upscales they find is reported, not asserted (the fixture tests of VideoPhotoQualityTests assert the fixtures).
 /// </summary>
 [Trait("Category", "Calibration")]
 public sealed class VideoPhotoCalibration(ITestOutputHelper output)
@@ -87,6 +89,7 @@ public sealed class VideoPhotoCalibration(ITestOutputHelper output)
         await harness.ScanAsync(ScanDepth.Standard);
 
         List<Row> rows = [.. variants.Select(v => Measure(harness, v))];
+        CalibrationDump.Append(harness, variants.Select(v => (v.Name, v.Truth, v.Video, v.Truth == "native")), "generated");
         foreach (Row row in rows)
         {
             output.WriteLine($"{row.Variant.Name,-24} {row.Variant.Truth,-20} rungs {row.Rungs} bpp {row.Bpp} block {row.Block} q {row.Quality} raised {row.Raised}");
@@ -106,11 +109,6 @@ public sealed class VideoPhotoCalibration(ITestOutputHelper output)
             if (truth == "native" && (upscaled || row.Raised.Contains("STARVED", StringComparison.Ordinal) || row.Raised.Contains("HEAVY", StringComparison.Ordinal)))
             {
                 failures.Add($"{row.Variant.Name}: false positive {row.Raised}");
-            }
-
-            if (truth.StartsWith("upscaled-from-", StringComparison.Ordinal) && !truth.EndsWith("(between rungs)", StringComparison.Ordinal) && !upscaled)
-            {
-                failures.Add($"{row.Variant.Name}: upscale missed (rungs {row.Rungs})");
             }
 
             if (truth == "starved" && !row.Raised.Contains("VID-STARVED", StringComparison.Ordinal))
@@ -261,18 +259,18 @@ public sealed class VideoPhotoCalibration(ITestOutputHelper output)
     private static void AppendMethod(StringBuilder text, string area)
     {
         text.AppendLine("Run: `MEDIAVERIFIER_UPDATE_DOCS=1 dotnet test -c Release --filter FullyQualifiedName~VideoPhotoCalibration`");
-        text.AppendLine($"({DateTime.Now:yyyy-MM-dd}, FFmpeg {FfmpegVersions.Bundled} engine, the tooling FFmpeg for the variants). Corpus: generated {area}");
+        text.AppendLine($"({DateTime.Now:yyyy-MM-dd}, {FfmpegEnvironment.EngineDescription} as the engine, the tooling FFmpeg for the variants). Corpus: generated {area}");
         text.AppendLine("variants of a noisy Mandelbrot zoom (fine detail everywhere, like a sharp natural source): native, upscaled from");
         text.AppendLine("each lower rung with bilinear, bicubic and Lanczos, and encoded down a ladder. Every number comes from the");
-        text.AppendLine("product's own providers at Standard depth. Real footage (subplan 15, corpus b and c) has not been measured yet:");
-        text.AppendLine("when it is, add it to these tables and re-check each threshold, preferring fewer false positives.");
+        text.AppendLine("product's own providers at Standard depth. Real material (subplan 15, corpus b and c) is measured by");
+        text.AppendLine("`RealMaterialCalibration`: see [real-material.md](real-material.md).");
         text.AppendLine();
     }
 
     private static string Thresholds(string[] rules)
     {
         StringBuilder text = new();
-        text.AppendLine("Current values (unchanged by this run; the generated variants are separated by them):");
+        text.AppendLine("Current values (the upscale thresholds chosen on real material, see real-material.md):");
         text.AppendLine();
         foreach (RuleParameter parameter in RuleDefaults.All.Where(p => rules.Contains(p.RuleId)))
         {
@@ -292,17 +290,18 @@ public sealed class VideoPhotoCalibration(ITestOutputHelper output)
         public double? BppValue { get; init; }
     }
 
-    /// <summary>How far the threshold sits from the closest native and the weakest upscale the method can see.</summary>
+    /// <summary>Where the closest native and the upscales of a candidate rung lie against the threshold, and how many are found.</summary>
     private static string Separation(IReadOnlyList<Row> rows, string rule)
     {
         double threshold = RuleSettings.Defaults.Value(rule, "ssim");
         double nativeMax = rows.Where(r => r.Variant.Truth == "native" && r.Ssim.Count > 0).Select(r => r.Ssim.Values.Max()).DefaultIfEmpty(double.NaN).Max();
-        List<double> upscaled = [.. rows.Where(r => r.Variant.Truth.StartsWith("upscaled-from-", StringComparison.Ordinal) && !r.Variant.Truth.EndsWith("(between rungs)", StringComparison.Ordinal))
+        List<Row> candidates = [.. rows.Where(r => r.Variant.Truth.StartsWith("upscaled-from-", StringComparison.Ordinal) && !r.Variant.Truth.EndsWith("(between rungs)", StringComparison.Ordinal))];
+        List<double> upscaled = [.. candidates
             .Select(r => r.Ssim.TryGetValue(int.Parse(r.Variant.Truth["upscaled-from-".Length..], CultureInfo.InvariantCulture), out double v) ? v : double.NaN)
             .Where(v => !double.IsNaN(v))];
-        double upscaledMin = upscaled.DefaultIfEmpty(double.NaN).Min();
+        int found = candidates.Count(r => r.Raised.Contains("UPSCALED", StringComparison.Ordinal));
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Upscale separation: native variants reach at most {nativeMax:0.0000} at any rung; variants upscaled from a candidate rung reach at least {upscaledMin:0.0000} at that rung. The threshold {threshold:0.000} sits between them ({threshold - nativeMax:0.0000} above the closest native, {upscaledMin - threshold:0.0000} below the weakest upscale).");
+            $"Upscale separation: native variants reach at most {nativeMax:0.0000} at any rung; variants upscaled from a candidate rung reach {upscaled.DefaultIfEmpty(double.NaN).Min():0.0000} to {upscaled.DefaultIfEmpty(double.NaN).Max():0.0000} at that rung. The threshold {threshold:0.000} comes from real material, where soft natives come closer (real-material.md); it finds {found} of these {candidates.Count} upscales.");
     }
 }

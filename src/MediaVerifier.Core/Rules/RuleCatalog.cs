@@ -240,7 +240,7 @@ public static class RuleCatalog
                 quality),
 
             // Video quality: subplan 11.
-            new("VID-UPSCALED", "Resolution is higher than the detail", FindingCategory.Authenticity, Video, ScanDepth.Standard, Severity.Low, Severity.High, 1, true, Milestone.M2, true,
+            new("VID-UPSCALED", "Resolution is higher than the detail", FindingCategory.Authenticity, Video, ScanDepth.Standard, Severity.Low, Severity.High, 2, true, Milestone.M2, true,
                 "The video is stored at a high resolution, but its pictures carry no more detail than a lower resolution would. It was probably enlarged from a smaller source.",
                 "An upscaled file looks no sharper than its source and takes much more space. This check finds ordinary enlargements; it cannot reliably detect AI upscaling.",
                 "Replace it from a genuine source at this resolution if quality matters to you.",
@@ -287,7 +287,7 @@ public static class RuleCatalog
                 quality),
 
             // Photo quality: subplan 11.
-            new("IMG-UPSCALED", "Image is larger than its detail", FindingCategory.Authenticity, Photo, ScanDepth.Standard, Severity.Low, Severity.Medium, 1, true, Milestone.M2, true,
+            new("IMG-UPSCALED", "Image is larger than its detail", FindingCategory.Authenticity, Photo, ScanDepth.Standard, Severity.Low, Severity.Medium, 2, true, Milestone.M2, true,
                 "The photo is stored at a large size, but it carries no more detail than a smaller version would. It was probably enlarged.",
                 "It looks no sharper than the smaller original and takes more space. This check cannot reliably detect AI upscaling.",
                 "Look for the original photo if you need the full detail.",

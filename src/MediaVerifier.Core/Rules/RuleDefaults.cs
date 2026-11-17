@@ -94,8 +94,9 @@ public static class RuleDefaults
             new("AUD-SILENT", "rmsDb", -70, -150, -10, "or the average level stays below", "dBFS"),
             new("AUD-LONG-SILENCE", "seconds", 10, 1, 600, "Report silence at the start or end from", "seconds"),
             new("COR-CLICKS", "lowClicks", 3, 1, 1000, "Report from", "clicks"),
-            new("VID-UPSCALED", "ssim", 0.985, 0.9, 0.999, "Rebuilt picture at least this similar (SSIM)", "", 3),
-            new("VID-UPSCALED", "minSpatialInfo", 25, 0, 200, "Use frames with at least this much detail", "SI"),
+            // Calibrated on real films (docs/calibration/real-material.md): soft natives reach 0.988 on detailed frames.
+            new("VID-UPSCALED", "ssim", 0.990, 0.9, 0.999, "Rebuilt picture at least this similar (SSIM)", "", 3),
+            new("VID-UPSCALED", "minSpatialInfo", 40, 0, 200, "Use frames with at least this much detail", "SI"),
             new("VID-STARVED", "lowBpp", 0.035, 0.001, 1, "Low below", "bits per pixel", 3),
             new("VID-STARVED", "mediumBpp", 0.020, 0.001, 1, "Medium below", "bits per pixel", 3),
             new("VID-BLOCKY", "low", 2.6, 0.5, 20, "Low from a block score of", "", 1),
@@ -109,7 +110,8 @@ public static class RuleDefaults
             new("VID-FROZEN", "edgeSeconds", 60, 0, 600, "Ignore the first and last", "seconds"),
             new("VID-FROZEN", "mediumPercent", 10, 1, 100, "Medium from this share of the length", "%"),
             new("VID-AUDIO-SILENT", "peakDb", -60, -150, -10, "Silent when the peak stays below", "dBFS"),
-            new("IMG-UPSCALED", "ssim", 0.985, 0.9, 0.999, "Rebuilt image at least this similar (SSIM)", "", 3),
+            // Calibrated on real photos: high-resolution and shallow-focus natives reach 0.995.
+            new("IMG-UPSCALED", "ssim", 0.996, 0.9, 0.999, "Rebuilt image at least this similar (SSIM)", "", 3),
             new("IMG-UPSCALED", "minSpatialInfo", 25, 0, 200, "Skip images with less detail than", "SI"),
             new("IMG-HEAVY-COMPRESSION", "lowQuality", 50, 1, 100, "Low below JPEG quality", ""),
             new("IMG-HEAVY-COMPRESSION", "mediumQuality", 30, 1, 100, "Medium below JPEG quality", ""),
