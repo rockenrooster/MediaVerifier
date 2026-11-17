@@ -1,6 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using MediaVerifier.Core;
+using MediaVerifier.Core.Engine;
+using MediaVerifier.Core.Ffmpeg;
+using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
+using MediaVerifier.Core.Settings;
+using MediaVerifier.Core.Storage;
 
 // Usage:
 //   sleep <ms>                  sleep, writing nothing
@@ -9,6 +16,9 @@ using System.Text;
 //   progress <blocks>           write -progress style blocks to stdout
 //   exit <code>                 exit with <code>
 //   spawn <pidFile> <ms>        start a child that sleeps <ms>, write its PID to <pidFile>, then sleep
+//   scan <base> <library> <ffmpegDir> <mutex>
+//                               kill tests (task T-08): a Standard scan of <library> with the real engine, its
+//                               database and data under <base>; prints "started" once the run exists
 //   -<anything> ...             called like ffmpeg or ffprobe: stall until killed (a hung decoder)
 string mode = args.Length > 0 ? args[0] : "";
 long Arg(int i) => long.Parse(args[i], CultureInfo.InvariantCulture);
@@ -77,6 +87,30 @@ switch (mode)
             File.WriteAllText(args[1], child.Id.ToString(CultureInfo.InvariantCulture));
             Thread.Sleep((int)Arg(2));
             return 0;
+        }
+
+    case "scan":
+        {
+            AppPaths paths = AppPaths.UnderBase(args[1]);
+            paths.EnsureCreated();
+            using Database database = Database.Open(paths.DefaultDatabaseFile);
+            string library = Path.GetFullPath(args[2]);
+            if (!database.Roots.List().Any(r => string.Equals(r.Path, library, StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = database.Roots.AddAsync(new RootRecord { Path = library, Label = "Library" }).GetAwaiter().GetResult();
+            }
+
+            using FfRunner runner = new(new FfmpegLocation(args[3], IsOverride: true));
+            ScanSettings settings = new();
+            RuleSettings rules = database.RuleSettings.Load();
+            using ScanEngine engine = new(EngineFactory.CreateServices(database, runner, paths, () => settings, () => rules), args[4]);
+            ScanRequest request = new([.. database.Roots.List().Select(r => new ScanScope(r.Id))], ScanDepth.Standard, RunTrigger.Manual);
+            Task<(int ExitCode, RunSummary? Summary)> run = HeadlessScan.RunAsync(engine, request);
+            Console.Out.WriteLine("started");
+            Console.Out.Flush();
+            (int exit, RunSummary? summary) = run.GetAwaiter().GetResult();
+            Console.Out.WriteLine(summary?.Status.ToString() ?? "none");
+            return exit;
         }
 
     case not null when mode.StartsWith('-'):
