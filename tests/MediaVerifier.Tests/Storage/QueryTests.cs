@@ -141,6 +141,7 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         await SyntheticLibrary.GenerateAsync(db.Database, new SyntheticLibraryOptions { Files = 1_000_000, Roots = 4 });
         generate.Stop();
         output.WriteLine($"generate 1,000,000 files: {generate.Elapsed.TotalSeconds:N1} s");
+        PerfReport.Add("Generate a library", "1,000,000 files with findings", $"{generate.Elapsed.TotalSeconds:N1} s", "under 60 s (T-10)");
         Assert.True(generate.Elapsed < TimeSpan.FromSeconds(60), "generator budget (T-10)");
         LibraryQueries q = db.Database.Queries;
 
@@ -187,6 +188,10 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         output.WriteLine($"search snapshot ({searchIds.Length:N0} ids): {searchSnapshot.ElapsedMilliseconds} ms");
         output.WriteLine($"whole-library snapshot ({fileIds.Length:N0} ids, by size): {fileSnapshot.ElapsedMilliseconds} ms");
         output.WriteLine($"200-row fetch: {fetch.ElapsedMilliseconds} ms");
+        PerfReport.Add("Issues snapshot", $"all open findings ({findingIds.Length:N0} ids) of 1,000,000 files", $"{snapshot.ElapsedMilliseconds} ms", "under 300 ms");
+        PerfReport.Add("Library folder snapshot", $"a folder subtree ({folderIds.Length:N0} ids)", $"{folderSnapshot.ElapsedMilliseconds} ms", "under 300 ms");
+        PerfReport.Add("Search snapshot", $"names and folders of 1,000,000 files ({searchIds.Length:N0} ids)", $"{searchSnapshot.ElapsedMilliseconds} ms", "under 300 ms");
+        PerfReport.Add("Fetch rows", "200 rows by id", $"{fetch.ElapsedMilliseconds} ms", "under 20 ms");
         output.WriteLine($"severity counts ({tiers.Total:N0}): {counts.ElapsedMilliseconds} ms");
 
         Assert.Equal(200, rows.Count);

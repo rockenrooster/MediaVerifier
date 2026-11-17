@@ -96,6 +96,12 @@ internal class KitControl : Control
     /// <summary>Extra accessible states (checked, selected, expanded) for the accessibility object.</summary>
     protected virtual AccessibleStates ExtraAccessibleStates => AccessibleStates.None;
 
+    /// <summary>The name read out when no AccessibleName is set (the control's text by default).</summary>
+    protected virtual string? FallbackAccessibleName => string.IsNullOrEmpty(Text) ? null : Text;
+
+    /// <summary>The value read out (a drop-down's choice, a box's text); null when the control has none.</summary>
+    protected virtual string? AccessibleValue => null;
+
     protected virtual void OnThemeChanged() => Invalidate();
 
     /// <summary>Clears hover and press, for example when the window loses activation.</summary>
@@ -259,7 +265,13 @@ internal class KitControl : Control
     /// <summary>Name and role from the control's Accessible* properties (or its Text); state from the control.</summary>
     private sealed class KitAccessibleObject(KitControl owner) : ControlAccessibleObject(owner)
     {
-        public override string? Name => owner.AccessibleName ?? (string.IsNullOrEmpty(owner.Text) ? base.Name : owner.Text);
+        public override string? Name => owner.AccessibleName ?? owner.FallbackAccessibleName ?? base.Name;
+
+        public override string? Value
+        {
+            get => owner.AccessibleValue ?? base.Value;
+            set => base.Value = value;
+        }
 
         public override AccessibleRole Role => owner.AccessibleRole != AccessibleRole.Default ? owner.AccessibleRole : base.Role;
 

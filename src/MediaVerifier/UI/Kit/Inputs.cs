@@ -313,6 +313,11 @@ internal sealed class SearchBox : KitTextBox
         AccessibleRole = AccessibleRole.Text;
     }
 
+    /// <summary>A search box is named by its placeholder ("Filter rules", "Search files") unless named otherwise.</summary>
+    protected override string? FallbackAccessibleName => string.IsNullOrEmpty(Placeholder) ? null : Placeholder;
+
+    protected override string? AccessibleValue => Text;
+
     protected override int TextLeft => 34;
 
     protected override int TextRight => string.IsNullOrEmpty(Text) ? InputPainter.TextInset : 36;

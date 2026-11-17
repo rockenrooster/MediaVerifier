@@ -74,6 +74,9 @@ internal static class Program
         Core.Storage.Database.UiThreadId = Environment.CurrentManagedThreadId;
         using UiServices services = UiServices.CreateLive(state);
         using MainForm form = new(services, options, ipc);
+        using UiWatchdog? watchdog = UiWatchdog.Enabled && SynchronizationContext.Current is SynchronizationContext ui
+            ? new UiWatchdog(ui, (waited, marks) => state.Log.Warning(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"UI thread blocked for {waited.TotalMilliseconds:0} ms; recent activity: {marks}")))
+            : null;
         Application.Run(form);
         ThemeService.StopListening();
         state.Log.Info("Exiting");

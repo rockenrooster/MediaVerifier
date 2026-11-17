@@ -91,6 +91,7 @@ public sealed class AudioPerfTests(ITestOutputHelper output)
 
         double share = analysis.TotalMilliseconds / decode.TotalMilliseconds;
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"5-minute FLAC: decode {decode.TotalMilliseconds:0} ms, analysis {analysis.TotalMilliseconds:0} ms ({share:P0} of the decode)"));
+        PerfReport.Add("Audio analysis", "5-minute FLAC, all analyzers", string.Create(CultureInfo.InvariantCulture, $"{analysis.TotalMilliseconds:0} ms (decode {decode.TotalMilliseconds:0} ms)"), "under 500 ms");
         Assert.True(analysis < TimeSpan.FromMilliseconds(500), $"analysis took {analysis.TotalMilliseconds:0} ms");
     }
 

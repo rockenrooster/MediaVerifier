@@ -3,6 +3,11 @@
 Budgets are in the [master plan](../plans/00-master-plan.md#8-budgets). Each section records the
 command, the machine and the numbers; re-run after changing the code it covers.
 
+The whole suite runs with one command, `.\scripts\Measure-Performance.ps1` (tasks T-11 and H-01),
+which writes the current table to [perf-results.md](perf-results.md). The window budgets (cold start,
+idle CPU and memory, installed size) are measured by hand on the release candidate
+([test procedures](test-procedures.md), P-7).
+
 Machine: AMD Ryzen 9 5950X 16-core, 64 GB RAM, NVMe SSD (Sabrent Rocket 4.0), Windows 11 Pro 26200.
 
 ## Storage (subplan 03, task S-07)
@@ -67,3 +72,19 @@ Profile of the 2160p run before the change (10 samples): seeking and decoding th
 the whole 2304 × 1296 crop about 1,070 ms. The measures now run on the centre quarter of the crop
 (its corner on the frame's 16-pixel grid, so block edges keep their phase), and photos measure only
 spatial information (blockiness and blur are video rules).
+
+## Engine budgets (subplan 16, task H-01)
+
+`EnginePerfTests` (in the suite above), 2026-11-17, on 100,000 empty photo files in a synthetic tree.
+
+| Measurement | Result | Budget |
+|-------------|--------|--------|
+| Enumeration | about 600,000 files/s | at least 50,000 files/s on SSD |
+| Fingerprint, 1 GiB from the file cache | 6.9 GB/s against a raw read of 7.8 GB/s | limited by storage |
+| Engine overhead with no-op providers | about 450 µs of CPU a file: under 1 % of a core at 20 analysed files a second | under 5 % of one core |
+| Scan memory, peak private bytes above the start | 62 MB at 100,000 files and 62 MB at 300,000 | at most 400 MB at 1,000,000 files |
+| UI thread on the demo library, every page twice | longest block 28 ms | never over 50 ms |
+
+Scan memory does not grow with the number of files (the engine streams directories and writes in
+batches), so the 1,000,000-file budget is met by a wide margin without creating a million files.
+

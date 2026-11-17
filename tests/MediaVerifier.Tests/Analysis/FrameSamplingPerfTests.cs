@@ -22,6 +22,7 @@ public sealed class FrameSamplingPerfTests(ITestOutputHelper output)
         TimeSpan best = await BestOfAsync(film, times, 3840, 2160, photo: false);
         double perSample = best.TotalSeconds / times.Length;
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"2160p: {times.Length} samples in {best.TotalMilliseconds:0} ms; 24 samples about {perSample * 24:0.0} s"));
+        PerfReport.Add("Frame sampling", "2160p film, 24 samples", string.Create(CultureInfo.InvariantCulture, $"about {perSample * 24:0.0} s"), "subplan 11, VP-02");
         Assert.True(perSample * 24 < 5, $"{perSample * 24:0.0} s for 24 samples");
     }
 
@@ -30,6 +31,7 @@ public sealed class FrameSamplingPerfTests(ITestOutputHelper output)
     {
         TimeSpan best = await BestOfAsync(FixtureFactory.Get("img2x.jpg"), [0], 3840, 2160, photo: true);
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"3840 x 2160 photo: {best.TotalMilliseconds:0} ms"));
+        PerfReport.Add("Photo sampling", "3840 x 2160 photo", string.Create(CultureInfo.InvariantCulture, $"{best.TotalMilliseconds:0} ms"), "subplan 11, VP-02");
         Assert.True(best < TimeSpan.FromSeconds(0.3), $"{best.TotalMilliseconds:0} ms");
     }
 

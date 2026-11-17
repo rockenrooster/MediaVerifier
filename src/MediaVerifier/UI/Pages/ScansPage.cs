@@ -35,7 +35,7 @@ internal sealed class ScansPage : PageBase
     private readonly InfoBar _interrupted = new() { Tier = Severity.Medium, Text = Strings.Scans.InterruptedBar, Action = Strings.Scans.Continue, TabIndex = 0 };
     private readonly RunCard _run;
     private readonly Card _historyCard = new() { Title = Strings.Scans.History, TabIndex = 2 };
-    private readonly VirtualList _history = new() { Mode = ListMode.Table, Icons = false };
+    private readonly VirtualList _history = new() { Mode = ListMode.Table, Icons = false, AccessibleName = Strings.Drawer.History };
     private readonly HistorySource _source;
     private readonly RunDetailView _detail;
     private readonly ScrollPanel _detailScroll;

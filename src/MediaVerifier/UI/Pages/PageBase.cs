@@ -74,6 +74,7 @@ internal abstract class PageBase : KitControl
 
         if (data is not null && !IsDisposed)
         {
+            Diagnostics.UiWatchdog.Mark("Apply " + Id);
             ApplyData(data);
             if (Parent is Shell.PageViewport viewport)
             {
@@ -103,6 +104,7 @@ internal abstract class PageBase : KitControl
 
     public void Activate()
     {
+        Diagnostics.UiWatchdog.Mark("Show " + Id);
         IsActive = true;
         UpdateTimers();
         OnActivated();

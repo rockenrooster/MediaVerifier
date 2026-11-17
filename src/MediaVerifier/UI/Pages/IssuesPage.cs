@@ -30,7 +30,7 @@ internal sealed class IssuesPage : PageBase
     private readonly DropDown _status = new() { Compact = true };
     private readonly DropDown _groupDrop = new() { Compact = true, DisplayFormat = Strings.Issues.GroupFormat };
     private readonly SegmentedControl _group = new() { Compact = true };
-    private readonly VirtualList _list = new() { Mode = ListMode.TwoLine };
+    private readonly VirtualList _list = new() { Mode = ListMode.TwoLine, AccessibleName = Strings.Pages.Issues };
     private readonly EmptyState _empty = new() { Visible = false };
     private readonly SelectionBar _selectionBar = new() { Visible = false };
     private readonly IssuesSource _source;

@@ -170,6 +170,7 @@ internal sealed class SettingsPage : PageBase
         }
 
         _nav.Invalidate();
+        _nav.AnnounceSelection();
         PerformLayout();
     }
 
@@ -571,9 +572,15 @@ internal sealed class SettingsPage : PageBase
             _page = page;
             TabStop = true;
             AccessibleRole = AccessibleRole.List;
+            AccessibleName = Strings.Pages.Settings;
         }
 
         protected override bool Interactive => true;
+
+        /// <summary>Tells Narrator which section is now selected.</summary>
+        public void AnnounceSelection() => AccessibilityNotifyClients(AccessibleEvents.Focus, _page.Current);
+
+        protected override AccessibleObject CreateAccessibilityInstance() => new SectionListAccessibleObject(this);
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -649,6 +656,49 @@ internal sealed class SettingsPage : PageBase
         }
 
         private Rectangle ItemBounds(int index) => new(0, S(index * 36), Width, S(32));
+
+        /// <summary>The section list as a list whose items Narrator reads by name, with the selected one marked.</summary>
+        private sealed class SectionListAccessibleObject(SectionList owner) : ControlAccessibleObject(owner)
+        {
+            public override AccessibleRole Role => AccessibleRole.List;
+
+            public override string? Name => owner.AccessibleName;
+
+            public override int GetChildCount() => Names.Length;
+
+            public override AccessibleObject? GetChild(int index) => index >= 0 && index < Names.Length ? new SectionItemAccessibleObject(owner, this, index) : null;
+
+            public override AccessibleObject? GetFocused() => owner.Focused ? GetChild(owner._page.Current) : base.GetFocused();
+
+            public override AccessibleObject? GetSelected() => GetChild(owner._page.Current);
+        }
+
+        private sealed class SectionItemAccessibleObject(SectionList list, AccessibleObject parent, int index) : AccessibleObject
+        {
+            public override AccessibleObject Parent => parent;
+
+            public override AccessibleRole Role => AccessibleRole.ListItem;
+
+            public override string? Name => index == UpdatesSection && list._page.UpdateAvailable ? Names[index] + ", " + Strings.Pages.UpdateAvailable : Names[index];
+
+            public override AccessibleStates State
+            {
+                get
+                {
+                    AccessibleStates state = AccessibleStates.Selectable | AccessibleStates.Focusable;
+                    if (index == list._page.Current)
+                    {
+                        state |= AccessibleStates.Selected | (list.Focused ? AccessibleStates.Focused : AccessibleStates.None);
+                    }
+
+                    return state;
+                }
+            }
+
+            public override Rectangle Bounds => list.RectangleToScreen(list.ItemBounds(index));
+
+            public override void DoDefaultAction() => list._page.ShowSection(index);
+        }
 
         private int IndexAt(Point point)
         {

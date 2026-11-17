@@ -47,6 +47,11 @@ internal sealed class DropDown : KitControl
 
     public string? SelectedItem => _selected >= 0 && _selected < _items.Count ? _items[_selected] : null;
 
+    /// <summary>Unnamed drop-downs (the Issues filters) are read as what they show, for example "Status: Open".</summary>
+    protected override string? FallbackAccessibleName => ShownText.Length > 0 ? ShownText : null;
+
+    protected override string? AccessibleValue => SelectedItem;
+
     public bool Compact
     {
         get => _compact;
