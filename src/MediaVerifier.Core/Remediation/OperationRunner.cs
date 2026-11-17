@@ -416,6 +416,21 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         return running.Count;
     }
 
+    /// <summary>Permanently deletes the original one operation kept in quarantine (the caller confirms first); returns the bytes freed.</summary>
+    public async Task<long> PurgeOneAsync(long operationId, CancellationToken token = default)
+    {
+        OperationRecord? operation = await Task.Run(() => database.Journal.List(int.MaxValue).FirstOrDefault(o => o.Id == operationId), token).ConfigureAwait(false);
+        if (operation?.BackupPath is not string backup || !backup.Contains(QuarantineFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        long bytes = File.Exists(backup) ? new FileInfo(backup).Length : 0;
+        File.Delete(backup);
+        await database.Journal.UpdateAsync(operation.Id, operation.Status, operation.ResultPath, null, null, operation.DetailJson, token).ConfigureAwait(false);
+        return bytes;
+    }
+
     /// <summary>Permanently deletes quarantined originals older than <paramref name="days"/> (the only permanent deletion; the caller confirms).</summary>
     public async Task<(int Files, long Bytes)> PurgeAsync(int days, CancellationToken token = default)
     {

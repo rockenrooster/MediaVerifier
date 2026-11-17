@@ -54,7 +54,57 @@ internal sealed class DashboardPage : PageBase
 
     internal void OpenIssues(Severity? tier, MediaKind? kind) => Services.Navigate?.Invoke(PageId.Issues, new IssuesFilterRequest(tier, kind));
 
-    internal void RunRecommendation(RecommendationItem item) => Services.Navigate?.Invoke(PageId.Issues, null);
+    /// <summary>A recommendation's button (subplan 12, task R-12): fix all, review, verify, add a folder, schedule, help, continue.</summary>
+    internal void RunRecommendation(RecommendationItem item)
+    {
+        string command = item.ActionId;
+        if (command.StartsWith("fix:", StringComparison.Ordinal) && item.FileIds is { Count: > 0 } files)
+        {
+            _ = FixAllAsync(files, command[4..]);
+            return;
+        }
+
+        switch (command)
+        {
+            case "scan":
+                if (FindForm() is Form owner)
+                {
+                    _ = ScanLauncher.StartLibraryScanAsync(owner, Services, State.Settings.Scanning.DefaultDepth, null);
+                }
+
+                break;
+            case "verify":
+                _ = VerifyAllAsync();
+                break;
+            case "add-folder":
+                Services.Navigate?.Invoke(PageId.Library, new AddFolderRequest(null));
+                break;
+            case "schedule":
+                Services.Navigate?.Invoke(PageId.Schedule, null);
+                break;
+            case "read-errors":
+                ShellActions.OpenUrl(ShellActions.HelpUrl("GEN-UNREADABLE"));
+                break;
+            case "continue":
+                Services.Navigate?.Invoke(PageId.Scans, null);
+                break;
+            default:
+                Services.Navigate?.Invoke(PageId.Issues, null);
+                break;
+        }
+    }
+
+    private async Task FixAllAsync(IReadOnlyList<long> files, string actionId)
+    {
+        await Remediator.RunAsync(Services, this, files, actionId).ConfigureAwait(true);
+        Reload();
+    }
+
+    private async Task VerifyAllAsync()
+    {
+        List<long> roots = await Task.Run(() => Services.Database.Roots.List().Select(r => r.Id).ToList()).ConfigureAwait(true);
+        await Services.StartScanAsync([.. roots.Select(id => new Core.Engine.ScanScope(id))], Core.Model.ScanDepth.Quick, Strings.Recommendations.VerifyNow, new Core.Engine.ScanOptions { VerifyOnly = true }).ConfigureAwait(true);
+    }
 
     protected override object? LoadData() => Services.Data.LoadDashboard();
 

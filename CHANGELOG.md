@@ -13,6 +13,11 @@ All notable changes to MediaVerifier are documented here.
 - Experimental click detection (off by default; turn it on in Settings → Rules).
 - Updates: Settings → Updates checks for a signed new version and installs it after verifying the
   download. Portable zip and installer builds (the installer checks for the .NET 10 Desktop Runtime).
+- Dashboard recommendations group what is worth doing (files that changed on their own, missing
+  seek indexes, wrong extensions, lossless files made from MP3, upscaled video, overdue verification,
+  no backup folder or schedule, read errors, an interrupted scan) with a button that does it.
+- Tools → Quarantine restores or deletes kept originals; Tools → Operations undoes a change;
+  Ctrl+Z undoes the last change.
 - More repairs: extract the embedded preview of a damaged camera photo, make an experimental
   de-clipped copy of lossless audio, and move files to the Recycle Bin.
 - Schedules: scans run on their own through Windows Task Scheduler, even when MediaVerifier is

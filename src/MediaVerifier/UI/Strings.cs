@@ -848,6 +848,7 @@ internal static class Strings
         public const string WhatAndSize = "{0} · {1}";
         public const string OriginalsToQuarantine = "Originals go to quarantine for {0} days";
         public const string CanUndo = "You can undo this";
+        public const string PausesScan = "The running scan pauses while this happens";
         public const string VerbRestore = "Restore";
         public const string VerbRemux = "Rebuild index";
         public const string VerbRename = "Rename";

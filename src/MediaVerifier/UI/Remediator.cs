@@ -46,23 +46,62 @@ internal static class Remediator
         }
 
         List<FileRecord> files = await Task.Run(() => services.Database.Files.GetMany(fileIds)).ConfigureAwait(true);
-        if (!Confirm(form, action, files, services.State.Settings.Scanning.EmptyQuarantineAfterDays))
+        if (!Confirm(form, action, files, services.State.Settings.Scanning.EmptyQuarantineAfterDays, services.Scans.Status.IsActive))
         {
             return;
         }
 
         long batch = services.Clock.UtcNow.UtcTicks;
-        List<OperationOutcome> outcomes = await Task.Run(async () =>
-        {
-            List<OperationOutcome> done = [];
-            foreach (FileRecord file in files)
-            {
-                done.Add(await runner.RunAsync(file.Id, action, batch, CancellationToken.None).ConfigureAwait(false));
-            }
 
-            return done;
-        }).ConfigureAwait(true);
+        // An operation needs the engine idle: a running scan pauses while it works and then continues (subplan 12).
+        bool paused = services.Scans.Status.IsActive && services.Scans.Status.Phase != Core.Engine.EnginePhase.Paused;
+        if (paused)
+        {
+            services.Scans.Pause();
+        }
+
+        List<OperationOutcome> outcomes;
+        try
+        {
+            outcomes = await Task.Run(async () =>
+            {
+                List<OperationOutcome> done = [];
+                foreach (FileRecord file in files)
+                {
+                    done.Add(await runner.RunAsync(file.Id, action, batch, CancellationToken.None).ConfigureAwait(false));
+                }
+
+                return done;
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            if (paused)
+            {
+                services.Scans.Resume();
+            }
+        }
+
         Report(services, action, outcomes, batch);
+    }
+
+    /// <summary>Ctrl+Z: undoes the newest batch that still has an undoable operation.</summary>
+    public static async Task UndoLatestAsync(UiServices services)
+    {
+        if (services.Operations is null || services.IsDemo)
+        {
+            return;
+        }
+
+        long? batch = await Task.Run(() => services.Database.Journal.List(500)
+            .Where(o => o.Status == OperationStatus.Done && o.UndoJson is not null && !o.UndoJson.Contains("\"actionClass\":\"Recycle\"", StringComparison.Ordinal))
+            .OrderByDescending(o => o.Id)
+            .Select(o => (long?)o.BatchId)
+            .FirstOrDefault()).ConfigureAwait(true);
+        if (batch is long id)
+        {
+            await UndoBatchAsync(services, id).ConfigureAwait(true);
+        }
     }
 
     /// <summary>Undoes every done operation of a batch (newest first) and reports.</summary>
@@ -89,7 +128,7 @@ internal static class Remediator
             : new ToastContent(Severity.Critical, Strings.Repair.UndoFailed, failure));
     }
 
-    private static bool Confirm(Form form, IRemediationAction action, IReadOnlyList<FileRecord> files, int quarantineDays)
+    private static bool Confirm(Form form, IRemediationAction action, IReadOnlyList<FileRecord> files, int quarantineDays, bool scanning)
     {
         if (action.Id == ActionIds.AcceptBaseline)
         {
@@ -107,6 +146,11 @@ internal static class Remediator
         if (action.Class is ActionClass.Lossless or ActionClass.Move && action.Id != ActionIds.FixExtension)
         {
             lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Repair.OriginalsToQuarantine, quarantineDays));
+        }
+
+        if (scanning)
+        {
+            lines.Add(Strings.Repair.PausesScan);
         }
 
         lines.Add(action.Class == ActionClass.Recycle ? Strings.Repair.CannotUndo : Strings.Repair.CanUndo);

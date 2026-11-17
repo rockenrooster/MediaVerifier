@@ -27,7 +27,7 @@ internal sealed record KindRow(MediaKind Kind, long Files, long Bytes, SeverityC
 }
 
 /// <summary>A recommended next step (subplan 12 fills these).</summary>
-internal sealed record RecommendationItem(Severity Tier, string Title, string Detail, string Button, string ActionId);
+internal sealed record RecommendationItem(Severity Tier, string Title, string Detail, string Button, string ActionId, IReadOnlyList<long>? FileIds = null);
 
 /// <summary>A Recent activity entry.</summary>
 internal sealed record ActivityItem(string Text, DateTimeOffset When);

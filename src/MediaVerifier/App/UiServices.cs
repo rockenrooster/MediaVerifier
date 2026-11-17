@@ -154,6 +154,7 @@ internal sealed class UiServices : IDisposable
             try
             {
                 await services.Operations.RecoverAsync().ConfigureAwait(false);
+                await services.Operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays).ConfigureAwait(false);
                 await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)

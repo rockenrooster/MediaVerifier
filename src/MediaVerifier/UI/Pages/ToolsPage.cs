@@ -23,6 +23,12 @@ internal sealed class ToolsPage : PageBase
     private readonly EmptyState _empty = new() { TabIndex = 3 };
     private readonly FactsView _facts;
     private readonly TableSource _source = new();
+    private readonly KitButton _restore = new() { Kind = ButtonKind.Secondary, Text = Strings.Tools.Restore, TabIndex = 4 };
+    private readonly KitButton _delete = new() { Kind = ButtonKind.Secondary, Text = Strings.Tools.DeleteForGood, TabIndex = 5 };
+    private readonly KitButton _openFolder = new() { Kind = ButtonKind.Secondary, Text = Strings.Tools.OpenFolder, TabIndex = 6 };
+    private readonly KitButton _undo = new() { Kind = ButtonKind.Secondary, Icon = IconName.Undo, Text = Strings.Tools.Undo, TabIndex = 4 };
+    private List<OperationRecord> _kept = [];
+    private List<long> _batches = [];
     private ToolsData? _data;
     private int _view = -1;
 
@@ -46,7 +52,12 @@ internal sealed class ToolsPage : PageBase
         _back.ToolTipText = Strings.Tools.BackToTools;
         _back.Click += (_, _) => ShowView(-1);
         _table.Source = _source;
-        Controls.AddRange([.. _cards, _back, _facts, _table, _empty]);
+        _table.SelectionChanged += (_, _) => UpdateViewButtons();
+        _restore.Click += (_, _) => _ = RestoreSelectedAsync();
+        _delete.Click += (_, _) => _ = DeleteSelectedAsync();
+        _openFolder.Click += (_, _) => ShellActions.ShowInFolder(SelectedKept()?.BackupPath);
+        _undo.Click += (_, _) => _ = UndoSelectedAsync();
+        Controls.AddRange([.. _cards, _back, _facts, _table, _empty, _restore, _delete, _openFolder, _undo]);
         ShowView(-1);
     }
 
@@ -96,6 +107,14 @@ internal sealed class ToolsPage : PageBase
         }
 
         _back.Bounds = new Rectangle(0, 0, S(32), S(32));
+        int right = Width;
+        foreach (KitButton button in new[] { _openFolder, _delete, _restore, _undo }.Where(b => b.Visible))
+        {
+            int w = S(button.PreferredLogicalWidth);
+            right -= w;
+            button.Bounds = new Rectangle(right, 0, w, S(32));
+            right -= S(8);
+        }
         int top = S(48);
         _facts.Bounds = new Rectangle(0, top, Width, _facts.MeasureHeight());
         _table.Bounds = new Rectangle(0, top, Width, Math.Max(S(120), Height - top));
@@ -130,6 +149,7 @@ internal sealed class ToolsPage : PageBase
             if (view == 0)
             {
                 List<OperationRecord> kept = [.. _data.Operations.Where(o => o.Status == OperationStatus.Done && o.BackupPath is not null)];
+                _kept = kept;
                 _source.Rows = [.. kept.Select(o => new[] { Path.GetFileName(o.SourcePath), Path.GetDirectoryName(o.SourcePath) ?? string.Empty, o.BackupPath is string b && File.Exists(b) ? UiFormat.Size(new FileInfo(b).Length) : Strings.Dash, UiFormat.RecentDay(LiveUiData.Ticks(o.Utc), Services.Clock.UtcNow), string.Format(CultureInfo.CurrentCulture, Strings.Tools.DaysValue, Math.Max(0, State.Settings.Scanning.EmptyQuarantineAfterDays - (int)(Services.Clock.UtcNow - LiveUiData.Ticks(o.Utc)).TotalDays)) })];
                 _table.Columns = [new(Strings.Tools.ColFile, 280, Sortable: false), new(Strings.Tools.ColWasIn, 300, Sortable: false), new(Strings.Tools.ColSize, 96, RightAligned: true, Sortable: false), new(Strings.Tools.ColMoved, 120, Sortable: false), new(Strings.Tools.ColRemovedIn, 0, Sortable: false)];
                 _empty.Icon = IconName.Quarantine;
@@ -138,6 +158,7 @@ internal sealed class ToolsPage : PageBase
             }
             else
             {
+                _batches = [.. _data.Operations.GroupBy(o => o.BatchId).Select(g => g.Key)];
                 _source.Rows = [.. _data.Operations.GroupBy(o => o.BatchId).Select(g => new[] { UiFormat.RecentDate(LiveUiData.Ticks(g.Max(o => o.Utc)), Services.Clock.UtcNow), LiveUiData.ActionName(g.First().ActionId), UiFormat.Count(g.Count()), OperationResult(g.First().Status) })];
                 _table.Columns = [new(Strings.Tools.ColWhen, 160, Sortable: false), new(Strings.Tools.ColWhat, 360, Sortable: false), new(Strings.Tools.ColFiles, 96, RightAligned: true, Sortable: false), new(Strings.Tools.ColResult, 0, Sortable: false, Pad: 28)];
                 _source.PillColumn = 3;
@@ -152,6 +173,9 @@ internal sealed class ToolsPage : PageBase
             _empty.Visible = _source.Count == 0;
         }
 
+        _restore.Visible = _delete.Visible = _openFolder.Visible = view == 0 && _table.Visible;
+        _undo.Visible = view == 1 && _table.Visible;
+        UpdateViewButtons();
         _facts.Bind(view);
         if (Parent is Shell.PageViewport viewport)
         {
@@ -160,6 +184,61 @@ internal sealed class ToolsPage : PageBase
 
         PerformLayout();
         Invalidate();
+    }
+
+    private OperationRecord? SelectedKept() => _view == 0 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _kept.Count ? _kept[_table.FocusedIndex] : null;
+
+    private void UpdateViewButtons()
+    {
+        bool live = Services.Operations is not null && !Services.IsDemo;
+        _restore.Enabled = _delete.Enabled = live && SelectedKept() is not null;
+        _openFolder.Enabled = SelectedKept()?.BackupPath is string path && File.Exists(path);
+        _undo.Enabled = live && _view == 1 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _batches.Count
+            && _data?.Operations.Any(o => o.BatchId == _batches[_table.FocusedIndex] && o.Status == OperationStatus.Done && o.UndoJson is not null) == true;
+    }
+
+    /// <summary>Restore: the original comes back (the operation is undone).</summary>
+    private async Task RestoreSelectedAsync()
+    {
+        if (SelectedKept() is not OperationRecord kept || Services.Operations is not { } runner)
+        {
+            return;
+        }
+
+        string? failure = await Task.Run(() => runner.UndoAsync(kept.Id, Services.Clock.UtcNow.UtcTicks, CancellationToken.None)).ConfigureAwait(true);
+        Services.ShowToast?.Invoke(failure is null
+            ? new ToastContent(Severity.None, Strings.Repair.Undone, Path.GetFileName(kept.SourcePath))
+            : new ToastContent(Severity.Critical, Strings.Repair.UndoFailed, failure));
+        Reload();
+    }
+
+    /// <summary>Delete for good after dialog B (subplan 09): the only permanent deletion.</summary>
+    private async Task DeleteSelectedAsync()
+    {
+        if (SelectedKept() is not OperationRecord kept || Services.Operations is not { } runner || FindForm() is not Form owner)
+        {
+            return;
+        }
+
+        long size = kept.BackupPath is string path && File.Exists(path) ? new FileInfo(path).Length : 0;
+        string title = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteTitle, UiFormat.Count(1));
+        string text = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteText, UiFormat.Size(size));
+        if (!MessageDialog.Confirm(owner, title, text, Strings.Dialogs.KeepThem, Strings.Dialogs.DeleteForGood, destructive: true))
+        {
+            return;
+        }
+
+        await Task.Run(() => runner.PurgeOneAsync(kept.Id)).ConfigureAwait(true);
+        Reload();
+    }
+
+    private async Task UndoSelectedAsync()
+    {
+        if (_view == 1 && _table.FocusedIndex >= 0 && _table.FocusedIndex < _batches.Count)
+        {
+            await Remediator.UndoBatchAsync(Services, _batches[_table.FocusedIndex]).ConfigureAwait(true);
+            Reload();
+        }
     }
 
     private static string OperationResult(OperationStatus status) => status switch

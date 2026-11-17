@@ -35,6 +35,18 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
         }
 
         List<KindRow> kinds = [.. database.Queries.KindSummaries().Select(k => new KindRow(k.Kind, k.Files, k.Bytes, k.Tiers, k.HealthyFiles))];
+        IReadOnlyList<RecommendationItem> recommendations = [.. Core.Remediation.RecommendationEngine.Build(database, scan, Core.Engine.WindowsFileSystem.Instance, clock.UtcNow).Select(r => Word(r, scan))];
+        NextRunInfo? next = null;
+        DateTime local = clock.UtcNow.LocalDateTime;
+        foreach (PlanRecord plan in database.Plans.List().Where(p => p.Enabled))
+        {
+            if (Core.Scheduling.PlanDefinition.FromJson(plan.DefinitionJson) is { } definition
+                && Core.Scheduling.ScheduleCalculator.Next(definition.Trigger, local, DateOnly.FromDateTime(new DateTime(plan.CreatedUtc, DateTimeKind.Utc).ToLocalTime())) is DateTime when
+                && (next is null || when < next.When.LocalDateTime))
+            {
+                next = new NextRunInfo(new DateTimeOffset(when), plan.Name);
+            }
+        }
         return new DashboardData(
             roots.Count > 0,
             health.FilesScanned > 0,
@@ -48,11 +60,43 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
             health.Open,
             null,
             last is null ? null : ToRunInfo(last, roots),
-            null,
+            next,
             kinds,
-            [],
+            recommendations,
             activity,
             []);
+    }
+
+    /// <summary>The wording of subplan 09's recommendation table for one recommendation.</summary>
+    internal static RecommendationItem Word(Core.Remediation.Recommendation r, ScanSettings scan)
+    {
+        System.Globalization.CultureInfo c = System.Globalization.CultureInfo.CurrentCulture;
+        string n = UiFormat.Count(r.FileCount);
+        return r.Kind switch
+        {
+            Core.Remediation.RecommendationKind.RotWithCopies => new(
+                r.Severity,
+                r.FileCount == 1 ? Strings.Recommendations.RotTitleOne : string.Format(c, Strings.Recommendations.RotTitle, n),
+                r.Covered == r.FileCount ? string.Format(c, Strings.Recommendations.RotCopyAll, r.Place, n) : string.Format(c, Strings.Recommendations.RotCopySome, r.Place, UiFormat.Count(r.Covered), n),
+                Strings.Recommendations.Review,
+                "review:INT-ROT",
+                r.FileIds),
+            Core.Remediation.RecommendationKind.RotWithoutCopies => new(r.Severity, r.FileCount == 1 ? Strings.Recommendations.RotTitleOne : string.Format(c, Strings.Recommendations.RotTitle, n), Strings.Recommendations.RotNoCopy, Strings.Recommendations.Review, "review:INT-ROT", r.FileIds),
+            Core.Remediation.RecommendationKind.MissingIndex => new(r.Severity, string.Format(c, Strings.Recommendations.IndexTitle, n), string.Format(c, Strings.Recommendations.IndexDetail, UiFormat.Duration(TimeSpan.FromSeconds(Math.Max(1, r.TotalBytes / 200_000_000.0)))), Strings.Recommendations.FixAll, "fix:" + r.ActionId, r.FileIds),
+            Core.Remediation.RecommendationKind.WrongExtension => new(r.Severity, string.Format(c, Strings.Recommendations.ExtensionTitle, n), Strings.Recommendations.ExtensionDetail, Strings.Recommendations.FixAll, "fix:" + r.ActionId, r.FileIds),
+            Core.Remediation.RecommendationKind.FakeLossless => new(r.Severity, string.Format(c, Strings.Recommendations.FakeLosslessTitle, n), Strings.Recommendations.CannotRepair, Strings.Recommendations.Review, "review:AUD-FAKE-LOSSLESS", r.FileIds),
+            Core.Remediation.RecommendationKind.UpscaledVideo => new(r.Severity, string.Format(c, Strings.Recommendations.UpscaledTitle, n), Strings.Recommendations.CannotRepair, Strings.Recommendations.Review, "review:VID-UPSCALED", r.FileIds),
+            Core.Remediation.RecommendationKind.VerificationOverdue => new(
+                r.Severity,
+                string.Format(c, Strings.Recommendations.OverdueTitle, (r.Percent * 100).ToString("0", c) + "%", scan.ScrubPeriodDays),
+                string.Format(c, Strings.Recommendations.OverdueDetail, UiFormat.Duration(TimeSpan.FromMinutes(scan.ScrubBudgetMinutes)), UiFormat.Count(Math.Max(1, (int)Math.Ceiling(1 / Math.Max(0.01, 1 - r.Percent))))),
+                Strings.Recommendations.VerifyNow,
+                "verify"),
+            Core.Remediation.RecommendationKind.NoBackupFolder => new(r.Severity, Strings.Recommendations.NoBackupTitle, Strings.Recommendations.NoBackupDetail, Strings.Recommendations.AddFolder, "add-folder"),
+            Core.Remediation.RecommendationKind.NoSchedule => new(r.Severity, Strings.Recommendations.NoScheduleTitle, Strings.Recommendations.NoScheduleDetail, Strings.Recommendations.CreateSchedule, "schedule"),
+            Core.Remediation.RecommendationKind.ReadErrors => new(r.Severity, string.Format(c, Strings.Recommendations.ReadErrorsTitle, r.Place, n), Strings.Recommendations.ReadErrorsDetail, Strings.Recommendations.WhatToDo, "read-errors"),
+            _ => new(r.Severity, Strings.Recommendations.InterruptedTitle, string.Format(c, Strings.Recommendations.InterruptedDetail, UiFormat.Count(r.Done), UiFormat.Count(r.Total)), Strings.Recommendations.Continue, "continue"),
+        };
     }
 
     /// <summary>Stored UTC ticks to a timestamp.</summary>

@@ -297,6 +297,9 @@ internal sealed class MainForm : Form
             case Keys.Escape when _shell.Drawer.IsOpen && !IsTextInput(FromChildHandle(msg.HWnd)):
                 SetDrawerContent(null);
                 return true;
+            case Keys.Control | Keys.Z when !IsTextInput(FromChildHandle(msg.HWnd)):
+                _ = UI.Remediator.UndoLatestAsync(_services);
+                return true;
         }
 
         return base.ProcessCmdKey(ref msg, keyData);
