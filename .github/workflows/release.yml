@@ -41,10 +41,15 @@ jobs:
           "TAG=$tag" >> $env:GITHUB_ENV
           "VERSION=$($tag.Substring(1))" >> $env:GITHUB_ENV
 
+      - name: Unit tests
+        run: dotnet test MediaVerifier.sln -c Release --filter "Category!=Integration&Category!=System&Category!=Perf&Category!=Fuzz&Category!=Calibration"
+
       - name: Build artifact
         shell: pwsh
         env:
           MEDIAVERIFIER_UPDATE_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.MEDIAVERIFIER_UPDATE_SIGNING_PRIVATE_KEY_PEM }}
+          # build.ps1 fetches the FFmpeg bundle named in deps/ffmpeg/bundle.lock.json with the GitHub CLI.
+          GH_TOKEN: ${{ github.token }}
         run: .\build.ps1 -Version $env:VERSION -NoIncrement
 
       - name: Create or update GitHub release
@@ -75,6 +80,11 @@ jobs:
             Write-Host "No CHANGELOG.md section for $env:TAG; using generated notes"
             gh api "repos/$repo/releases/generate-notes" -f tag_name=$env:TAG -q .body | Set-Content $notesPath -Encoding utf8NoBOM
           }
+
+          # Subplan 14: the notes end with the bundled FFmpeg version and the bundle release, where its source is.
+          $lock = Get-Content deps\ffmpeg\bundle.lock.json -Raw | ConvertFrom-Json
+          $engine = "Media engine: FFmpeg $($lock.ffmpegVersion), bundle [$($lock.release)](https://github.com/$repo/releases/tag/$($lock.release)) (its source and licences are attached there)."
+          Add-Content $notesPath -Value "`n$engine" -Encoding utf8NoBOM
 
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -eq 0) {

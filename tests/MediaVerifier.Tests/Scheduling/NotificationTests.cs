@@ -129,7 +129,7 @@ public sealed class NotificationTests
     [Fact]
     public void The_notification_manager_can_be_activated_without_showing_anything() => Assert.True(ToastInterop.CanActivate());
 
-    [Fact]
+    [DesktopFact]
     public void A_toast_goes_through_every_interop_call_under_an_unregistered_id()
     {
         // Windows drops toasts of an id with no registration, so this exercises every v-table call and shows nothing.
@@ -278,6 +278,18 @@ public sealed class NotificationSettingsTests
             {
                 yield return inner;
             }
+        }
+    }
+}
+
+/// <summary>A test that needs an interactive desktop session (the toast platform); skipped on service accounts such as CI runners.</summary>
+public sealed class DesktopFactAttribute : FactAttribute
+{
+    public DesktopFactAttribute()
+    {
+        if (!Environment.UserInteractive)
+        {
+            Skip = "Needs an interactive desktop session.";
         }
     }
 }
