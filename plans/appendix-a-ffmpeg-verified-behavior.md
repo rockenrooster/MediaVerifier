@@ -4,7 +4,10 @@ Everything in this appendix was run, not assumed. Environment: Windows 11, FFmpe
 (`ffmpeg version 8.0.1-full_build-www.gyan.dev`), November 2026. Fixtures were generated with the
 recipes in subplan 15 and damaged with `dd`. Hex addresses in log lines are replaced by `X`.
 
-Re-run these experiments when changing the supported FFmpeg version, and update this file.
+Re-run these experiments when changing the supported FFmpeg version, and update this file. The test
+`AppendixAMeasurements` repeats sections 2–4 and 7–12 and writes what FFmpeg printed to a report:
+run CI by hand with **appendix** ticked (the report is printed in the log and kept as an artifact),
+or set `MEDIAVERIFIER_APPENDIX_REPORT` to a file path and run that test locally.
 
 ## 1. Exit codes cannot be trusted
 

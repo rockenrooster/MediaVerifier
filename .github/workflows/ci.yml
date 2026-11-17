@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      appendix:
+        description: Also repeat the appendix A experiments with the engine and print the report (task FFB-05)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -103,4 +108,18 @@ jobs:
           # Path.GetTempPath() follows TMP, so the fixtures land in the cached folder.
           TMP: ${{ runner.temp }}
           TEMP: ${{ runner.temp }}
+          # Empty unless a manual run asks for the appendix A report (AppendixAMeasurements).
+          MEDIAVERIFIER_APPENDIX_REPORT: ${{ inputs.appendix && format('{0}\appendix-a.md', runner.temp) || '' }}
         run: dotnet test MediaVerifier.sln -c Release --no-build --filter "Category!=Perf&Category!=Fuzz&Category!=Calibration"
+
+      - name: Appendix A report
+        if: ${{ always() && inputs.appendix }}
+        shell: pwsh
+        run: Get-Content -Raw -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'appendix-a.md')
+
+      - name: Keep the appendix A report
+        if: ${{ always() && inputs.appendix }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appendix-a-report
+          path: ${{ runner.temp }}/appendix-a.md

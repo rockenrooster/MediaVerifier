@@ -227,10 +227,11 @@ Workflow `.github/workflows/ffmpeg-bundle.yml`, started by hand with inputs `ver
 ## Updating FFmpeg
 
 1. Change `version` (and reset `revision` to 1), run the workflow.
-2. Re-run the appendix A experiments with the new bundle and update the appendix and the log corpus.
+2. Re-run the appendix A experiments with the new bundle (run CI by hand with **appendix** ticked)
+   and update the appendix and the log corpus.
 3. Run the full test suite and the corruption benchmark against the new bundle; investigate any
    detection-rate change.
-4. Merge the lock-file pull request; the next app release ships it.
+4. The workflow commits the lock file (see the deviations log); the next app release ships it.
 
 A configure change without a version change increments `revision` (`mv2`, `mv3`, …).
 
