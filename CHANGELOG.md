@@ -8,6 +8,12 @@ All notable changes to MediaVerifier are documented here.
 - Updates: every step of Download and install is written to the log and any failure is shown, instead
   of the button seeming to do nothing. After an update of an all-users install MediaVerifier opens as
   the signed-in user, not as administrator, and the installer closes a running MediaVerifier itself.
+- Dialogs are built like Disk Monitor 2.0's: one window over MediaVerifier that shows the dimmed
+  window behind it, so nothing can cover a dialog and leave the app waiting on it unseen. The
+  corners are rounded on Windows 10 too, and a dialog taller than a small window is no longer cut off.
+- Add folder and Create report stay open until the folder is saved or the report written, and a
+  failure is shown; before, they closed at once as if it had worked. Create report says when the
+  folder to save to does not exist, and a message listing changed files shows the whole list.
 
 ## 0.1.0.2 - 2026-11-17
 

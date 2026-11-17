@@ -133,6 +133,37 @@ public sealed class AppFlowTests
         Assert.Equal(["healthy.flac"], healthy);
     }
 
+    [Fact]
+    public void Create_report_writes_the_report_before_the_dialog_closes()
+    {
+        string[] written = [];
+        bool openWhileWriting = false;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("report-flow");
+            string folder = Directory.CreateDirectory(temp.Combine("Reports")).FullName;
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+
+            string? title = Answer<CreateReportDialog>(() => CreateReportDialog.Show(form, services), dialog =>
+            {
+                Find<PathBox>(dialog, _ => true).Text = folder;
+                Find<KitButton>(dialog, b => b.Text == Strings.Tools.Create).PerformClick();
+                openWhileWriting = dialog.DialogResult == DialogResult.None;
+            });
+            Assert.Equal(Strings.Tools.CreateReport, title);
+            written = Directory.GetFiles(folder);
+            form.Close();
+        });
+
+        Assert.True(openWhileWriting, "Create report closed before the report was written.");
+        Assert.Single(written);
+        Assert.EndsWith(".html", written[0], StringComparison.Ordinal);
+    }
+
     /// <summary>Runs <paramref name="open"/>, answers the first <typeparamref name="T"/> dialog it shows, returns its title.</summary>
     private static string? Answer<T>(Action open, Action<T> answer)
         where T : Form

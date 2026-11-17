@@ -45,7 +45,9 @@ internal sealed class AddFolderDialog : KitDialog
         CloseToolTip = Strings.Kit.CloseEsc;
         AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
         _ok = AddButton(editing is null ? Strings.Library.AddFolder : Strings.Kit.Save, ButtonKind.Primary, DialogResult.None);
-        _ok.Click += (_, _) => _ = SaveAsync();
+
+        // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
+        _ok.Click += async (_, _) => await SaveAsync().ConfigureAwait(true);
         _library.Checked = editing?.Role != RootRole.Backup;
         _backup.Checked = editing?.Role == RootRole.Backup;
         if (editing is not null)
@@ -93,9 +95,8 @@ internal sealed class AddFolderDialog : KitDialog
 
     protected override Control? InitialFocus() => _editing is null ? _folder : _name;
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
         int x = S(104);
         int width = Math.Max(0, Body.Width - x);
         int shift = _error is null ? 0 : S(20);
@@ -226,23 +227,10 @@ internal sealed class AddFolderDialog : KitDialog
         {
             _error = error;
             BodyHeight = error is null ? 350 : 370;
-            ResizeForBody();
             Body.Invalidate();
         }
 
         _ok.Enabled = path.Length > 0 && error is null && (_photos.Checked || _videos.Checked || _music.Checked);
-    }
-
-    private void ResizeForBody()
-    {
-        if (IsHandleCreated)
-        {
-            int height = S(60 + BodyHeight + 24 + 32 + 24);
-            Top -= (height - Height) / 2;
-            Height = height;
-        }
-
-        PerformLayout();
     }
 
     private static string Normalize(string path)
@@ -318,28 +306,38 @@ internal sealed class AddFolderDialog : KitDialog
         List<string> skip = SkipPatterns();
         string? skipJson = skip.Count == 0 ? null : JsonSerializer.Serialize(skip);
         RootRole role = _backup.Checked ? RootRole.Backup : RootRole.Library;
-        if (!_services.IsDemo)
+
+        // The dialog stays open until the folder is saved; one save at a time.
+        _ok.Enabled = false;
+        try
         {
-            if (_editing is null)
+            if (!_services.IsDemo)
             {
-                await _services.Database.Roots.AddAsync(new RootRecord
+                if (_editing is null)
                 {
-                    Path = path,
-                    Label = name,
-                    Role = role,
-                    MediaMask = mask,
-                    ExcludePatternsJson = skipJson,
-                    AddedUtc = _services.Clock.UtcNow,
-                }).ConfigureAwait(true);
-            }
-            else
-            {
-                await _services.Database.Roots.UpdateAsync(_editing with { Path = path, Label = name, Role = role, MediaMask = mask, ExcludePatternsJson = skipJson }).ConfigureAwait(true);
+                    await _services.Database.Roots.AddAsync(new RootRecord
+                    {
+                        Path = path,
+                        Label = name,
+                        Role = role,
+                        MediaMask = mask,
+                        ExcludePatternsJson = skipJson,
+                        AddedUtc = _services.Clock.UtcNow,
+                    }).ConfigureAwait(true);
+                }
+                else
+                {
+                    await _services.Database.Roots.UpdateAsync(_editing with { Path = path, Label = name, Role = role, MediaMask = mask, ExcludePatternsJson = skipJson }).ConfigureAwait(true);
+                }
             }
         }
+        catch
+        {
+            ValidateForm();
+            throw;
+        }
 
-        DialogResult = DialogResult.OK;
-        Close();
+        Finish(DialogResult.OK);
         if (_editing is null && role == RootRole.Library && _counted is long counted && counted > 0)
         {
             string waiting = string.Format(CultureInfo.CurrentCulture, Strings.Library.WaitingToast, UiFormat.Count(counted));

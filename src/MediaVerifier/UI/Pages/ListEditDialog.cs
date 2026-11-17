@@ -59,14 +59,8 @@ internal sealed class ListEditDialog : KitDialog
 
     protected override Control? InitialFocus() => _fields.Length > 0 ? _fields[0].Box : base.InitialFocus();
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
-        if (_fields is null)
-        {
-            return;
-        }
-
         int y = S(HelperHeight());
         foreach ((_, KitTextBox box, _) in _fields)
         {

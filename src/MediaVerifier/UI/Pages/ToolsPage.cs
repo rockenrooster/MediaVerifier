@@ -520,6 +520,7 @@ internal sealed class CreateReportDialog : KitDialog
     private readonly DropDown _what = new() { TabIndex = 0 };
     private readonly OptionRow[] _formats;
     private readonly PathBox _folder = new() { Inset = true, TabIndex = 4 };
+    private readonly KitButton _create;
 
     private CreateReportDialog(UiServices services)
         : base(Strings.Tools.CreateReport, DialogWidth.Confirmation)
@@ -547,7 +548,10 @@ internal sealed class CreateReportDialog : KitDialog
             KitPaint.DrawText(e.Graphics, Strings.Tools.SaveTo, type.Body, t.Text2, 0, S(260), S(80));
         };
         AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
-        AddButton(Strings.Tools.Create, ButtonKind.Primary, DialogResult.None).Click += (_, _) => _ = CreateAsync();
+        _create = AddButton(Strings.Tools.Create, ButtonKind.Primary, DialogResult.None);
+
+        // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
+        _create.Click += async (_, _) => await CreateAsync().ConfigureAwait(true);
         BodyHeight = 276;
     }
 
@@ -557,14 +561,8 @@ internal sealed class CreateReportDialog : KitDialog
         dialog.ShowOver(owner);
     }
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
-        if (_formats is null)
-        {
-            return;
-        }
-
         int x = S(96);
         int width = Math.Max(0, Body.Width - x);
         _what.Bounds = new Rectangle(x, 0, width, S(32));
@@ -582,6 +580,7 @@ internal sealed class CreateReportDialog : KitDialog
         string folder = _folder.Text.Trim();
         if (!Directory.Exists(folder))
         {
+            MessageDialog.Show(this, Strings.Tools.CreateReport, Strings.Library.ErrorMissing, Strings.Kit.Close);
             return;
         }
 
@@ -590,17 +589,25 @@ internal sealed class CreateReportDialog : KitDialog
         DateTimeOffset now = _services.Clock.UtcNow;
         if (!_services.IsDemo)
         {
-            await Task.Run(() =>
+            // The dialog stays open until the report is written; one report at a time.
+            _create.Enabled = false;
+            try
             {
-                long? run = lastScan ? _services.Database.Runs.List(5).FirstOrDefault(r => r.Status != RunStatus.Running)?.Id : null;
-                long[] ids = _services.Database.Queries.FindingIds(run is long id ? new FindingFilter { FirstRun = id } : FindingFilter.OpenAll);
-                ReportWriter.Write(path, format, _services.Database.Queries.FindingRows(ids), now);
-                return _services.Database.Meta.SetAsync(LiveUiData.LastReportKey, now.UtcTicks.ToString(CultureInfo.InvariantCulture));
-            }).ConfigureAwait(true);
+                await Task.Run(() =>
+                {
+                    long? run = lastScan ? _services.Database.Runs.List(5).FirstOrDefault(r => r.Status != RunStatus.Running)?.Id : null;
+                    long[] ids = _services.Database.Queries.FindingIds(run is long id ? new FindingFilter { FirstRun = id } : FindingFilter.OpenAll);
+                    ReportWriter.Write(path, format, _services.Database.Queries.FindingRows(ids), now);
+                    return _services.Database.Meta.SetAsync(LiveUiData.LastReportKey, now.UtcTicks.ToString(CultureInfo.InvariantCulture));
+                }).ConfigureAwait(true);
+            }
+            finally
+            {
+                _create.Enabled = true;
+            }
         }
 
-        DialogResult = DialogResult.OK;
-        Close();
+        Finish(DialogResult.OK);
         _services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Tools.ReportSaved, Path.GetFileName(path), Strings.Tools.Open, () => ShellActions.ShowInFolder(path)));
     }
 }

@@ -93,18 +93,13 @@ public sealed class RepairDialogTests
             true,
             "Rebuild index");
         using RepairDialog dialog = RepairDialog.Create(preview);
-        dialog.StartPosition = FormStartPosition.Manual;
-        dialog.Location = new Point(-32000, -32000);
-        dialog.Size = new Size(dialog.LogicalWidth, dialog.TotalLogicalHeight());
-        dialog.Show();
-        dialog.PerformLayout();
-        Application.DoEvents();
+        using Form owner = DialogStage.Show(dialog);
         if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
         {
             MediaVerifier.Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "dialog-a.png"));
         }
 
-        Assert.True(dialog.Height >= 380, $"{dialog.Height}");
+        Assert.True(dialog.TotalLogicalHeight() >= 380, $"{dialog.TotalLogicalHeight()}");
         dialog.Close();
     }
 }
@@ -118,12 +113,7 @@ public sealed class ScheduleEditorTests
     {
         MediaVerifier.Core.Scheduling.PlanDefinition weekly = MediaVerifier.Core.Scheduling.PlanDefinition.Templates[1].Definition;
         using ScheduleEditorDialog dialog = ScheduleEditorDialog.Create("Weekly check", weekly, [new MediaVerifier.Core.Storage.RootRecord { Id = 1, Path = @"D:\Music", Label = "Music" }], new DateOnly(2026, 11, 1));
-        dialog.StartPosition = FormStartPosition.Manual;
-        dialog.Location = new Point(-32000, -32000);
-        dialog.Size = new Size(dialog.LogicalWidth, dialog.TotalLogicalHeight());
-        dialog.Show();
-        dialog.PerformLayout();
-        Application.DoEvents();
+        using Form owner = DialogStage.Show(dialog);
         if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
         {
             MediaVerifier.Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "schedule-edit.png"));

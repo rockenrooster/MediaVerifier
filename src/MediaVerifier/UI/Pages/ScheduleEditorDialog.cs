@@ -81,7 +81,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _depth.SelectedIndexChanged += (_, _) => Changed();
         _repeat.SelectedIndexChanged += (_, _) =>
         {
-            PerformLayout();
+            Relayout();
             Changed();
         };
         _number.ValueChanged += (_, _) => Changed();
@@ -112,14 +112,8 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
     protected override Control? InitialFocus() => _name;
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
-        if (_days is null)
-        {
-            return;
-        }
-
         int x = S(120);
         int width = Math.Max(0, Body.Width - x);
         _name.Bounds = new Rectangle(x, S(5), width, S(32));

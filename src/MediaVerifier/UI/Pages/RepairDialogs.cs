@@ -79,14 +79,8 @@ internal sealed class RepairDialog : KitDialog
 
     protected override Control? InitialFocus() => _action;
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
-        if (_preview is null)
-        {
-            return;
-        }
-
         int y = FactsTop() + S(116);
         if (_skipped is not null)
         {
@@ -164,9 +158,5 @@ internal sealed class AcceptDialog : KitDialog
 
     protected override Control? InitialFocus() => _check;
 
-    protected override void OnLayout(LayoutEventArgs levent)
-    {
-        base.OnLayout(levent);
-        _check?.SetBounds(0, S(58), Body.Width, S(20));
-    }
+    protected override void LayoutBody() => _check.SetBounds(0, S(58), Body.Width, S(20));
 }

@@ -67,18 +67,13 @@ public sealed class SettingsPageTests
             ("Videos", ["mp4"], ["mp4"]),
             ("Music", ["flac"], ["flac"]),
         ]);
-        dialog.StartPosition = FormStartPosition.Manual;
-        dialog.Location = new Point(-32000, -32000);
-        dialog.Size = new Size(dialog.LogicalWidth, dialog.TotalLogicalHeight());
-        dialog.Show();
-        dialog.PerformLayout();
-        Application.DoEvents();
+        using Form owner = DialogStage.Show(dialog);
         if (Environment.GetEnvironmentVariable("MEDIAVERIFIER_SAVE_RENDERS") is string folder)
         {
             Diagnostics.ScreenRenderer.Save(dialog, Path.Combine(folder, "file-types.png"));
         }
 
-        Assert.True(dialog.Height >= 360, $"{dialog.Height}");
+        Assert.True(dialog.TotalLogicalHeight() >= 360, $"{dialog.TotalLogicalHeight()}");
         dialog.Close();
     }
 

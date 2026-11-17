@@ -50,14 +50,8 @@ internal sealed class LargeScanDialog : KitDialog
 
     protected override Control? InitialFocus() => _depths.FirstOrDefault(d => d.Checked) ?? base.InitialFocus();
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void LayoutBody()
     {
-        base.OnLayout(levent);
-        if (_depths is null)
-        {
-            return;
-        }
-
         for (int i = 0; i < _depths.Length; i++)
         {
             _depths[i].Bounds = new Rectangle(0, S(27 + (i * 64)), Body.Width, S(56));

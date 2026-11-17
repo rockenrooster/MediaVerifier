@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Kit;
@@ -17,29 +16,37 @@ internal enum DialogWidth
 /// window. Padding 24; title in Subtitle centred 34 px below the top; body from 60 px; buttons at the
 /// bottom right, 24 px from the edges, 8 px apart, primary on the right. Esc cancels, Enter triggers the
 /// focused button, Tab stays inside, and focus returns to the invoker on close.
+/// <para>
+/// Built like Disk Monitor 2.0's dialog: one borderless window over the owner's client area that paints a
+/// picture of the owner, the scrim, the shadow and the dialog itself, so no separate scrim or shadow window
+/// can end up in front of it. Nothing is laid out until the dialog is placed over its owner, so a subclass
+/// never meets its own half-built fields; subclasses place the body's children in <see cref="LayoutBody"/>.
+/// </para>
 /// </summary>
 internal class KitDialog : Form
 {
-    private const int DwmWindowCornerPreference = 33;
-    private const int DwmBorderColor = 34;
-    private const int DwmRound = 2;
     private readonly List<KitButton> _buttons = [];
     private readonly Panel _body;
-    private IconButton? _close;
+    private readonly IconButton? _close;
     private int _bodyHeight = 40;
+    private Bitmap? _backdrop;
+    private Point _backdropAt;
+    private Rectangle _surface;
+    private bool _placed;
 
     protected KitDialog(string title, DialogWidth width, bool closeButton = false)
     {
-        // Setting the form's properties lays it out before the body exists; a subclass's OnLayout would then run
-        // against a null body (the Add folder dialog threw this way and never opened). Lay out once it exists.
-        SuspendLayout();
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         AutoScaleMode = AutoScaleMode.None;
         KeyPreview = true;
+        DoubleBuffered = true;
+        AccessibleRole = AccessibleRole.Dialog;
         Text = title;
         LogicalWidth = (int)width;
+
+        // The body and the buttons clear their background to the form's colour: the dialog surface.
         BackColor = ThemeService.Tokens.Raised;
         _body = new BodyPanel { BackColor = ThemeService.Tokens.Raised, TabIndex = 0 };
         Controls.Add(_body);
@@ -51,12 +58,11 @@ internal class KitDialog : Form
         }
 
         ThemeService.Changed += OnThemeChanged;
-        ResumeLayout(false);
     }
 
     public int LogicalWidth { get; }
 
-    /// <summary>The body panel: children are placed by the subclass in logical pixels times DPI.</summary>
+    /// <summary>The body panel: the subclass adds its children and places them in <see cref="LayoutBody"/>.</summary>
     protected Panel Body => _body;
 
     /// <summary>Tooltip of the optional close button (Add folder has one).</summary>
@@ -71,56 +77,44 @@ internal class KitDialog : Form
         }
     }
 
-    /// <summary>Height of the body area in logical pixels.</summary>
+    /// <summary>Height of the body area in logical pixels; an open dialog re-centres when it changes.</summary>
     protected int BodyHeight
     {
         get => _bodyHeight;
         set
         {
             _bodyHeight = value;
-            PerformLayout();
+            Relayout();
         }
     }
 
     protected int S(int logical) => Dpi.Scale(logical, DeviceDpi);
 
-    /// <summary>Adds a bottom-right button; add from left to right, the primary last.</summary>
+    /// <summary>
+    /// Adds a bottom-right button; add from left to right, the primary last. A button with
+    /// <see cref="DialogResult.None"/> leaves the dialog open: its own Click handler does the work and then
+    /// calls <see cref="Finish"/>.
+    /// </summary>
     protected KitButton AddButton(string text, ButtonKind kind, DialogResult result)
     {
         KitButton button = new() { Text = text, Kind = kind, TabIndex = 100 + _buttons.Count };
-        button.Click += (_, _) => Finish(result);
+        if (result != DialogResult.None)
+        {
+            button.Click += (_, _) => Finish(result);
+        }
+
         _buttons.Add(button);
         Controls.Add(button);
-        PerformLayout();
         return button;
     }
 
-    /// <summary>Shows the dialog modally over <paramref name="owner"/> with the scrim and the shadow.</summary>
+    /// <summary>Shows the dialog modally over <paramref name="owner"/>.</summary>
     public DialogResult ShowOver(Form owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
         Control? invoker = owner.ActiveControl;
-        Rectangle client = owner.RectangleToScreen(owner.ClientRectangle);
-        using ScrimWindow scrim = new(client);
-        using ShadowWindow shadow = new();
-        Size size = new(Dpi.Scale(LogicalWidth, owner.DeviceDpi), Dpi.Scale(TotalLogicalHeight(), owner.DeviceDpi));
-        Location = new Point(client.X + ((client.Width - size.Width) / 2), client.Y + ((client.Height - size.Height) / 2));
-        Size = size;
-        scrim.Show(owner);
-        shadow.PaintDpi = owner.DeviceDpi;
-        shadow.Owner = owner;
-        shadow.ShowFor(new Rectangle(Location, Size));
-        DialogResult result;
-        try
-        {
-            result = ShowDialog(owner);
-        }
-        finally
-        {
-            shadow.Hide();
-            scrim.Hide();
-        }
-
+        PlaceOver(owner);
+        DialogResult result = ShowDialog(owner);
         if (invoker is { IsDisposed: false, CanFocus: true })
         {
             invoker.Focus();
@@ -129,73 +123,73 @@ internal class KitDialog : Form
         return result;
     }
 
-    /// <summary>Paints the dialog frame and title (the harness renders dialogs through this too).</summary>
-    public static void DrawFrame(Graphics g, Rectangle bounds, string title, int dpi)
+    /// <summary>
+    /// Covers the owner's client area (and the dialog, when the window is smaller than the dialog), takes the
+    /// owner's picture for the backdrop and lays the dialog out. <see cref="ShowOver"/> does this before it
+    /// shows the dialog; render tests call it and then Show.
+    /// </summary>
+    internal void PlaceOver(Form owner)
     {
-        ThemeTokens t = ThemeService.Tokens;
-        float radius = Dpi.ScaleF(8, dpi);
-        KitPaint.FillRoundedRect(g, bounds, radius, t.Raised);
-        KitPaint.StrokeRoundedRect(g, bounds, radius, t.Stroke, Dpi.ScaleF(1, dpi));
-        KitPaint.DrawText(g, title, TypeRamp.For(dpi).Subtitle, t.Text, bounds.X + Dpi.Scale(24, dpi), bounds.Y + Dpi.Scale(34, dpi), bounds.Width - Dpi.Scale(64, dpi));
+        if (owner.WindowState == FormWindowState.Minimized)
+        {
+            owner.WindowState = FormWindowState.Normal;
+        }
+
+        Rectangle client = owner.RectangleToScreen(owner.ClientRectangle);
+        Size need = Dpi.Scale(new Size(LogicalWidth, TotalLogicalHeight()), owner.DeviceDpi);
+        Rectangle area = client;
+        if (need.Width > client.Width || need.Height > client.Height)
+        {
+            Point centre = new(client.X + (client.Width / 2), client.Y + (client.Height / 2));
+            area = Rectangle.Union(client, new Rectangle(centre.X - (need.Width / 2), centre.Y - (need.Height / 2), need.Width, need.Height));
+        }
+
+        Bounds = area;
+        if (!IsHandleCreated)
+        {
+            // From here on DeviceDpi is that of the monitor the dialog is on.
+            CreateHandle();
+        }
+
+        _backdrop?.Dispose();
+        _backdrop = Snapshot(owner);
+        _backdropAt = new Point(client.X - area.X, client.Y - area.Y);
+        _placed = true;
+        LayoutDialog();
     }
 
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        int round = DwmRound;
-        _ = DwmSetWindowAttribute(Handle, DwmWindowCornerPreference, ref round, sizeof(int));
-        ApplyBorderColour();
-    }
+    /// <summary>Paints the dialog frame and title (the reference sheets paint dialogs through this too).</summary>
+    public static void DrawFrame(Graphics g, Rectangle bounds, string title, int dpi) => DrawFrame(g, bounds, title, dpi, 64);
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        Control? first = InitialFocus();
-        first?.Focus();
+        InitialFocus()?.Focus();
     }
 
     /// <summary>The control focused when the dialog opens: in destructive confirmations the safe button.</summary>
     protected virtual Control? InitialFocus() => _buttons.Count > 0 ? _buttons[^1] : null;
 
-    protected override void OnPaint(PaintEventArgs e)
+    /// <summary>Places the body's children (logical pixels times DPI). Runs once the dialog is placed, never before.</summary>
+    protected virtual void LayoutBody()
     {
-        ThemeTokens t = ThemeService.Tokens;
-        e.Graphics.Clear(t.Raised);
-        KitPaint.DrawText(e.Graphics, Text, TypeRamp.For(DeviceDpi).Subtitle, t.Text, S(24), S(34), Width - S(_close is null ? 48 : 72));
-        if (Environment.OSVersion.Version.Build < 22000)
+    }
+
+    /// <summary>Lays the dialog out again after its content changed; does nothing before it is placed.</summary>
+    protected void Relayout()
+    {
+        if (_placed)
         {
-            // Windows 10 draws no DWM border on a borderless window.
-            KitPaint.StrokeRoundedRect(e.Graphics, ClientRectangle, 0, t.Stroke, 1);
+            LayoutDialog();
         }
     }
 
-    protected override void OnLayout(LayoutEventArgs levent)
+    protected override void OnPaintBackground(PaintEventArgs e)
     {
-        base.OnLayout(levent);
-
-        // The form's own constructor lays out once (AutoScaleMode) before the body exists.
-        if (_body is null)
-        {
-            return;
-        }
-
-        _body.Bounds = new Rectangle(S(24), S(60), Math.Max(0, Width - S(48)), S(_bodyHeight));
-        int x = Width - S(24);
-        int y = Height - S(24) - S(32);
-        for (int i = _buttons.Count - 1; i >= 0; i--)
-        {
-            KitButton button = _buttons[i];
-            int width = S(button.PreferredLogicalWidth);
-            x -= width;
-            button.Bounds = new Rectangle(x, y, width, S(32));
-            x -= S(8);
-        }
-
-        if (_close is not null)
-        {
-            _close.Bounds = new Rectangle(Width - S(16) - S(28), S(20), S(28), S(28));
-        }
+        // OnPaint covers every pixel.
     }
+
+    protected override void OnPaint(PaintEventArgs e) => PaintWindow(e.Graphics);
 
     protected override bool ProcessDialogKey(Keys keyData)
     {
@@ -227,6 +221,8 @@ internal class KitDialog : Form
         if (disposing)
         {
             ThemeService.Changed -= OnThemeChanged;
+            _backdrop?.Dispose();
+            _backdrop = null;
         }
 
         base.Dispose(disposing);
@@ -234,29 +230,101 @@ internal class KitDialog : Form
 
     internal int TotalLogicalHeight() => 60 + _bodyHeight + 24 + 32 + 24;
 
-    private void OnThemeChanged(object? sender, EventArgs e)
+    private static void DrawFrame(Graphics g, Rectangle bounds, string title, int dpi, int titleInset)
     {
-        BackColor = ThemeService.Tokens.Raised;
-        _body.BackColor = ThemeService.Tokens.Raised;
-        ApplyBorderColour();
-        Invalidate(true);
+        ThemeTokens t = ThemeService.Tokens;
+        float radius = Dpi.ScaleF(8, dpi);
+        KitPaint.FillRoundedRect(g, bounds, radius, t.Raised);
+        KitPaint.StrokeRoundedRect(g, bounds, radius, t.Stroke, Dpi.ScaleF(1, dpi));
+        KitPaint.DrawText(g, title, TypeRamp.For(dpi).Subtitle, t.Text, bounds.X + Dpi.Scale(24, dpi), bounds.Y + Dpi.Scale(34, dpi), bounds.Width - Dpi.Scale(titleInset, dpi));
     }
 
-    private void ApplyBorderColour()
+    /// <summary>
+    /// The client area as it looks now, for the backdrop: a kit dialog paints itself first (a dialog over a
+    /// dialog), then every child is captured where it sits, the bottom of the z-order first.
+    /// </summary>
+    private static Bitmap Snapshot(Form owner)
     {
-        if (!IsHandleCreated)
+        Bitmap bitmap = new(Math.Max(1, owner.ClientSize.Width), Math.Max(1, owner.ClientSize.Height));
+        using Graphics g = Graphics.FromImage(bitmap);
+        if (owner is KitDialog dialog)
+        {
+            dialog.PaintWindow(g);
+        }
+        else
+        {
+            g.Clear(ThemeService.Tokens.Bg);
+        }
+
+        for (int i = owner.Controls.Count - 1; i >= 0; i--)
+        {
+            Control child = owner.Controls[i];
+            if (!child.Visible || child.Width <= 0 || child.Height <= 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                using Bitmap part = new(child.Width, child.Height);
+                child.DrawToBitmap(part, new Rectangle(Point.Empty, child.Size));
+                g.DrawImageUnscaled(part, child.Location);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ExternalException)
+            {
+                // A control that cannot be captured leaves the plain background, which is fine behind the scrim.
+            }
+        }
+
+        return bitmap;
+    }
+
+    private void LayoutDialog()
+    {
+        Size size = new(S(LogicalWidth), S(TotalLogicalHeight()));
+        _surface = new Rectangle((ClientSize.Width - size.Width) / 2, (ClientSize.Height - size.Height) / 2, size.Width, size.Height);
+        _body.Bounds = new Rectangle(_surface.X + S(24), _surface.Y + S(60), _surface.Width - S(48), S(_bodyHeight));
+        int x = _surface.Right - S(24);
+        int y = _surface.Bottom - S(24) - S(32);
+        for (int i = _buttons.Count - 1; i >= 0; i--)
+        {
+            KitButton button = _buttons[i];
+            int width = S(button.PreferredLogicalWidth);
+            x -= width;
+            button.Bounds = new Rectangle(x, y, width, S(32));
+            x -= S(8);
+        }
+
+        _close?.SetBounds(_surface.Right - S(16) - S(28), _surface.Y + S(20), S(28), S(28));
+        LayoutBody();
+        Invalidate();
+    }
+
+    private void PaintWindow(Graphics g)
+    {
+        ThemeTokens t = ThemeService.Tokens;
+        g.Clear(t.Bg);
+        if (_backdrop is not null)
+        {
+            g.DrawImageUnscaled(_backdrop, _backdropAt);
+        }
+
+        g.FillRectangle(ThemeResources.Brush(t.Scrim), ClientRectangle);
+        if (_surface.IsEmpty)
         {
             return;
         }
 
-        Color stroke = ThemeService.Tokens.Stroke;
-        int colorRef = stroke.R | (stroke.G << 8) | (stroke.B << 16);
-        _ = DwmSetWindowAttribute(Handle, DwmBorderColor, ref colorRef, sizeof(int));
+        ShadowCache.Draw(g, _surface, 8, DeviceDpi, t.Shadow);
+        DrawFrame(g, _surface, Text, DeviceDpi, _close is null ? 48 : 72);
     }
 
-    [DllImport("dwmapi.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        BackColor = ThemeService.Tokens.Raised;
+        _body.BackColor = ThemeService.Tokens.Raised;
+        Invalidate(true);
+    }
 
     private sealed class BodyPanel : Panel
     {
@@ -267,9 +335,13 @@ internal class KitDialog : Form
     }
 }
 
-/// <summary>A simple message or confirmation: title, one or two paragraphs, and buttons.</summary>
+/// <summary>
+/// A simple message or confirmation: title, the message wrapped (room for three lines at least; a longer one,
+/// such as a list of files, makes the dialog taller, up to 400 px), and buttons.
+/// </summary>
 internal sealed class MessageDialog : KitDialog
 {
+    private const TextFormatFlags TextFlags = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
     private readonly string _message;
     private KitButton? _safe;
 
@@ -277,13 +349,10 @@ internal sealed class MessageDialog : KitDialog
         : base(title, width)
     {
         _message = message;
-        BodyHeight = 60;
-        Body.Paint += (_, e) =>
-        {
-            ThemeTokens t = ThemeService.Tokens;
-            Rectangle bounds = new(0, 0, Body.Width, Body.Height);
-            TextRenderer.DrawText(e.Graphics, _message, TypeRamp.For(DeviceDpi).Body, bounds, t.Text, TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
-        };
+        Body.Paint += (_, e) => TextRenderer.DrawText(e.Graphics, _message, TypeRamp.For(DeviceDpi).Body, new Rectangle(Point.Empty, Body.Size), ThemeService.Tokens.Text, TextFlags);
+        int dpi = DeviceDpi;
+        Size text = TextRenderer.MeasureText(message, TypeRamp.For(dpi).Body, new Size(Dpi.Scale((int)width - 48, dpi), int.MaxValue), TextFlags);
+        BodyHeight = Math.Clamp((int)Math.Ceiling(text.Height * 96.0 / dpi), 60, 400);
     }
 
     /// <summary>Asks for a confirmation; a destructive action keeps the initial focus on the safe button.</summary>
@@ -309,37 +378,4 @@ internal sealed class MessageDialog : KitDialog
     }
 
     protected override Control? InitialFocus() => _safe ?? base.InitialFocus();
-}
-
-/// <summary>The Scrim rectangle behind a modal dialog, covering the owner window's client area.</summary>
-internal sealed class ScrimWindow : Form
-{
-    public ScrimWindow(Rectangle screenBounds)
-    {
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.Manual;
-        Bounds = screenBounds;
-        Color scrim = ThemeService.Tokens.Scrim;
-        BackColor = Color.FromArgb(scrim.R, scrim.G, scrim.B);
-        Opacity = scrim.A / 255.0;
-    }
-
-    protected override bool ShowWithoutActivation => true;
-}
-
-/// <summary>A layered window that shows only the drop shadow of a dialog beneath it.</summary>
-internal sealed class ShadowWindow : LayeredPopup
-{
-    private Size _content;
-
-    protected override Size ContentSize => _content;
-
-    public void ShowFor(Rectangle dialogScreenBounds)
-    {
-        _content = dialogScreenBounds.Size;
-        ShowAt(dialogScreenBounds.Location, Owner);
-    }
-
-    protected override void PaintContent(Graphics g, Rectangle bounds, int dpi) => g.Clear(ThemeService.Tokens.Raised);
 }
