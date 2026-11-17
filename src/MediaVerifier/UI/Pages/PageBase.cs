@@ -23,13 +23,56 @@ internal abstract class PageBase : KitControl
 {
     private readonly List<System.Windows.Forms.Timer> _timers = [];
 
-    protected PageBase(AppState state)
+    protected PageBase(UiServices services)
     {
-        State = state;
+        Services = services;
+        State = services.State;
         TabStop = false;
     }
 
+    protected UiServices Services { get; }
+
     protected AppState State { get; }
+
+    /// <summary>The current load, so the render harness can wait for a page's data.</summary>
+    public Task Loading { get; private set; } = Task.CompletedTask;
+
+    /// <summary>Reloads the page's data off the UI thread, then applies it on the UI thread.</summary>
+    public void Reload() => Loading = ReloadAsync();
+
+    /// <summary>A request from another page (a filter to apply, a dialog to open).</summary>
+    public virtual void HandleRequest(object request)
+    {
+    }
+
+    /// <summary>Loads the snapshot (runs on a pool thread); return null to keep what is shown.</summary>
+    protected virtual object? LoadData() => null;
+
+    /// <summary>Applies a loaded snapshot on the UI thread.</summary>
+    protected virtual void ApplyData(object data)
+    {
+    }
+
+    private async Task ReloadAsync()
+    {
+        object? data;
+        try
+        {
+            data = await Task.Run(LoadData).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            State.Log.Warning($"Could not load {Id}", ex);
+            return;
+        }
+
+        if (data is not null && !IsDisposed)
+        {
+            ApplyData(data);
+            PerformLayout();
+            Invalidate(true);
+        }
+    }
 
     public abstract PageId Id { get; }
 
@@ -155,8 +198,8 @@ internal sealed class PlaceholderPage : PageBase
 {
     private readonly PageId _id;
 
-    public PlaceholderPage(AppState state, PageId id)
-        : base(state)
+    public PlaceholderPage(UiServices services, PageId id)
+        : base(services)
     {
         _id = id;
     }

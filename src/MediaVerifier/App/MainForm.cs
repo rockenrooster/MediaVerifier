@@ -28,7 +28,9 @@ internal sealed class MainForm : Form
     private readonly ScanStatusStrip _statusStrip = new();
     private readonly ShellLayout _shell;
     private readonly Dictionary<PageId, PageBase> _pages = [];
-    private readonly Func<AppState, PageId, PageBase> _pageFactory;
+    private readonly Func<UiServices, PageId, PageBase> _pageFactory;
+    private readonly UiServices _services;
+    private ShellBinder? _binder;
     private PageBase? _current;
     private TrayIcon? _tray;
     private bool _startHidden;
@@ -36,8 +38,18 @@ internal sealed class MainForm : Form
     private bool _firstPaintLogged;
     private FormWindowState _restoreState = FormWindowState.Normal;
 
-    public MainForm(AppState state, LaunchOptions? options = null, IpcServer? ipc = null, Func<AppState, PageId, PageBase>? pageFactory = null)
+    public MainForm(UiServices services, LaunchOptions? options = null, IpcServer? ipc = null, Func<UiServices, PageId, PageBase>? pageFactory = null)
     {
+        _services = services;
+        services.Navigate = (page, request) =>
+        {
+            Navigate(page);
+            if (request is not null)
+            {
+                _current?.HandleRequest(request);
+            }
+        };
+        AppState state = services.State;
         _state = state;
         _options = options ?? new LaunchOptions();
         _ipc = ipc;
@@ -63,9 +75,20 @@ internal sealed class MainForm : Form
 
         ConfigureTray();
         Navigate(PageInfo.TryParse(_state.Settings.WindowPlacement.LastPage, out PageId last) ? last : PageId.Dashboard);
+        _binder = new ShellBinder(this, services);
+    }
+
+    /// <summary>Reloads the shell's badges and the current page (after scans and repairs).</summary>
+    internal void RefreshAll()
+    {
+        _binder?.Refresh();
+        _current?.Reload();
     }
 
     public PageId CurrentPage => _current?.Id ?? PageId.Dashboard;
+
+    /// <summary>The current page's data load (the render harness waits for it).</summary>
+    internal Task CurrentPageLoading => _current?.Loading ?? Task.CompletedTask;
 
     internal NavigationRail Rail => _rail;
 
@@ -223,6 +246,7 @@ internal sealed class MainForm : Form
             }
 
             _tray?.Dispose();
+            _binder?.Dispose();
             foreach (PageBase page in _pages.Values)
             {
                 page.Dispose();
@@ -238,7 +262,7 @@ internal sealed class MainForm : Form
     {
         if (!_pages.TryGetValue(id, out PageBase? page))
         {
-            page = _pageFactory(_state, id);
+            page = _pageFactory(_services, id);
             page.Visible = false;
             _pages[id] = page;
         }
@@ -432,7 +456,11 @@ internal static class WindowPlacementRules
 /// <summary>Creates the page object for a page id. Real pages replace the placeholders phase by phase.</summary>
 internal static class PageFactory
 {
-    public static PageBase Create(AppState state, PageId id) => new PlaceholderPage(state, id);
+    public static PageBase Create(UiServices services, PageId id) => id switch
+    {
+        PageId.Dashboard => new DashboardPage(services),
+        _ => new PlaceholderPage(services, id),
+    };
 }
 
 /// <summary>The app icon from the executable's resources (task F-09).</summary>

@@ -50,7 +50,7 @@ internal class KitControl : Control
     protected TypeRamp Type => TypeRamp.For(DeviceDpi);
 
     /// <summary>True when the control has focus that arrived from the keyboard (Tab, arrows, access keys).</summary>
-    protected bool KeyboardFocused => Focused && (_keyboardFocus || ShowFocusCues);
+    protected bool KeyboardFocused => Focused && _keyboardFocus && ShowFocusCues;
 
     /// <summary>Hover and press are tracked only for controls that react to them.</summary>
     protected virtual bool Interactive => false;

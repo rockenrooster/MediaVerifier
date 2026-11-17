@@ -33,6 +33,10 @@ internal static class ScreenRenderer
         {
             Directory.CreateDirectory(directory);
             ApplicationConfiguration.Initialize();
+
+            // The references were drawn with British formats (03:12, 8 Nov).
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
+            System.Globalization.CultureInfo.CurrentUICulture = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
             List<(string Group, string Label, string File, string? Reference)> renders = [];
             foreach ((string theme, ThemeTokens tokens) in Themes.Append(("contrast", ThemeTokens.HighContrast())))
             {
@@ -47,16 +51,18 @@ internal static class ScreenRenderer
             }
 
             using (AppState state = AppState.Load(AppPaths.UnderBase(root)))
+            using (UiServices services = DemoUiData.CreateServices(state, root))
             {
                 state.Settings.WindowPlacement = new Core.Settings.WindowPlacement();
                 foreach ((string theme, ThemeTokens tokens) in Themes.Append(("contrast", ThemeTokens.HighContrast())))
                 {
                     ThemeService.Set(tokens);
-                    using MainForm form = new(state);
+                    using MainForm form = new(services);
                     PrepareOffscreen(form, MainForm.DefaultClientSize);
                     foreach (PageId page in PageInfo.All)
                     {
                         form.Navigate(page);
+                        WaitFor(form.CurrentPageLoading);
                         form.Shell.PerformLayout();
                         Application.DoEvents();
                         string name = $"{page.ToString().ToLowerInvariant()}-{theme}.png";
@@ -89,6 +95,19 @@ internal static class ScreenRenderer
             {
             }
         }
+    }
+
+    /// <summary>Pumps messages until a page's data has loaded (at most 5 s).</summary>
+    internal static void WaitFor(Task task)
+    {
+        Stopwatch watch = Stopwatch.StartNew();
+        while (!task.IsCompleted && watch.ElapsedMilliseconds < 5000)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        Application.DoEvents();
     }
 
     /// <summary>

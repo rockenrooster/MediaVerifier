@@ -68,7 +68,9 @@ internal static class Program
 
         using IpcServer ipc = new(pipeName);
         ipc.Start();
-        using MainForm form = new(state, options, ipc);
+        Core.Storage.Database.UiThreadId = Environment.CurrentManagedThreadId;
+        using UiServices services = UiServices.CreateLive(state);
+        using MainForm form = new(services, options, ipc);
         Application.Run(form);
         ThemeService.StopListening();
         state.Log.Info("Exiting");
