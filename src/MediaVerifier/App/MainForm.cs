@@ -521,6 +521,7 @@ internal static class PageFactory
         PageId.Library => new LibraryPage(services),
         PageId.Scans => new ScansPage(services),
         PageId.Settings => new SettingsPage(services),
+        PageId.Tools => new ToolsPage(services),
         _ => new PlaceholderPage(services, id),
     };
 }

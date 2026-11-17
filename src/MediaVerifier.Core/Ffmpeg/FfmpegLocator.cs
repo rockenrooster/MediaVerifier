@@ -6,6 +6,9 @@ namespace MediaVerifier.Core.Ffmpeg;
 public static class FfmpegVersions
 {
     public const string Bundled = "9.0.2";
+
+    /// <summary>The bundle release that offers the exact FFmpeg source and build script (subplan 17, Licence compliance).</summary>
+    public const string SourceUrl = "https://github.com/rockenrooster/MediaVerifier/releases/tag/ffmpeg-bundle-9.0.2-mv1";
 }
 
 /// <summary>Where ffmpeg.exe and ffprobe.exe live, and whether that is the developer override.</summary>
