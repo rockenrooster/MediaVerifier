@@ -129,8 +129,9 @@ public sealed class TreeEnumerator
                 }
 
                 MediaKind kind = _classifier.Classify(entry.Name);
-                if (kind == MediaKind.Unknown)
+                if (kind == MediaKind.Unknown || entry.Name.Contains(Remediation.OperationRunner.TempMarker, StringComparison.OrdinalIgnoreCase))
                 {
+                    // A repair's temporary output is not a library file (it becomes the file or goes away).
                     continue;
                 }
 

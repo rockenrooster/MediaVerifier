@@ -98,6 +98,20 @@ public sealed class EngineUnitTests
         Assert.Null(Glob.Compile([]));
     }
 
+    /// <summary>A repair's temporary output (name.mvtmp-id.ext) is never indexed as a library file.</summary>
+    [Fact]
+    public void RepairTemporaryOutputsAreNotListed()
+    {
+        using TempDirectory temp = new("mvtmp");
+        Write(temp.Path, "song.mp3");
+        Write(temp.Path, "song.mvtmp-42.mp3");
+        TreeEnumerator enumerator = new(WindowsFileSystem.Instance, MediaClassifier.Default, new EnumerationRules { InProgressAge = TimeSpan.Zero }, Clock);
+
+        string[] names = [.. enumerator.Enumerate(temp.Path).SelectMany(d => d.Files).Select(f => f.Name)];
+
+        Assert.Equal(["song.mp3"], names);
+    }
+
     [Fact]
     public void SkipRulesNeedNoIo()
     {

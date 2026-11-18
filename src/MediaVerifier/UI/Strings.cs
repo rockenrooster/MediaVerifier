@@ -103,6 +103,7 @@ internal static class Strings
         public const string AddFolderFirst = "Add a folder first";
         public const string AlreadyRunning = "A scan is already running";
         public const string ScheduledRunning = "A scheduled scan is running in the background";
+        public const string RepairRunning = "A repair is running";
         public const string BackgroundChecked = "{0} files checked so far";
         public const string EngineMissing = "The media engine is missing or damaged";
         public const string Scanning = "Scanning {0} of {1} files";

@@ -467,7 +467,15 @@ internal sealed class ScansPage : PageBase
             Invalidate();
         }
 
-        public void Spin() => Invalidate(new Rectangle(S(12), S(12), S(28), S(30)));
+        public void Spin()
+        {
+            Invalidate(new Rectangle(S(12), S(12), S(28), S(30)));
+            if (_rows > 0)
+            {
+                // The files' bars run with the ring (per-file progress is not measured).
+                Invalidate(new Rectangle(Width - S(180), S(205), S(170), S(28 * _rows)));
+            }
+        }
 
         protected override void OnLayout(LayoutEventArgs levent)
         {
@@ -548,7 +556,15 @@ internal sealed class ScansPage : PageBase
                 IconRenderer.Draw(g, icon, SF(16), y - SF(8), 16, DeviceDpi, t.Text2);
                 KitPaint.DrawText(g, _slotNames[i] ?? string.Empty, type.Body, t.Text, S(44), y, (Width / 2) - S(60));
                 KitPaint.DrawText(g, item.Stage, type.Body, t.Text2, S(500), y, Width - S(700));
-                DataPaint.ProgressBar(g, new RectangleF(Width - SF(176), y - SF(2), SF(160), SF(4)), item.Fraction);
+                RectangleF bar = new(Width - SF(176), y - SF(2), SF(160), SF(4));
+                if (s.Phase is EnginePhase.Paused or EnginePhase.Pausing)
+                {
+                    DataPaint.ProgressBar(g, bar, 0);
+                }
+                else
+                {
+                    DataPaint.IndeterminateBar(g, bar, (Environment.TickCount64 - _start) % 1500 / 1500.0);
+                }
             }
         }
 

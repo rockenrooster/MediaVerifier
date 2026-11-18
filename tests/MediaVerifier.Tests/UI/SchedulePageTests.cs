@@ -382,7 +382,12 @@ public sealed class SchedulePageTests
     private static T Db<T>(Func<T> read) => Task.Run(read).GetAwaiter().GetResult();
 
     /// <summary>A Space key sent to the control itself, as the keyboard would (nothing is focused or activated).</summary>
-    private static void PressSpace(Control control) => _ = SendMessage(control.Handle, 0x0100, (IntPtr)Keys.Space, (IntPtr)1);
+    /// <summary>Space pressed and released: kit controls act on the release, as Windows buttons do.</summary>
+    private static void PressSpace(Control control)
+    {
+        _ = SendMessage(control.Handle, 0x0100, (IntPtr)Keys.Space, (IntPtr)1);
+        _ = SendMessage(control.Handle, 0x0101, (IntPtr)Keys.Space, unchecked((IntPtr)0xC0000001));
+    }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);

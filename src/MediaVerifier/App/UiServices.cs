@@ -379,6 +379,12 @@ internal sealed class UiServices : IDisposable
             return status.Trigger == RunTrigger.Scheduled ? UI.Strings.Shell.ScheduledRunning : UI.Strings.Shell.AlreadyRunning;
         }
 
+        if (UI.Remediator.IsRunning)
+        {
+            // A repair pauses a scan and writes temporary files next to the originals: no new scan meanwhile.
+            return UI.Strings.Shell.RepairRunning;
+        }
+
         return BackgroundRunActive() ? UI.Strings.Shell.ScheduledRunning : null;
     }
 

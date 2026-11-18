@@ -118,7 +118,10 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
     /// <summary>The temporary output name: <c>&lt;folder&gt;\&lt;name&gt;.mvtmp-&lt;id&gt;&lt;ext&gt;</c> (same volume; FFmpeg picks the muxer from the extension).</summary>
     public static string TempPathFor(string source, long operationId) =>
-        Path.Combine(Path.GetDirectoryName(source) ?? string.Empty, Path.GetFileNameWithoutExtension(source) + ".mvtmp-" + operationId.ToString(CultureInfo.InvariantCulture) + Path.GetExtension(source));
+        Path.Combine(Path.GetDirectoryName(source) ?? string.Empty, Path.GetFileNameWithoutExtension(source) + TempMarker + operationId.ToString(CultureInfo.InvariantCulture) + Path.GetExtension(source));
+
+    /// <summary>In the name of every temporary output; scans leave such files alone.</summary>
+    public const string TempMarker = ".mvtmp-";
 
     /// <summary>Where an original goes: <c>&lt;root&gt;\.mediaverifier-quarantine\&lt;operation id&gt;\&lt;relative path&gt;</c>.</summary>
     public static string QuarantinePathFor(RootRecord root, FileRecord file, long operationId)
