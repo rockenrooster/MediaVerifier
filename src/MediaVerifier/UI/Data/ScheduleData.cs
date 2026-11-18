@@ -1,15 +1,35 @@
 using System.Globalization;
+using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Scheduling;
 using MediaVerifier.Core.Storage;
+using MediaVerifier.UI.Pages;
 
 namespace MediaVerifier.UI.Data;
 
-/// <summary>One plan row of the Schedule page (subplan 09, Schedule).</summary>
-internal sealed record PlanRow(long Id, string Name, bool Enabled, string Summary, string NextRun, string LastResult, Severity ResultTier, PlanDefinition Definition);
+/// <summary>
+/// One plan row of the Schedule page (subplan 09, Schedule). <paramref name="ResultTier"/> is the pill's tier, or null
+/// for a neutral pill; <paramref name="Anchor"/> is the first day of an every-n-days rhythm (the day it was created).
+/// </summary>
+internal sealed record PlanRow(long Id, string Name, bool Enabled, string Summary, string NextRun, string LastResult, Severity? ResultTier, PlanDefinition Definition, DateOnly Anchor);
 
-/// <summary>The Schedule page: plans and the verification card.</summary>
-internal sealed record ScheduleData(IReadOnlyList<PlanRow> Plans, double VerifiedShare, long OverdueFiles, int FullPassDays);
+/// <summary>
+/// The Schedule page: plans and the verification card. The full-pass estimate is worked out on the page from
+/// <paramref name="PassBytes"/> and <paramref name="ReadRate"/> (bytes a second), so it follows the budget as it is
+/// typed; <paramref name="BaselineFiles"/> is 0 before any file has a fingerprint, when there is nothing to estimate.
+/// </summary>
+internal sealed record ScheduleData(IReadOnlyList<PlanRow> Plans, double VerifiedShare, long OverdueFiles, long BaselineFiles, long PassBytes, double ReadRate)
+{
+    /// <summary>The read rate assumed until a scan has measured one.</summary>
+    public const double AssumedReadRate = 100_000_000;
+
+    /// <summary>Days for one full verification pass at a nightly budget.</summary>
+    public int FullPassDays(int budgetMinutes)
+    {
+        double perNight = budgetMinutes * 60.0 * (ReadRate > 0 ? ReadRate : AssumedReadRate);
+        return BaselineFiles == 0 || perNight <= 0 ? 0 : Math.Max(1, (int)Math.Ceiling(PassBytes / perNight));
+    }
+}
 
 internal interface IScheduleData
 {
@@ -25,24 +45,32 @@ internal static class ScheduleText
     public static string Summary(PlanDefinition plan, IReadOnlyDictionary<long, string> rootNames)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        PlanTrigger t = plan.Trigger;
-        string time = t.TimeOfDay.ToString("HH:mm", Culture);
-        string when = t.Kind switch
-        {
-            TriggerKind.Daily => string.Format(Culture, Strings.Schedule.EveryDay, time),
-            TriggerKind.Weekly => string.Format(Culture, Strings.Schedule.EveryWeekday, string.Join(", ", t.DaysOfWeek.Select(d => Culture.DateTimeFormat.GetDayName(d))), time),
-            TriggerKind.Monthly when t.WeekOfMonth is int week => string.Format(Culture, week == 0 ? Strings.Schedule.LastWeekdayOfMonth : Strings.Schedule.NthWeekdayOfMonth, Ordinal(week), t.DaysOfWeek.Length == 1 ? Culture.DateTimeFormat.GetDayName(t.DaysOfWeek[0]) : string.Empty, time),
-            TriggerKind.Monthly when t.DayOfMonth is 0 => string.Format(Culture, Strings.Schedule.LastDayOfMonth, time),
-            TriggerKind.Monthly => string.Format(Culture, Strings.Schedule.DayOfMonth, t.DayOfMonth ?? 1, time),
-            _ => string.Format(Culture, Strings.Schedule.EveryNDays, t.EveryDays ?? 1, time),
-        };
         string scope = plan.Roots is { Length: > 0 } roots
             ? string.Join(", ", roots.Select(id => rootNames.TryGetValue(id, out string? name) ? name : string.Empty).Where(n => n.Length > 0))
             : Strings.Schedule.AllFoldersLower;
         string limit = plan.BudgetMinutes is int minutes
             ? minutes % 60 == 0 ? string.Format(Culture, Strings.Schedule.UpToHours, minutes / 60) : string.Format(Culture, Strings.Schedule.UpToMinutes, minutes)
             : Strings.Schedule.NoTimeLimit;
-        return UiFormat.Facts(when, UiFormat.DepthName(plan.Depth), scope, limit);
+        return UiFormat.Facts(When(plan.Trigger), UiFormat.DepthName(plan.Depth), scope, limit);
+    }
+
+    /// <summary>
+    /// The when phrase (subplan 09): <c>Every day at 03:00</c>, <c>Every Sunday at 03:00</c>, several weekdays as
+    /// <c>Every Mon and Thu at 03:00</c>.
+    /// </summary>
+    public static string When(PlanTrigger t)
+    {
+        ArgumentNullException.ThrowIfNull(t);
+        string time = t.TimeOfDay.ToString("HH:mm", Culture);
+        return t.Kind switch
+        {
+            TriggerKind.Daily => string.Format(Culture, Strings.Schedule.EveryDay, time),
+            TriggerKind.Weekly => string.Format(Culture, Strings.Schedule.EveryWeekday, Weekdays(t.DaysOfWeek), time),
+            TriggerKind.Monthly when t.WeekOfMonth is int week => string.Format(Culture, week == 0 ? Strings.Schedule.LastWeekdayOfMonth : Strings.Schedule.NthWeekdayOfMonth, Ordinal(week), t.DaysOfWeek.Length == 1 ? Culture.DateTimeFormat.GetDayName(t.DaysOfWeek[0]) : string.Empty, time),
+            TriggerKind.Monthly when t.DayOfMonth is 0 => string.Format(Culture, Strings.Schedule.LastDayOfMonth, time),
+            TriggerKind.Monthly => string.Format(Culture, Strings.Schedule.DayOfMonth, t.DayOfMonth ?? 1, time),
+            _ => string.Format(Culture, Strings.Schedule.EveryNDays, t.EveryDays ?? 1, time),
+        };
     }
 
     /// <summary><c>Tomorrow 03:00</c>, <c>Sun 03:00</c>, <c>12 Oct 03:00</c>; <c>Off</c> for a disabled plan.</summary>
@@ -64,14 +92,21 @@ internal static class ScheduleText
         };
     }
 
-    public static (string Text, Severity Tier) Result(RunStatus? status) => status switch
+    /// <summary>
+    /// The Last result pill: <c>Never run</c>, <c>Running</c>, or the result pill Scans shows for the same run (an
+    /// interrupted run read Failed in High colours here and Interrupted on Scans). A null tier is a neutral pill.
+    /// </summary>
+    public static (string Text, Severity? Tier) Result(RunStatus? status) => status switch
     {
-        null => (Strings.Schedule.NeverRun, Severity.None),
-        RunStatus.Completed or RunStatus.BudgetReached => (Strings.Scans.Completed, Severity.None),
-        RunStatus.Running => (Strings.Schedule.Running, Severity.Low),
-        RunStatus.Cancelled => (Strings.Scans.Stopped, Severity.Medium),
-        _ => (Strings.Schedule.Failed, Severity.High),
+        null => (Strings.Schedule.NeverRun, null),
+        RunStatus.Running => (Strings.Schedule.Running, null),
+        RunStatus s => (ScansPage.ResultText(s), ScansPage.ResultTier(s)),
     };
+
+    /// <summary>One weekday by its name; several by their short names, joined as a sentence.</summary>
+    private static string Weekdays(DayOfWeek[] days) => days.Length == 1
+        ? Culture.DateTimeFormat.GetDayName(days[0])
+        : UiFormat.JoinNames([.. days.Distinct().OrderBy(d => ((int)d + 6) % 7).Select(d => Culture.DateTimeFormat.GetAbbreviatedDayName(d))]);
 
     private static string Ordinal(int week) => week switch
     {
@@ -98,23 +133,19 @@ internal sealed partial class LiveUiData : IScheduleData
             }
 
             RunStatus? status = plan.LastRunId is long runId ? database.Runs.Get(runId)?.Status : null;
-            (string result, Severity tier) = ScheduleText.Result(status);
-            DateOnly anchor = DateOnly.FromDateTime(new DateTime(plan.CreatedUtc, DateTimeKind.Utc).ToLocalTime());
-            rows.Add(new PlanRow(plan.Id, plan.Name, plan.Enabled, ScheduleText.Summary(definition, roots), ScheduleText.NextRun(definition, plan.Enabled, now, anchor), result, tier, definition));
+            (string result, Severity? tier) = ScheduleText.Result(status);
+            DateOnly anchor = PlanReconciler.AnchorOf(plan, DateOnly.FromDateTime(now));
+            rows.Add(new PlanRow(plan.Id, plan.Name, plan.Enabled, ScheduleText.Summary(definition, roots), ScheduleText.NextRun(definition, plan.Enabled, now, anchor), result, tier, definition, anchor));
         }
 
         Core.Settings.ScanSettings scan = settings();
         HealthSnapshot health = database.Queries.Health(TimeSpan.FromDays(scan.ScrubPeriodDays), clock.UtcNow);
         double share = health.FilesWithBaseline == 0 ? 0 : (double)health.FilesVerifiedInPeriod / health.FilesWithBaseline;
         long overdue = Math.Max(0, health.FilesWithBaseline - health.FilesVerifiedInPeriod);
-        return new ScheduleData(rows, share, overdue, FullPassDays(health.FilesWithBaseline, scan.ScrubBudgetMinutes));
-    }
-
-    /// <summary>Days for one full verification pass at the nightly budget, from the stored throughput (about 100 MB/s when unknown).</summary>
-    private int FullPassDays(long files, int budgetMinutes)
-    {
         long bytes = database.Queries.KindSummaries().Sum(k => k.Bytes);
-        double perNight = budgetMinutes * 60.0 * 100_000_000;
-        return files == 0 || perNight <= 0 ? 0 : (int)Math.Ceiling(bytes / perNight);
+
+        // The read rate the engine measured (it keeps a smoothed average between scans); 100 MB/s until it has one.
+        double rate = Estimator.Deserialize(database.Meta.Get(ScanEngine.EstimatesKey)).Values.Select(a => a.BytesPerSecond).FirstOrDefault(r => r > 0);
+        return new ScheduleData(rows, share, overdue, health.FilesWithBaseline, bytes, rate);
     }
 }

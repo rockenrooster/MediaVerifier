@@ -543,7 +543,6 @@ internal static class Strings
         public const string Standard = "Standard";
         public const string Deep = "Deep";
         public const string Running = "Running";
-        public const string Failed = "Failed";
         public const string Weekly = "Weekly check";
         public const string Verification = "VERIFICATION";
         public const string VerificationLine1 = "Every file should be re-read and compared with its fingerprint regularly.";
@@ -581,14 +580,16 @@ internal static class Strings
         public const string Wake = "Wake the computer to run";
         public const string Summary = "{0}, {1} scan of {2}.";
         public const string NextRunLine = "Next run: {0}";
-        public const string SummaryNext = "Next run: {0}";
-        public const string DayN = "Day {0}";
-        public const string LastDay = "Last day";
+        public const string Day = "Day";
         public const string ErrorName = "Give the schedule a name";
         public const string ErrorDays = "Choose at least one day";
-        public const string ErrorFolders = "Choose at least one folder";
         public const string ErrorTime = "Enter a time such as 03:00 or 21:30";
         public const string ErrorWindows = "Windows would not accept this schedule: {0}";
+        public const string FullPassOneDay = "At {0} per night a full pass takes 1 day.";
+        public const string Duplicate = "Duplicate";
+        public const string DeleteEllipsis = "Delete…";
+        public const string CopyName = "{0} (copy)";
+        public const string SameTime = "{0} also runs at this time. Only one scan runs at a time, so choose another time.";
     }
 
     public static class Tools

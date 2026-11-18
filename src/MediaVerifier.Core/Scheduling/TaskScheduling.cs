@@ -41,8 +41,10 @@ public sealed class TaskSchedulerBackend : IScheduleBackend
                 folder = Folder(service, create: true);
                 name = TaskName(planId);
             }
-            catch (COMException)
+            catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
             {
+                // Subplan 13: when creating the folder is refused, the task goes to the root folder. The late binder
+                // reports a refusal (E_ACCESSDENIED) as UnauthorizedAccessException, which skipped this fallback.
                 folder = service.GetFolder("\\");
                 name = "MediaVerifier Plan " + planId.ToString(CultureInfo.InvariantCulture);
             }
@@ -169,37 +171,69 @@ public sealed class TaskSchedulerBackend : IScheduleBackend
 /// </summary>
 public static class PlanReconciler
 {
+    /// <summary>
+    /// One reconciliation at a time: each deletes every task outside its own snapshot of the plans, so two at once
+    /// (a switch turned off and on again quickly) could delete the task the other had just registered.
+    /// </summary>
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>
+    /// The first day of a plan's rhythm: the local day it was created. The task's start boundary and the next run the
+    /// window shows both count from it; an every-n-days plan anchored at each reconcile (every app start) kept moving
+    /// its next run forward and, started daily, never fired. <paramref name="fallback"/> serves a row without a date.
+    /// </summary>
+    public static DateOnly AnchorOf(PlanRecord plan, DateOnly fallback)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.CreatedUtc > new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks && plan.CreatedUtc <= DateTime.MaxValue.Ticks
+            ? DateOnly.FromDateTime(new DateTime(plan.CreatedUtc, DateTimeKind.Utc).ToLocalTime())
+            : fallback;
+    }
+
     public static async Task<int> ReconcileAsync(Database database, IScheduleBackend backend, string exePath, DateOnly today, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(backend);
-        List<PlanRecord> plans = await Task.Run(database.Plans.List, token).ConfigureAwait(false);
-        HashSet<string> wanted = new(StringComparer.OrdinalIgnoreCase);
-        int changed = 0;
-        foreach (PlanRecord plan in plans.Where(p => p.Enabled))
+        await Gate.WaitAsync(token).ConfigureAwait(false);
+        try
         {
-            if (PlanDefinition.FromJson(plan.DefinitionJson) is not PlanDefinition definition || definition.Validate().Count > 0)
+            List<PlanRecord> plans = await Task.Run(database.Plans.List, token).ConfigureAwait(false);
+            HashSet<string> wanted = new(StringComparer.OrdinalIgnoreCase);
+            int changed = 0;
+            foreach (PlanRecord plan in plans.Where(p => p.Enabled))
             {
-                continue;
+                if (PlanDefinition.FromJson(plan.DefinitionJson) is not PlanDefinition definition || definition.Validate().Count > 0)
+                {
+                    continue;
+                }
+
+                string name = backend.Register(plan.Id, ScheduleXmlBuilder.Build(plan.Name, definition, plan.Id, exePath, AnchorOf(plan, today)));
+                wanted.Add(name);
+                if (plan.TaskName != name)
+                {
+                    // Written onto the row as it is now, not the snapshot: registering takes a while, and an edit the
+                    // user saved meanwhile was overwritten with the snapshot's name, switch and definition.
+                    if (await Task.Run(() => database.Plans.Get(plan.Id), token).ConfigureAwait(false) is PlanRecord current)
+                    {
+                        await database.Plans.UpdateAsync(current with { TaskName = name }, token).ConfigureAwait(false);
+                    }
+                }
+
+                changed++;
             }
 
-            string name = backend.Register(plan.Id, ScheduleXmlBuilder.Build(plan.Name, definition, plan.Id, exePath, today));
-            wanted.Add(name);
-            if (plan.TaskName != name)
+            foreach (string stale in backend.List().Where(n => !wanted.Contains(n)))
             {
-                await database.Plans.UpdateAsync(plan with { TaskName = name }, token).ConfigureAwait(false);
+                backend.Delete(stale);
+                changed++;
             }
 
-            changed++;
+            return changed;
         }
-
-        foreach (string stale in backend.List().Where(n => !wanted.Contains(n)))
+        finally
         {
-            backend.Delete(stale);
-            changed++;
+            Gate.Release();
         }
-
-        return changed;
     }
 
     /// <summary><c>--cleanup</c>: removes every MediaVerifier task.</summary>

@@ -33,11 +33,15 @@ internal sealed class ScheduleEditorDialog : KitDialog
     private readonly KitCheckBox _wake = new() { Text = Strings.Schedule.Wake, TabIndex = 16 };
     private readonly InfoBar _refused = new() { Tier = Severity.Critical, Visible = false, TabIndex = 17 };
     private readonly KitButton _save;
+    private readonly KitButton _cancel;
     private readonly DateOnly _anchor;
     private readonly Func<string, PlanDefinition, Task<string?>>? _store;
 
     /// <summary>Why Save is disabled, shown in the summary box; null when the form is valid.</summary>
     private string? _problem;
+
+    /// <summary>While Save stores the plan and registers it, the editor cannot be closed (Esc closed it and the save went on unseen).</summary>
+    private bool _saving;
 
     private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>>? store)
         : base(editing ? Strings.Schedule.EditSchedule : Strings.Schedule.NewSchedule, DialogWidth.Form, closeButton: true)
@@ -109,7 +113,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _limit.SelectedIndexChanged += (_, _) => Changed();
         Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake, _refused]);
         Body.Paint += (_, e) => PaintBody(e.Graphics);
-        AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
+        _cancel = AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
         _save = AddButton(Strings.Kit.Save, ButtonKind.Primary, DialogResult.None);
 
         // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
@@ -139,6 +143,24 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
     protected override Control? InitialFocus() => _name;
 
+    protected override void Cancel()
+    {
+        if (!_saving)
+        {
+            base.Cancel();
+        }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_saving && e.CloseReason == CloseReason.UserClosing && DialogResult != DialogResult.OK)
+        {
+            e.Cancel = true;
+        }
+
+        base.OnFormClosing(e);
+    }
+
     protected override void LayoutBody()
     {
         int x = S(120);
@@ -157,7 +179,9 @@ internal sealed class ScheduleEditorDialog : KitDialog
             dx += w + S(8);
         }
 
-        _number.Bounds = new Rectangle(x, S(217), S(80), S(32));
+        // Monthly reads "Day [n]", Every … days "[n] days" (subplan 09: the box has its unit).
+        int dayLabel = KitPaint.MeasureWidth(Strings.Schedule.Day, TypeRamp.For(DeviceDpi).Body) + S(8);
+        _number.Bounds = new Rectangle(kind == 2 ? x + dayLabel : x, S(217), S(80), S(32));
         _number.Visible = kind is 2 or 3;
         _time.Bounds = new Rectangle(x, S(261), S(80), S(32));
         _limit.Bounds = new Rectangle(x, S(305), S(160), S(32));
@@ -177,6 +201,8 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
         // One save at a time; Save comes back afterwards when the form is still valid.
         _save.Enabled = false;
+        _cancel.Enabled = false;
+        _saving = true;
         string? refused;
         try
         {
@@ -184,6 +210,8 @@ internal sealed class ScheduleEditorDialog : KitDialog
         }
         finally
         {
+            _saving = false;
+            _cancel.Enabled = true;
             Changed();
         }
 
@@ -273,6 +301,15 @@ internal sealed class ScheduleEditorDialog : KitDialog
             KitPaint.DrawText(g, label, type.Body, t.Text, 0, S(y), S(112));
         }
 
+        if (_repeat.SelectedIndex == 2)
+        {
+            KitPaint.DrawText(g, Strings.Schedule.Day, type.Body, t.Text, S(120), S(233), S(60));
+        }
+        else if (_repeat.SelectedIndex == 3)
+        {
+            KitPaint.DrawText(g, Strings.Schedule.Days, type.Body, t.Text, _number.Right + S(8), S(233), S(80));
+        }
+
         string helper = _depth.SelectedIndex switch { 0 => Strings.Schedule.QuickHelper, 2 => Strings.Schedule.DeepHelper, _ => Strings.Schedule.StandardHelper };
         KitPaint.DrawText(g, helper, type.Caption, t.Text2, S(120), S(136), Body.Width - S(120));
         KitPaint.HorizontalLine(g, t.Stroke, 0, Body.Width, S(156), SF(1));
@@ -296,7 +333,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         string scope = plan.Roots is { Length: 1 } one && _roots.FirstOrDefault(r => r.Id == one[0]) is RootRecord root
             ? root.Label ?? Path.GetFileName(root.Path.TrimEnd('\\'))
             : Strings.Schedule.AllFoldersLower;
-        string when = ScheduleText.Summary(plan, new Dictionary<long, string>()).Split(Strings.Separator)[0];
+        string when = ScheduleText.When(plan.Trigger);
         string line = string.Format(CultureInfo.CurrentCulture, Strings.Schedule.Summary, when, UiFormat.DepthName(plan.Depth), scope);
         KitPaint.DrawText(g, line, type.Body, t.Text, S(36), S(477), Body.Width - S(48));
         if (ScheduleCalculator.Next(plan.Trigger, DateTime.Now, _anchor) is DateTime next)

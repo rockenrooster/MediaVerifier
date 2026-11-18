@@ -22,6 +22,7 @@ public static class CoreStrings
         public const string OnBattery = "The computer was running on battery.";
         public const string FullScreen = "A full-screen program was running.";
         public const string Stopped = "It was stopped before it started.";
+        public const string AnotherScan = "Another scan was running.";
         public const string CriticalCount = "{0} critical";
         public const string HighCount = "{0} high";
         public const string MediumCount = "{0} medium";

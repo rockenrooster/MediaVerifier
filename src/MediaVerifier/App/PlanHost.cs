@@ -20,14 +20,11 @@ internal static class PlanHost
 {
     public const string StopEventName = @"Local\MediaVerifier.StopRun";
 
-    /// <summary>Wires the runner, the cleanup steps and the self-check of the toast channel; called once at start-up.</summary>
-    public static void Install()
-    {
-        HeadlessLauncher.PlanRunner = Run;
-        CleanupCommand.Steps.Add(RemoveScheduledTasks);
-        CleanupCommand.Steps.Add(RemoveToastRegistration);
-        Diagnostics.SelfCheck.ExtraChecks.Add(ToastActivationFactory);
-    }
+    /// <summary>The Task Scheduler. Tests put a fake in its place, so they never register a task with Windows.</summary>
+    internal static Func<IScheduleBackend> Scheduler { get; set; } = static () => new TaskSchedulerBackend();
+
+    /// <summary>Wires the self-check of the toast channel; called once at start-up.</summary>
+    public static void Install() => Diagnostics.SelfCheck.ExtraChecks.Add(ToastActivationFactory);
 
     /// <summary>True while a headless run of this user is alive: its stop event exists (subplan 13, task SCH-06).</summary>
     public static bool BackgroundRunActive() => BackgroundRunActive(StopEventName);
@@ -65,36 +62,53 @@ internal static class PlanHost
 
     /// <summary>Makes the scheduled tasks match the plans with this executable's path (app start, plan changes).</summary>
     public static Task ReconcileAsync(Database database) =>
-        PlanReconciler.ReconcileAsync(database, new TaskSchedulerBackend(), Environment.ProcessPath ?? Application.ExecutablePath, DateOnly.FromDateTime(DateTime.Now));
+        PlanReconciler.ReconcileAsync(database, Scheduler(), Environment.ProcessPath ?? Application.ExecutablePath, DateOnly.FromDateTime(DateTime.Now));
 
-    private static void RemoveScheduledTasks()
+    /// <summary><c>--cleanup</c>: removes every MediaVerifier task and the folder they lived in.</summary>
+    internal static void RemoveScheduledTasks()
     {
-        PlanReconciler.RemoveAll(new TaskSchedulerBackend());
+        PlanReconciler.RemoveAll(Scheduler());
         TaskSchedulerBackend.RemoveFolderIfEmpty();
     }
 
-    private static void RemoveToastRegistration() => ToastRegistration.Remove(new CurrentUserRegistry());
+    /// <summary><c>--cleanup</c>: removes the notification registration.</summary>
+    internal static void RemoveToastRegistration() => ToastRegistration.Remove(new CurrentUserRegistry());
 
     private static string? ToastActivationFactory() =>
         ToastInterop.CanActivate() ? null : "The Windows notification manager could not be activated; notifications use the tray balloon";
 
-    private static int Run(AppState state, long planId)
+    /// <summary>
+    /// <c>--run-plan</c> in this process (subplan 13, Headless run, steps 3 to 6), at below-normal priority. The
+    /// launcher holds the engine mutex for the whole run.
+    /// </summary>
+    internal static int Run(AppState state, long planId)
     {
-        using Process self = Process.GetCurrentProcess();
-        self.PriorityClass = ProcessPriorityClass.BelowNormal;
+        using (Process self = Process.GetCurrentProcess())
+        {
+            self.PriorityClass = ProcessPriorityClass.BelowNormal;
+        }
 
+        return RunPlan(state, planId, StopEventName, FfmpegLocator.Locate(state.Paths));
+    }
+
+    /// <summary>
+    /// Loads the plan, checks its conditions, scans, records the notification and posts the webhook. Tests pass a stop
+    /// event of their own, so an open MediaVerifier never takes their run for a scheduled scan.
+    /// </summary>
+    internal static int RunPlan(AppState state, long planId, string stopEventName, FfmpegLocation mediaEngine)
+    {
         // The stop event exists for the whole run, so an open window sees it and its Stop works while conditions wait.
-        using EventWaitHandle stopEvent = new(false, EventResetMode.ManualReset, StopEventName);
+        using EventWaitHandle stopEvent = new(false, EventResetMode.ManualReset, stopEventName);
         using Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
-        PlanRecord? plan = database.Plans.Get(planId);
-        if (plan is not { Enabled: true } || PlanDefinition.FromJson(plan.DefinitionJson) is not PlanDefinition definition || definition.Validate().Count > 0)
+        PlanRecord? record = database.Plans.Get(planId);
+        if (PlanJob.Load(database, planId) is not PlanJob job)
         {
             state.Log.Warning($"Plan {planId} is missing, disabled or invalid; removing its task");
             try
             {
-                new TaskSchedulerBackend().Delete(plan?.TaskName ?? "MediaVerifier\\" + TaskSchedulerBackend.TaskName(planId));
+                Scheduler().Delete(record?.TaskName ?? "MediaVerifier\\" + TaskSchedulerBackend.TaskName(planId));
             }
-            catch (Exception ex) when (ex is COMException or InvalidOperationException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is COMException or InvalidOperationException or UnauthorizedAccessException or FileNotFoundException)
             {
                 state.Log.Warning("Could not remove the orphan task", ex);
             }
@@ -102,44 +116,84 @@ internal static class PlanHost
             return HeadlessScan.ExitFailure;
         }
 
-        string? skip = SkipReason(definition.Conditions, state, stopEvent);
+        if (job.Roots.Count == 0)
+        {
+            state.Log.Info($"Plan {planId} has no folders to scan");
+            return HeadlessScan.ExitSuccess;
+        }
+
+        string? skip = SkipReason(job.Definition.Conditions, state, stopEvent);
         if (skip is not null)
         {
-            Record(database, new RunNotification(Severity.Low, CoreStrings.Notify.Skipped, skip, Toast: false), "page:Scans");
+            RecordSkipped(database, skip);
             state.Log.Info($"Plan {planId} skipped: {skip}");
             return HeadlessScan.ExitSuccess;
         }
 
-        List<long> roots = definition.Roots is { Length: > 0 } chosen ? [.. chosen] : [.. database.Roots.List().Select(r => r.Id)];
-        using FfRunner runner = new(FfmpegLocator.Locate(state.Paths));
+        using FfRunner runner = new(mediaEngine);
         RuleSettings rules = database.RuleSettings.Load();
-        ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => rules));
-        using CancellationTokenSource stop = new(TimeSpan.FromMinutes(definition.Conditions.StopAfterMinutes));
+
+        // The launcher holds the engine mutex from before the conditions until the process exits (subplan 13, step 2).
+        // NamedMutexLock owns a mutex on a thread of its own, so the engine taking the same mutex again from this
+        // process was refused, and no scheduled scan ever ran while the window was closed: the engine's lock is one of
+        // this process's own.
+        string engineLock = @"Local\MediaVerifier.Engine.Run." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
+        using ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => rules), engineLock);
+        using CancellationTokenSource stop = new(TimeSpan.FromMinutes(job.Definition.Conditions.StopAfterMinutes));
         RegisteredWaitHandle stopWait = ThreadPool.RegisterWaitForSingleObject(stopEvent, (_, _) => stop.Cancel(), null, Timeout.Infinite, executeOnlyOnce: true);
-        ScanRequest request = new([.. roots.Select(id => new ScanScope(id))], definition.Depth, RunTrigger.Scheduled, planId, definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null);
-        (int exit, RunSummary? summary) = HeadlessScan.RunAsync(engine, request, stop.Token).GetAwaiter().GetResult();
+        (int exit, RunSummary? summary) = HeadlessScan.RunAsync(engine, job.Request, stop.Token).GetAwaiter().GetResult();
         stopWait.Unregister(null);
+
+        // The run row links itself to the plan (RunStore.BeginAsync). Writing the plan record read at the start back
+        // here undid whatever the user changed in it during the run, a switch-off included.
+        Core.Settings.ScanSettings settings = state.Settings.Scanning;
+        RunNotification? notification = summary is null
+            ? new RunNotification(Severity.High, CoreStrings.Notify.CouldNotRun, string.Empty, job.Definition.Notify.When != NotifyWhen.Never)
+            : NotificationPolicy.Decide(summary, NotificationPolicy.WithThreshold(job.Definition.Notify, settings.NotifyAbout), new Dictionary<long, DateTimeOffset>(), DateTimeOffset.UtcNow, InQuietHours(settings), FinishedText());
+        if (notification is not null)
+        {
+            Record(database, notification);
+            if (notification.Toast && settings.ShowWindowsNotifications && ToastRegistration.Ensure(state))
+            {
+                _ = SystemToast.Show(notification.Title, notification.Body, summary is null ? new ActivationUri(ActivationTarget.Issues, 0) : new ActivationUri(ActivationTarget.Run, summary.RunId), notification.Silent);
+            }
+        }
+
         if (summary is not null)
         {
-            _ = database.Plans.UpdateAsync(plan with { LastRunId = summary.RunId }).Wait(TimeSpan.FromSeconds(10));
-            string finished = string.Format(CultureInfo.CurrentCulture, CoreStrings.Notify.FinishedAt, DateTime.Now.ToString("HH:mm", CultureInfo.CurrentCulture));
-            Core.Settings.ScanSettings settings = state.Settings.Scanning;
-            PlanNotify notify = NotificationPolicy.WithThreshold(definition.Notify, settings.NotifyAbout);
-            if (NotificationPolicy.Decide(summary, notify, new Dictionary<long, DateTimeOffset>(), DateTimeOffset.UtcNow, InQuietHours(settings), finished) is RunNotification notification)
-            {
-                Record(database, notification);
-                if (notification.Toast && settings.ShowWindowsNotifications && ToastRegistration.Ensure(state))
-                {
-                    _ = SystemToast.Show(notification.Title, notification.Body, new ActivationUri(ActivationTarget.Run, summary.RunId), notification.Silent);
-                }
-            }
-
             // After the run and its notification: a slow or failing webhook delays only the process exit.
             WebhookDispatch.SendAsync(state, database, summary).GetAwaiter().GetResult();
         }
 
         return exit;
     }
+
+    /// <summary>
+    /// A scheduled scan that did not run (on battery, a full-screen program, another scan): written to the bell, not
+    /// toasted (subplan 13, step 4). Opens its own connection; the launcher calls it before any other work.
+    /// </summary>
+    internal static void RecordSkipped(AppState state, string reason)
+    {
+        try
+        {
+            using Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+            RecordSkipped(database, reason);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            state.Log.Warning("The skipped scheduled scan could not be recorded", ex);
+        }
+    }
+
+    internal static void RecordSkipped(Database database, string reason) =>
+        Record(database, new RunNotification(Severity.Low, CoreStrings.Notify.Skipped, reason, Toast: false), "page:Scans");
+
+    /// <summary>The same, from the window (a forwarded plan).</summary>
+    internal static Task RecordSkippedAsync(Database database, string reason) =>
+        database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = Severity.Low, Title = CoreStrings.Notify.Skipped, Body = reason, ActionUri = "page:Scans" });
+
+    internal static string FinishedText() =>
+        string.Format(CultureInfo.CurrentCulture, CoreStrings.Notify.FinishedAt, DateTime.Now.ToString("HH:mm", CultureInfo.CurrentCulture));
 
     /// <summary>
     /// Why the plan should not run now, or null. Full screen is re-checked every 5 minutes for up to an hour; the
@@ -199,6 +253,35 @@ internal static class PlanHost
 }
 
 /// <summary>
+/// A plan ready to run, read the same way by the headless run and the window: the plan when it exists, is switched
+/// on and valid, and the folders it scans (its own, or every folder that is switched on). The two copies had drifted.
+/// </summary>
+internal sealed record PlanJob(PlanRecord Plan, PlanDefinition Definition, IReadOnlyList<RootRecord> Roots)
+{
+    /// <summary>The scan request: the plan's folders at its depth, linked to the plan, within its time limit.</summary>
+    public ScanRequest Request => new([.. Roots.Select(r => new ScanScope(r.Id))], Definition.Depth, RunTrigger.Scheduled, Plan.Id, Definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null);
+
+    /// <summary>The folders for the Scans heading: all folders, or the plan's folders by name.</summary>
+    public string FoldersText => Definition.Roots is { Length: > 0 }
+        ? UI.UiFormat.JoinNames([.. Roots.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))])
+        : UI.Strings.Scans.AllFolders;
+
+    /// <summary>Null when the plan is missing, switched off or invalid. Reads the database: never on the UI thread.</summary>
+    public static PlanJob? Load(Database database, long planId)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        if (database.Plans.Get(planId) is not { Enabled: true } plan || PlanDefinition.FromJson(plan.DefinitionJson) is not PlanDefinition definition || definition.Validate().Count > 0)
+        {
+            return null;
+        }
+
+        List<RootRecord> roots = database.Roots.List();
+        List<RootRecord> scanned = definition.Roots is { Length: > 0 } chosen ? [.. roots.Where(r => chosen.Contains(r.Id))] : [.. roots.Where(r => r.Enabled)];
+        return new PlanJob(plan, definition, scanned);
+    }
+}
+
+/// <summary>
 /// A plan forwarded by a scheduled launch while the window is open (subplan 13, Headless run, step 1): it runs in
 /// the window's own engine, which shows its progress. Afterwards the notification goes to the bell and, unless the
 /// window is focused, to the system channel; a focused window shows it as an in-app toast.
@@ -214,20 +297,14 @@ internal static class GuiPlanRunner
         }
 
         Core.Logging.AppLog log = services.State.Log;
-        (PlanRecord? plan, PlanDefinition? definition, List<long> roots) = await Task.Run(() =>
+        PlanJob? job = await Task.Run(() => PlanJob.Load(services.Database, planId)).ConfigureAwait(true);
+        if (job is null || job.Roots.Count == 0)
         {
-            PlanRecord? record = services.Database.Plans.Get(planId);
-            PlanDefinition? parsed = record is { Enabled: true } ? PlanDefinition.FromJson(record.DefinitionJson) : null;
-            List<long> ids = parsed?.Roots is { Length: > 0 } chosen ? [.. chosen] : [.. services.Database.Roots.List().Where(r => r.Enabled).Select(r => r.Id)];
-            return (record, parsed is not null && parsed.Validate().Count == 0 ? parsed : null, ids);
-        }).ConfigureAwait(true);
-        if (plan is null || definition is null || roots.Count == 0)
-        {
-            log.Warning($"Forwarded plan {planId} is missing, disabled or invalid");
+            log.Warning($"Forwarded plan {planId} is missing, disabled, invalid or has no folders");
             return;
         }
 
-        string? skip = PlanHost.ImmediateSkipReason(definition.Conditions);
+        string? skip = PlanHost.ImmediateSkipReason(job.Definition.Conditions);
         if (skip is null && services.CannotScanReason(true) is string reason)
         {
             skip = reason;
@@ -236,7 +313,7 @@ internal static class GuiPlanRunner
         if (skip is not null)
         {
             log.Info($"Forwarded plan {planId} skipped: {skip}");
-            await services.Database.Notifications.AddAsync(new NotificationRecord { Utc = DateTime.UtcNow.Ticks, Level = Severity.Low, Title = CoreStrings.Notify.Skipped, Body = skip, ActionUri = "page:Scans" }).ConfigureAwait(true);
+            await PlanHost.RecordSkippedAsync(services.Database, skip).ConfigureAwait(true);
             return;
         }
 
@@ -248,32 +325,34 @@ internal static class GuiPlanRunner
             }
 
             services.Scans.RunCompleted -= Completed;
-            _ = Task.Run(() => FinishAsync(services, plan, definition, summary, windowFocused, showInApp));
+            _ = Task.Run(() => FinishAsync(services, job.Definition, summary, windowFocused, showInApp));
         }
 
         services.Scans.RunCompleted += Completed;
         try
         {
-            ScanRequest request = new([.. roots.Select(id => new ScanScope(id))], definition.Depth, RunTrigger.Scheduled, planId, definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null);
-            _ = await services.Scans.StartAsync(request, plan.Name).ConfigureAwait(true);
+            // The Scans heading names the folders, as for any scan (it read "Scanning Nightly verification").
+            _ = await services.Scans.StartAsync(job.Request, job.FoldersText).ConfigureAwait(true);
         }
         catch (InvalidOperationException ex)
         {
+            // Another scan took the engine first (two plans at the same minute): the bell says so (subplan 13).
             services.Scans.RunCompleted -= Completed;
             log.Warning($"Forwarded plan {planId} not started", ex);
+            await PlanHost.RecordSkippedAsync(services.Database, CoreStrings.Notify.AnotherScan).ConfigureAwait(true);
         }
     }
 
-    private static async Task FinishAsync(UiServices services, PlanRecord plan, PlanDefinition definition, RunSummary summary, Func<bool> windowFocused, Action<RunNotification> showInApp)
+    private static async Task FinishAsync(UiServices services, PlanDefinition definition, RunSummary summary, Func<bool> windowFocused, Action<RunNotification> showInApp)
     {
         try
         {
-            await services.Database.Plans.UpdateAsync(plan with { LastRunId = summary.RunId }).ConfigureAwait(false);
+            // The run row links itself to the plan (RunStore.BeginAsync); the plan record is not written back, which
+            // undid the user's changes made during the run.
             _ = Task.Run(() => WebhookDispatch.SendAsync(services.State, services.Database, summary));
             Core.Settings.ScanSettings settings = services.State.Settings.Scanning;
-            string finished = string.Format(CultureInfo.CurrentCulture, CoreStrings.Notify.FinishedAt, DateTime.Now.ToString("HH:mm", CultureInfo.CurrentCulture));
             PlanNotify notify = NotificationPolicy.WithThreshold(definition.Notify, settings.NotifyAbout);
-            if (NotificationPolicy.Decide(summary, notify, new Dictionary<long, DateTimeOffset>(), DateTimeOffset.UtcNow, PlanHost.InQuietHours(settings), finished) is not RunNotification notification)
+            if (NotificationPolicy.Decide(summary, notify, new Dictionary<long, DateTimeOffset>(), DateTimeOffset.UtcNow, PlanHost.InQuietHours(settings), PlanHost.FinishedText()) is not RunNotification notification)
             {
                 return;
             }
