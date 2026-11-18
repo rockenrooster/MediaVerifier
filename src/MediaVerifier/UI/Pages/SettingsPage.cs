@@ -42,6 +42,12 @@ internal sealed class SettingsPage : PageBase
     private bool _saveFailureShown;
     private KitTextBox? _webhookBox;
 
+    /// <summary>Puts each row's control back to the value in effect (the Schedule page edits two of them).</summary>
+    private readonly List<Action> _reloaders = [];
+
+    /// <summary>True while the rows are reloaded: their change events are not edits.</summary>
+    private bool _loading;
+
     public SettingsPage(UiServices services)
         : base(services)
     {
@@ -98,20 +104,21 @@ internal sealed class SettingsPage : PageBase
                 Button(Strings.Settings.AlwaysSkip, null, Strings.Settings.EditEllipsis, _ => EditAlwaysSkip(scan)),
                 Toggle(Strings.Settings.CloudFiles, Strings.Settings.CloudFilesHelper, () => scan.ScanCloudFiles, v => scan.ScanCloudFiles = v),
                 Drop(Strings.Settings.SkipLarger, null, [Strings.Settings.NoLimit, Strings.Settings.Gb10, Strings.Settings.Gb50, Strings.Settings.Gb100], () => SizeIndex(scan.SkipFilesLargerThan), i => scan.SkipFilesLargerThan = i switch { 1 => 10L << 30, 2 => 50L << 30, 3 => 100L << 30, _ => null }),
-                Number(Strings.Settings.StallSeconds, null, Strings.Units.SecondsUnit, 10, 3600, () => scan.StallSeconds, v => scan.StallSeconds = v),
+                Number(Strings.Settings.StallSeconds, null, Strings.Units.SecondsUnit, ScanSettings.MinStallSeconds, ScanSettings.MaxStallSeconds, () => scan.StallSeconds, v => scan.StallSeconds = v),
                 Toggle(Strings.Settings.Upscaling, null, () => scan.CheckPhotosForUpscaling, v => scan.CheckPhotosForUpscaling = v),
                 Toggle(Strings.Settings.Strict, Strings.Settings.StrictHelper, () => scan.StrictDecoding, v => scan.StrictDecoding = v),
             ]),
             _rules,
             Section(Strings.Settings.Integrity, Strings.Settings.IntegrityIntro,
             [
-                Number(Strings.Settings.ReReadEvery, null, Strings.Units.Days, 7, 3650, () => scan.ScrubPeriodDays, v => scan.ScrubPeriodDays = v),
-                Number(Strings.Settings.TimeEachRun, null, Strings.Units.MinutesUnit, 0, 1440, () => scan.ScrubBudgetMinutes, v => scan.ScrubBudgetMinutes = v),
+                // The Schedule page edits the same two values: one range for both (7 and 0 here disagreed with its 1).
+                Number(Strings.Settings.ReReadEvery, null, Strings.Units.Days, ScanSettings.MinScrubPeriodDays, ScanSettings.MaxScrubPeriodDays, () => scan.ScrubPeriodDays, v => scan.ScrubPeriodDays = v),
+                Number(Strings.Settings.TimeEachRun, null, Strings.Units.MinutesUnit, ScanSettings.MinScrubBudgetMinutes, ScanSettings.MaxScrubBudgetMinutes, () => scan.ScrubBudgetMinutes, v => scan.ScrubBudgetMinutes = v),
                 Toggle(Strings.Settings.VerifyOnAnalysis, null, () => scan.VerifyOnAnalysis, v => scan.VerifyOnAnalysis = v),
 
                 // Originals always go to the root's quarantine folder: "Keep originals after a repair in" was saved but
                 // never read, so Recycle Bin and Another folder… did nothing (deviation logged; subplan 12).
-                Number(Strings.Settings.EmptyQuarantine, null, Strings.Units.Days, 1, 3650, () => scan.EmptyQuarantineAfterDays, v => scan.EmptyQuarantineAfterDays = v),
+                Number(Strings.Settings.EmptyQuarantine, null, Strings.Units.Days, ScanSettings.MinQuarantineDays, ScanSettings.MaxQuarantineDays, () => scan.EmptyQuarantineAfterDays, v => scan.EmptyQuarantineAfterDays = v),
             ]),
             Section(Strings.Settings.Notifications, Strings.Settings.NotificationsIntro,
             [
@@ -120,9 +127,7 @@ internal sealed class SettingsPage : PageBase
                 Toggle(Strings.Settings.QuietHours, null, () => scan.QuietHours, v =>
                 {
                     scan.QuietHours = v;
-                    quietFrom.Collapsed = quietTo.Collapsed = !v;
-                    quietFrom.Parent?.Parent?.PerformLayout();
-                    RelayoutPage();
+                    ShowQuietTimes(quietFrom, quietTo, v);
                 }),
                 quietFrom,
                 quietTo,
@@ -149,6 +154,7 @@ internal sealed class SettingsPage : PageBase
             ]),
             Section(Strings.Settings.About, string.Empty, [new AboutRow(this)]),
         ];
+        _reloaders.Add(() => ShowQuietTimes(quietFrom, quietTo, scan.QuietHours));
         Controls.Add(_nav);
         for (int i = 0; i < _sections.Length; i++)
         {
@@ -216,6 +222,18 @@ internal sealed class SettingsPage : PageBase
         PerformLayout();
     }
 
+    private void ShowQuietTimes(SettingRow from, SettingRow to, bool shown)
+    {
+        if (from.Collapsed != shown)
+        {
+            return;
+        }
+
+        from.Collapsed = to.Collapsed = !shown;
+        from.Parent?.Parent?.PerformLayout();
+        RelayoutPage();
+    }
+
     /// <summary>Saves the settings off the UI thread (every change applies at once; there is no Save button).</summary>
     internal void Save() => UiTask.Run(SaveAsync());
 
@@ -251,8 +269,29 @@ internal sealed class SettingsPage : PageBase
     protected override void OnActivated()
     {
         base.OnActivated();
+        ReloadValues();
         Reload();
         UiTask.Run(DetectInstallAsync());
+    }
+
+    /// <summary>
+    /// Shows the values in effect: the rows were built once, so a value changed on the Schedule page showed stale here,
+    /// and the next arrow key saved over it.
+    /// </summary>
+    internal void ReloadValues()
+    {
+        _loading = true;
+        try
+        {
+            foreach (Action reload in _reloaders)
+            {
+                reload();
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     protected override void OnDeactivated()
@@ -292,9 +331,13 @@ internal sealed class SettingsPage : PageBase
         ToggleSwitch toggle = new() { Checked = get(), AccessibleName = label };
         toggle.CheckedChanged += (_, _) =>
         {
-            set(toggle.Checked);
-            Save();
+            if (!_loading)
+            {
+                set(toggle.Checked);
+                Save();
+            }
         };
+        _reloaders.Add(() => toggle.Checked = get());
         return new SettingRow(label, helper, toggle, null);
     }
 
@@ -309,9 +352,15 @@ internal sealed class SettingsPage : PageBase
         control.SelectedIndex = Math.Clamp(get(), 0, options.Length - 1);
         control.SelectedIndexChanged += (_, _) =>
         {
-            set(control.SelectedIndex);
-            Save();
+            // The selected segment's label is bold: the row measures the control again.
+            control.Parent?.PerformLayout();
+            if (!_loading)
+            {
+                set(control.SelectedIndex);
+                Save();
+            }
         };
+        _reloaders.Add(() => control.SelectedIndex = Math.Clamp(get(), 0, options.Length - 1));
         return new SettingRow(label, helper, control, null);
     }
 
@@ -320,9 +369,13 @@ internal sealed class SettingsPage : PageBase
         NumberBox box = new() { Minimum = min, Maximum = max, Value = get(), AccessibleName = label, Inset = true };
         box.ValueChanged += (_, _) =>
         {
-            set(box.Value);
-            Save();
+            if (!_loading)
+            {
+                set(box.Value);
+                Save();
+            }
         };
+        _reloaders.Add(() => box.Value = get());
         return new SettingRow(label, helper, box, unit);
     }
 
@@ -337,9 +390,13 @@ internal sealed class SettingsPage : PageBase
         drop.SelectedIndex = Math.Clamp(get(), 0, options.Length - 1);
         drop.SelectedIndexChanged += (_, _) =>
         {
-            set(drop.SelectedIndex);
-            Save();
+            if (!_loading)
+            {
+                set(drop.SelectedIndex);
+                Save();
+            }
         };
+        _reloaders.Add(() => drop.SelectedIndex = Math.Clamp(get(), 0, options.Length - 1));
         return new SettingRow(label, helper, drop, null);
     }
 
@@ -377,6 +434,10 @@ internal sealed class SettingsPage : PageBase
         _checkNow.Enabled = updates is not null && !checking && !downloading;
         _install.Text = _portable ? Strings.Settings.InstallApp : Strings.Settings.DownloadInstall;
         _install.Enabled = updates is not null && !checking && !downloading && (_portable ? result?.CanInstall == true : result?.CanDownload == true);
+
+        // A disabled button says why (subplan 09, Pitfalls): the status line is the reason ("Checking…", up to date…).
+        KitToolTip.Set(_checkNow, _checkNow.Enabled ? string.Empty : _updateRow.Helper ?? string.Empty);
+        KitToolTip.Set(_install, _install.Enabled ? string.Empty : _updateRow.Helper ?? string.Empty);
         bool available = Services.UpdateAvailable;
         if (available != UpdateAvailable)
         {
@@ -430,8 +491,21 @@ internal sealed class SettingsPage : PageBase
     /// <summary><c>Copy system report</c>: the facts a bug report needs, gathered off the UI thread (it reads the database).</summary>
     private async Task CopySystemReportAsync()
     {
-        string report = await Task.Run(() => Diagnostics.SystemReport.Build(Services, State)).ConfigureAwait(true);
-        ShellActions.CopyText([report.TrimEnd()]);
+        try
+        {
+            string report = await Task.Run(() => Diagnostics.SystemReport.Build(Services, State)).ConfigureAwait(true);
+            ShellActions.CopyText([report.TrimEnd()]);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException or IOException or System.Runtime.InteropServices.ExternalException)
+        {
+            // A database or clipboard failure said where it happened, instead of the once-per-session error dialog.
+            State.Log.Warning("The system report could not be copied", ex);
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.Critical, string.Format(CultureInfo.CurrentCulture, Strings.Tools.ActionFailed, Strings.Settings.CopyReport), ex.Message));
+            return;
+        }
+
+        // The copy is invisible otherwise: the button looked as if it did nothing.
+        Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.None, Strings.Settings.Diagnostics, Strings.Settings.ReportCopied));
     }
 
     /// <summary><c>Run self-check</c>: runs <c>--self-check</c> as its own process and reports the result.</summary>
@@ -493,13 +567,18 @@ internal sealed class SettingsPage : PageBase
             return;
         }
 
-        scan.PhotoExtensions = lists[0].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[0]) : [.. Core.Engine.MediaClassifier.DefaultPhoto];
-        scan.VideoExtensions = lists[1].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[1]) : [.. Core.Engine.MediaClassifier.DefaultVideo];
-        scan.AudioExtensions = lists[2].Count > 0 ? Core.Engine.MediaClassifier.Normalize(lists[2]) : [.. Core.Engine.MediaClassifier.DefaultAudio];
+        // Normalised before the fallback: a list whose entries were all unusable ("jpg png gif" as one entry) became empty,
+        // and the next scan indexed nothing of that kind.
+        scan.PhotoExtensions = ScanSettings.ExtensionsOrDefaults(lists[0], Core.Engine.MediaClassifier.DefaultPhoto);
+        scan.VideoExtensions = ScanSettings.ExtensionsOrDefaults(lists[1], Core.Engine.MediaClassifier.DefaultVideo);
+        scan.AudioExtensions = ScanSettings.ExtensionsOrDefaults(lists[2], Core.Engine.MediaClassifier.DefaultAudio);
         Save();
     }
 
-    /// <summary><c>Always skip</c>: folder-name patterns no scan enters.</summary>
+    /// <summary>
+    /// <c>Always skip</c>: folder-name patterns no scan enters. The quarantine, the Recycle Bin and System Volume
+    /// Information are always skipped and are not in the list to edit, so they cannot be removed from it.
+    /// </summary>
     private void EditAlwaysSkip(ScanSettings scan)
     {
         if (FindForm() is not Form owner)
@@ -509,14 +588,14 @@ internal sealed class SettingsPage : PageBase
 
         List<string>[]? lists = ListEditDialog.Ask(owner, Strings.Settings.AlwaysSkip, Strings.Settings.AlwaysSkipHelper,
         [
-            (Strings.Settings.FolderNames, scan.AlwaysSkip, Core.Engine.EnumerationRules.DefaultExcludedDirectories),
+            (Strings.Settings.FolderNames, [.. scan.AlwaysSkip.Where(p => !ScanSettings.IsProtectedSkip(p))], [.. Core.Engine.EnumerationRules.DefaultExcludedDirectories.Where(p => !ScanSettings.IsProtectedSkip(p))]),
         ]);
         if (lists is null)
         {
             return;
         }
 
-        scan.AlwaysSkip = lists[0];
+        scan.AlwaysSkip = ScanSettings.WithProtectedSkip(lists[0]);
         Save();
     }
 
@@ -526,13 +605,15 @@ internal sealed class SettingsPage : PageBase
         KitTextBox box = new() { Text = get(), AccessibleName = label, Inset = true, MaxLength = 5 };
         box.TextCommitted += (_, _) =>
         {
-            if (NotificationPolicy.TryParseTime(box.Text, out TimeOnly time))
+            if (NotificationPolicy.TryParseTime(box.Text, out TimeOnly time) && time.ToString("HH:mm", CultureInfo.InvariantCulture) is string value
+                && !string.Equals(value, get(), StringComparison.Ordinal))
             {
-                set(time.ToString("HH:mm", CultureInfo.InvariantCulture));
+                set(value);
                 Save();
             }
         };
         box.Leave += (_, _) => box.Text = NotificationPolicy.TryParseTime(box.Text, out TimeOnly time) ? time.ToString("HH:mm", CultureInfo.InvariantCulture) : get();
+        _reloaders.Add(() => box.Text = get());
         return new SettingRow(label, null, box, null);
     }
 
@@ -554,6 +635,7 @@ internal sealed class SettingsPage : PageBase
             }
         };
         _webhookBox = box;
+        _reloaders.Add(() => box.Text = scan.WebhookUrl ?? string.Empty);
         return new SettingRow(Strings.Settings.Webhook, Strings.Settings.WebhookHelper, box, null, width: 280);
     }
 
@@ -714,6 +796,7 @@ internal sealed class SettingsPage : PageBase
     {
         private readonly SettingsPage _page;
         private int _hover = -1;
+        private int _pressed = -1;
 
         public SectionList(SettingsPage page)
         {
@@ -740,9 +823,10 @@ internal sealed class SettingsPage : PageBase
             {
                 Rectangle row = ItemBounds(i);
                 bool selected = i == _page.Current;
-                if (selected || i == _hover)
+                bool pressed = i == _pressed && i == _hover;
+                if (selected || pressed || i == _hover)
                 {
-                    KitPaint.FillRoundedRect(g, row, SF(4), selected ? t.Selected : t.Hover);
+                    KitPaint.FillRoundedRect(g, row, SF(4), pressed ? t.Pressed : selected ? t.Selected : t.Hover);
                     if (selected)
                     {
                         KitPaint.FillRoundedRect(g, new RectangleF(row.X, row.Y + SF(8), SF(3), SF(16)), SF(1.5f), t.Accent);
@@ -781,24 +865,47 @@ internal sealed class SettingsPage : PageBase
             Invalidate();
         }
 
+        /// <summary>A click takes the focus (so the arrows then move here) and shows the pressed item.</summary>
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left)
+            {
+                _pressed = IndexAt(e.Location);
+                Focus();
+                Invalidate();
+            }
+        }
+
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
             int index = IndexAt(e.Location);
-            if (index >= 0)
+            bool chosen = e.Button == MouseButtons.Left && index >= 0 && index == _pressed;
+            _pressed = -1;
+            Invalidate();
+            if (chosen)
             {
                 _page.ShowSection(index);
             }
         }
 
-        protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down || base.IsInputKey(keyData);
+        protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End || base.IsInputKey(keyData);
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
-            if (e.KeyCode is Keys.Up or Keys.Down)
+            int? target = e.KeyCode switch
             {
-                _page.ShowSection(_page.Current + (e.KeyCode == Keys.Up ? -1 : 1));
+                Keys.Up => _page.Current - 1,
+                Keys.Down => _page.Current + 1,
+                Keys.Home => 0,
+                Keys.End => Names.Length - 1,
+                _ => null,
+            };
+            if (target is int section)
+            {
+                _page.ShowSection(section);
                 e.Handled = true;
             }
         }
@@ -1005,6 +1112,7 @@ internal sealed class SettingsPage : PageBase
                 if (!string.Equals(_helper, value, StringComparison.Ordinal))
                 {
                     _helper = value;
+                    UpdateCutTextTip();
                     Invalidate();
                 }
             }
@@ -1013,20 +1121,20 @@ internal sealed class SettingsPage : PageBase
         protected override void OnLayout(LayoutEventArgs levent)
         {
             base.OnLayout(levent);
-            if (_controls.Length == 0)
+            if (_controls.Length > 0)
             {
-                return;
+                int unitWidth = _unit is null ? 0 : KitPaint.MeasureWidth(_unit, Type.Body) + S(12);
+                int right = Width - S(16) - unitWidth;
+                for (int i = _controls.Length - 1; i >= 0; i--)
+                {
+                    Control control = _controls[i];
+                    Size size = _width is int logical && _controls.Length == 1 ? new Size(S(logical), S(32)) : SizeOf(control);
+                    control.Bounds = new Rectangle(right - size.Width, (Height - size.Height) / 2, size.Width, size.Height);
+                    right = control.Left - S(8);
+                }
             }
 
-            int unitWidth = _unit is null ? 0 : KitPaint.MeasureWidth(_unit, Type.Body) + S(12);
-            int right = Width - S(16) - unitWidth;
-            for (int i = _controls.Length - 1; i >= 0; i--)
-            {
-                Control control = _controls[i];
-                Size size = _width is int logical && _controls.Length == 1 ? new Size(S(logical), S(32)) : SizeOf(control);
-                control.Bounds = new Rectangle(right - size.Width, (Height - size.Height) / 2, size.Width, size.Height);
-                right = control.Left - S(8);
-            }
+            UpdateCutTextTip();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1053,6 +1161,27 @@ internal sealed class SettingsPage : PageBase
             }
 
             PaintSeparator(g);
+        }
+
+        /// <summary>
+        /// Text cut short gets a tooltip with all of it (subplan 09, tooltips): the database path, or an update error at the
+        /// minimum width, could not be read.
+        /// </summary>
+        private void UpdateCutTextTip()
+        {
+            if (Width <= 0)
+            {
+                return;
+            }
+
+            int labelWidth = (_controls.Length > 0 ? _controls[0].Left : Width) - S(32);
+            string tip = _helper is not null && KitPaint.MeasureWidth(_helper, Type.Caption) > labelWidth ? _helper
+                : KitPaint.MeasureWidth(_label, Type.Body) > labelWidth ? _label
+                : string.Empty;
+            if (tip.Length > 0 || KitToolTip.Get(this).Length > 0)
+            {
+                KitToolTip.Set(this, tip);
+            }
         }
 
         private Size SizeOf(Control control) => control switch

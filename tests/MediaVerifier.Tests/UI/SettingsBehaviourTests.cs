@@ -212,6 +212,111 @@ public sealed class SettingsBehaviourTests
         Assert.Equal(string.Empty, tipAfter);
     }
 
+    /// <summary>
+    /// A value changed on the Schedule page shows in Settings when it opens again, without being saved back, and both
+    /// pages take the same range (Settings showed 7 for 3 days, and the next arrow key saved over the Schedule page's value).
+    /// </summary>
+    [Fact]
+    public void Settings_show_values_changed_elsewhere_with_the_same_ranges()
+    {
+        int days = -1;
+        int minutes = -1;
+        double minimumDays = -1;
+        double minimumMinutes = -1;
+        bool savedByReload = true;
+        bool quietShown = false;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("settings-reload");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using SettingsPage page = new(services) { Size = new Size(1000, 700) };
+
+            // The Schedule page's verification card, and quiet hours switched on elsewhere.
+            state.Settings.Scanning.ScrubPeriodDays = 3;
+            state.Settings.Scanning.ScrubBudgetMinutes = 1;
+            state.Settings.Scanning.QuietHours = true;
+            page.ReloadValues();
+            Pump(TimeSpan.FromMilliseconds(300));
+
+            NumberBox reRead = Find<NumberBox>(page, b => b.AccessibleName == Strings.Settings.ReReadEvery);
+            NumberBox time = Find<NumberBox>(page, b => b.AccessibleName == Strings.Settings.TimeEachRun);
+            days = reRead.Value;
+            minutes = time.Value;
+            minimumDays = reRead.Minimum;
+            minimumMinutes = time.Minimum;
+            savedByReload = File.Exists(state.Paths.SettingsFile);
+            page.ShowSection(4);
+            quietShown = Find<KitTextBox>(page, b => b.AccessibleName == Strings.Settings.From).Parent!.Visible;
+        });
+
+        Assert.Equal(3, days);
+        Assert.Equal(1, minutes);
+        Assert.Equal(Core.Settings.ScanSettings.MinScrubPeriodDays, minimumDays);
+        Assert.Equal(Core.Settings.ScanSettings.MinScrubBudgetMinutes, minimumMinutes);
+        Assert.False(savedByReload, "Showing the values saved them.");
+        Assert.True(quietShown, "Quiet hours are on, but their From and To rows stayed hidden.");
+    }
+
+    /// <summary>Copy system report says it copied, or why it could not (a database error opened the crash dialog).</summary>
+    [Fact]
+    public void Copy_system_report_reports_a_failure_in_a_toast()
+    {
+        List<ToastContent> toasts = [];
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("settings-report");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices demo = DemoUiData.CreateServices(state, temp.Path);
+            using UiServices services = new()
+            {
+                State = state,
+                Database = demo.Database,
+                Clock = demo.Clock,
+                Scans = new DemoScanControl(),
+                MediaEngine = demo.MediaEngine,
+                Data = demo.Data,
+                ShowToast = toasts.Add,
+            };
+            using SettingsPage page = new(services) { Size = new Size(1000, 700) };
+            page.ShowSection(6);
+            demo.Database.Dispose();
+            Find<KitButton>(page, b => b.Text == Strings.Settings.CopyReport).PerformClick();
+            Settle(() => toasts.Count > 0);
+        });
+
+        ToastContent toast = Assert.Single(toasts);
+        Assert.Equal(Severity.Critical, toast.Level);
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Tools.ActionFailed, Strings.Settings.CopyReport), toast.Title);
+    }
+
+    /// <summary>The section list takes Home and End, like the other lists (subplan 09, Keyboard).</summary>
+    [Fact]
+    public void The_section_list_moves_with_Home_and_End()
+    {
+        int afterEnd = -1;
+        int afterHome = -1;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("settings-sections");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using SettingsPage page = new(services) { Size = new Size(1000, 700) };
+            Control list = page.Controls[0];
+            page.ShowSection(3);
+            _ = SendMessageW(list.Handle, 0x0100, (nint)Keys.End, 0);
+            afterEnd = page.Current;
+            _ = SendMessageW(list.Handle, 0x0100, (nint)Keys.Home, 0);
+            afterHome = page.Current;
+        });
+
+        Assert.Equal(7, afterEnd);
+        Assert.Equal(0, afterHome);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint SendMessageW(nint window, int message, nint wParam, nint lParam);
+
     internal static T Find<T>(Control root, Func<T, bool> match)
         where T : Control => Descendants(root).OfType<T>().First(match);
 

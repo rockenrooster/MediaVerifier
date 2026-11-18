@@ -826,6 +826,7 @@ internal static class Strings
         public const string CheckingFindings = "Checking findings…";
         public const string RuleNotSaved = "The change was not saved. {0}";
         public const string RecheckFailed = "Findings could not be checked again. {0}";
+        public const string ReportCopied = "The system report was copied.";
     }
 
     public static class Dialogs

@@ -20,6 +20,22 @@ public enum NotifyThreshold
 /// </summary>
 public sealed class ScanSettings
 {
+    // One range per number, for every page that edits it (Settings and the Schedule page's verification card).
+    public const int MinStallSeconds = 10;
+    public const int MaxStallSeconds = 3600;
+    public const int MinScrubPeriodDays = 1;
+    public const int MaxScrubPeriodDays = 3650;
+    public const int MinScrubBudgetMinutes = 1;
+    public const int MaxScrubBudgetMinutes = 24 * 60;
+    public const int MinQuarantineDays = 1;
+    public const int MaxQuarantineDays = 3650;
+
+    /// <summary>
+    /// Folders no scan enters whatever Always skip says (subplan 12: the quarantine is excluded from scans): with the
+    /// list edited down to the user's own patterns, quarantined originals and recycled media were indexed as library files.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ProtectedSkip = [Remediation.OperationRunner.QuarantineFolder, "$RECYCLE.BIN", "System Volume Information"];
+
     [JsonConverter(typeof(JsonStringEnumConverter<ScanDepth>))]
     public ScanDepth DefaultDepth { get; set; } = ScanDepth.Standard;
 
@@ -89,16 +105,33 @@ public sealed class ScanSettings
         _ => 2,
     };
 
+    /// <summary>
+    /// A typed extension list as scans use it: split at spaces too ("jpg png gif" was one entry, which was then dropped),
+    /// normalised, and the defaults when nothing usable is left, so a typo never stops a whole media kind from being scanned.
+    /// </summary>
+    public static List<string> ExtensionsOrDefaults(IEnumerable<string>? typed, IReadOnlyList<string> defaults)
+    {
+        List<string> extensions = MediaClassifier.Normalize((typed ?? []).SelectMany(e => e.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
+        return extensions.Count > 0 ? extensions : [.. defaults];
+    }
+
+    /// <summary>The user's Always skip patterns with the <see cref="ProtectedSkip"/> folders in front, each once.</summary>
+    public static List<string> WithProtectedSkip(IEnumerable<string> patterns) =>
+        [.. ProtectedSkip.Concat(patterns.Select(p => p.Trim()).Where(p => p.Length > 0)).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>True for a folder name every scan skips anyway (left out of the editable list).</summary>
+    public static bool IsProtectedSkip(string pattern) => ProtectedSkip.Contains(pattern.Trim(), StringComparer.OrdinalIgnoreCase);
+
     internal void Normalize()
     {
-        PhotoExtensions = PhotoExtensions is { Count: > 0 } ? MediaClassifier.Normalize(PhotoExtensions) : [.. MediaClassifier.DefaultPhoto];
-        VideoExtensions = VideoExtensions is { Count: > 0 } ? MediaClassifier.Normalize(VideoExtensions) : [.. MediaClassifier.DefaultVideo];
-        AudioExtensions = AudioExtensions is { Count: > 0 } ? MediaClassifier.Normalize(AudioExtensions) : [.. MediaClassifier.DefaultAudio];
-        AlwaysSkip ??= [.. EnumerationRules.DefaultExcludedDirectories];
-        StallSeconds = Math.Clamp(StallSeconds, 10, 3600);
-        ScrubPeriodDays = Math.Clamp(ScrubPeriodDays, 1, 3650);
-        ScrubBudgetMinutes = Math.Clamp(ScrubBudgetMinutes, 1, 24 * 60);
-        EmptyQuarantineAfterDays = Math.Clamp(EmptyQuarantineAfterDays, 1, 3650);
+        PhotoExtensions = ExtensionsOrDefaults(PhotoExtensions, MediaClassifier.DefaultPhoto);
+        VideoExtensions = ExtensionsOrDefaults(VideoExtensions, MediaClassifier.DefaultVideo);
+        AudioExtensions = ExtensionsOrDefaults(AudioExtensions, MediaClassifier.DefaultAudio);
+        AlwaysSkip = WithProtectedSkip(AlwaysSkip ?? [.. EnumerationRules.DefaultExcludedDirectories]);
+        StallSeconds = Math.Clamp(StallSeconds, MinStallSeconds, MaxStallSeconds);
+        ScrubPeriodDays = Math.Clamp(ScrubPeriodDays, MinScrubPeriodDays, MaxScrubPeriodDays);
+        ScrubBudgetMinutes = Math.Clamp(ScrubBudgetMinutes, MinScrubBudgetMinutes, MaxScrubBudgetMinutes);
+        EmptyQuarantineAfterDays = Math.Clamp(EmptyQuarantineAfterDays, MinQuarantineDays, MaxQuarantineDays);
         QuietFrom ??= "22:00";
         QuietTo ??= "07:00";
         WebhookUrl = string.IsNullOrWhiteSpace(WebhookUrl) ? null : WebhookUrl.Trim();
