@@ -716,6 +716,12 @@ internal sealed class Drawer : KitControl
 
     private void Animate(bool open)
     {
+        if (open == _opening && Progress == (open ? 1f : 0f))
+        {
+            // Already there: a closed drawer asked to close again does not slide out once more.
+            return;
+        }
+
         _opening = open;
         if (!SystemInformation.UIEffectsEnabled)
         {

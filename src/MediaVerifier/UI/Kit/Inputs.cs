@@ -89,7 +89,17 @@ internal class KitTextBox : KitControl
         _edit.MouseEnter += (_, _) => SetHover(true);
         _edit.MouseLeave += (_, _) => SetHover(ClientRectangle.Contains(PointToClient(MousePosition)));
         _edit.KeyDown += (_, e) => OnEditKeyDown(e);
-        _edit.KeyPress += (_, e) => OnEditKeyPress(e);
+        _edit.KeyPress += (_, e) =>
+        {
+            if (!_edit.Multiline && e.KeyChar is '\r' or '\u001b')
+            {
+                // Enter and Esc act through the dialog or page; a single-line box beeped at their characters.
+                e.Handled = true;
+                return;
+            }
+
+            OnEditKeyPress(e);
+        };
         Controls.Add(_edit);
         ApplyColours();
     }

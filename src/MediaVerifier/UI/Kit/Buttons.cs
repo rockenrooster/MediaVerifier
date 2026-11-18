@@ -709,7 +709,7 @@ internal sealed class IconButton : KitControl
         g.FillEllipse(GdiCache.Brush(t.Bg), cx - r - outline, cy - r - outline, 2 * (r + outline), 2 * (r + outline));
         g.FillEllipse(GdiCache.Brush(t.Accent), cx - r, cy - r, 2 * r, 2 * r);
         g.SmoothingMode = previous;
-        string text = count > 9 ? "9+" : count.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        string text = count > 9 ? Strings.Shell.BellOverflow : count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         KitPaint.DrawTextCentred(g, text, TypeRamp.For(dpi).CaptionStrong, t.OnAccent, (int)Math.Round(cx), (int)Math.Round(cy));
     }
 

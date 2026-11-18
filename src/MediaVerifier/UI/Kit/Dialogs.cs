@@ -372,6 +372,10 @@ internal class KitDialog : Form
         {
             KitPaint.DrawText(g, lines[i], TypeRamp.For(DeviceDpi).Subtitle, t.Text, _surface.X + S(24), _surface.Y + S(34 + (i * TitleLineHeight)), _surface.Width - S(TitleInset));
         }
+
+        // The buttons and the close button are the form's own children: their focus rings are painted here, around them
+        // (a kit control's ring lies outside its bounds, on its container). Without it dialogs showed no keyboard focus.
+        KitPaint.PaintFocusRings(g, this);
     }
 
     private void OnThemeChanged(object? sender, EventArgs e)
@@ -386,6 +390,13 @@ internal class KitDialog : Form
         public BodyPanel()
         {
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+        }
+
+        /// <summary>The focus rings of the fields in the body (option rows, check boxes, drop-downs, Browse).</summary>
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            KitPaint.PaintFocusRings(e.Graphics, this);
         }
     }
 }

@@ -65,6 +65,16 @@ internal sealed class ToolsPage : PageBase
         _table.Source = _source;
         _table.SelectionChanged += (_, _) => OnSelectionChanged();
         _table.ItemActivated += (_, index) => OpenBatch(index);
+
+        // Esc clears the selection (subplan 09, Keyboard), as in Issues and Library.
+        _table.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape && e.Modifiers == Keys.None && _table.SelectedIds.Count > 0)
+            {
+                _table.ClearSelection();
+                e.Handled = true;
+            }
+        };
         _restore.Click += (_, _) => UiTask.Run(RestoreSelectedAsync());
         _delete.Click += (_, _) => UiTask.Run(DeleteForGoodAsync(ChosenKept()));
         _deleteAll.Click += (_, _) => UiTask.Run(DeleteForGoodAsync(_kept));
