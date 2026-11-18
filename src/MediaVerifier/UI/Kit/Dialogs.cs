@@ -54,7 +54,7 @@ internal class KitDialog : Form
     private Point _backdropAt;
     private Rectangle _surface;
     private bool _placed;
-    private List<string> _titleLines = [];
+    private IReadOnlyList<string> _titleLines = [];
     private string? _titleLinesFor;
     private int _titleLinesDpi;
 

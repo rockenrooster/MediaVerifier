@@ -1,6 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using MediaVerifier.Core.Model;
+using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Kit;
@@ -258,4 +259,65 @@ internal static class DataPaint
     /// <summary>A segment's tooltip, "<tier>: <count>" (subplan 08, Severity bar).</summary>
     public static string SegmentToolTip(int index, long count) =>
         BadgePainter.TierWord(TierSeverity(index)) + ": " + count.ToString("N0", CultureInfo.CurrentCulture);
+}
+
+/// <summary>
+/// The severity bar as a control (subplan 08, Severity bar; the Library folder cards): each segment has the tooltip
+/// "<c>tier: count</c>" and a click raises <see cref="SegmentClicked"/> with its tier.
+/// </summary>
+internal sealed class SeverityBar : KitControl
+{
+    private readonly long[] _counts = new long[5];
+    private readonly RectangleF[] _segments = new RectangleF[5];
+    private int _hover = -1;
+
+    public SeverityBar()
+    {
+        TabStop = false;
+        AccessibleRole = AccessibleRole.Chart;
+    }
+
+    /// <summary>Raised when a tier segment is clicked; the value is the tier.</summary>
+    public event EventHandler<Severity>? SegmentClicked;
+
+    public void SetCounts(long critical, long high, long medium, long low, long ok)
+    {
+        _counts[0] = critical;
+        _counts[1] = high;
+        _counts[2] = medium;
+        _counts[3] = low;
+        _counts[4] = ok;
+        AccessibleName = string.Join(", ", Enumerable.Range(0, 5).Where(i => _counts[i] > 0).Select(i => DataPaint.SegmentToolTip(i, _counts[i])));
+        _hover = -1;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        float height = SF(8);
+        DataPaint.SeverityBar(e.Graphics, new RectangleF(0, (Height - height) / 2f, Width, height), _counts, _segments, DeviceDpi);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        int index = DataPaint.SegmentAt(_segments, e.X, DeviceDpi);
+        if (index != _hover)
+        {
+            _hover = index;
+            KitToolTip.Set(this, index >= 0 ? DataPaint.SegmentToolTip(index, _counts[index]) : string.Empty);
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        int index = DataPaint.SegmentAt(_segments, e.X, DeviceDpi);
+        if (e.Button == MouseButtons.Left && index >= 0)
+        {
+            SegmentClicked?.Invoke(this, DataPaint.TierSeverity(index));
+        }
+    }
 }
