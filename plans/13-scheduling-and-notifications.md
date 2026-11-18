@@ -96,12 +96,15 @@ not read back from Task Scheduler.
 
 1. If a GUI instance answers on the IPC pipe, forward `run-plan` and exit with code 3. The GUI runs
    the plan in its own engine and shows progress.
-2. Otherwise acquire the engine mutex. If another headless run holds it, log and exit 3.
+2. Otherwise acquire the engine mutex. If another headless run holds it, log, record the skip in the
+   notification centre (reason `Another scan was running.`) and exit 3.
 3. Load the plan. Missing or disabled → remove the orphan task, exit 1.
 4. Check conditions. On battery with `onlyOnAcPower` → skip. Full-screen or presentation
    (`SHQueryUserNotificationState` returns busy, D3D full screen or presentation mode) with
    `skipWhenFullScreen` → re-check every 5 minutes for up to an hour, then skip. A skip is recorded
-   in the runs table and the notification centre, not toasted.
+   in the runs table and the notification centre, not toasted: `Scheduled scan skipped` with the
+   reason `The computer was running on battery.`, `A full-screen program was running.` or `It was
+   stopped before it started.`
 5. Run the engine at below-normal process priority with the plan's depth, scope and budget.
 6. Persist the run summary, apply the notification policy, exit 0 (1 on failure).
 

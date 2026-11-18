@@ -36,6 +36,12 @@ internal sealed class ToolsPage : PageBase
     private ToolsData? _data;
     private int _view = -1;
 
+    /// <summary>The newest request to show a batch in the drawer; an older one that finishes later is dropped.</summary>
+    private long _batchRequest;
+
+    /// <summary>True while Restore, Delete for good or Delete all… runs: one at a time.</summary>
+    private bool _working;
+
     public ToolsPage(UiServices services)
         : base(services)
     {
@@ -276,15 +282,17 @@ internal sealed class ToolsPage : PageBase
     {
         bool live = Services.Operations is not null && !Services.IsDemo;
         List<QuarantineEntry> chosen = ChosenKept();
-        _restore.Enabled = _delete.Enabled = live && chosen.Count > 0;
+        _restore.Enabled = _delete.Enabled = live && !_working && chosen.Count > 0;
         _openFolder.Enabled = chosen.Count > 0 && chosen[0].Size is not null;
-        _deleteAll.Enabled = live && _kept.Count > 0;
+        _deleteAll.Enabled = live && !_working && _kept.Count > 0;
 
-        // Subplan 09, Pitfalls: a disabled button says why.
+        // Subplan 09, Pitfalls: a disabled button says why (Open folder also for an original whose drive is out of reach).
         string choose = chosen.Count == 0 ? Strings.Tools.SelectOriginal : string.Empty;
-        KitToolTip.Set(_restore, choose);
-        KitToolTip.Set(_delete, choose);
-        KitToolTip.Set(_openFolder, choose);
+        string busy = _working ? Strings.Tools.Working : choose;
+        KitToolTip.Set(_restore, busy);
+        KitToolTip.Set(_delete, busy);
+        KitToolTip.Set(_deleteAll, _working ? Strings.Tools.Working : string.Empty);
+        KitToolTip.Set(_openFolder, chosen.Count > 0 && chosen[0].Size is null ? Strings.Library.ErrorUnreachable : choose);
         _undo.Enabled = live && SelectedBatch() is { CanUndo: true };
         KitToolTip.Set(_undo, _undo.Enabled ? string.Empty : Strings.Tools.SelectOperation);
     }
@@ -296,13 +304,13 @@ internal sealed class ToolsPage : PageBase
     private async Task RestoreSelectedAsync()
     {
         List<QuarantineEntry> chosen = ChosenKept();
-        if (chosen.Count == 0 || Services.Operations is not { } runner)
+        if (_working || chosen.Count == 0 || Services.Operations is not { } runner)
         {
             return;
         }
 
         long batch = Services.Clock.UtcNow.UtcTicks;
-        (int restored, int failed, string? firstFailure) = await WithScanPausedAsync(() => Task.Run(async () =>
+        (int restored, int failed, string? firstFailure) = await WorkingAsync(() => WithScanPausedAsync(() => Task.Run(async () =>
         {
             int done = 0;
             int failures = 0;
@@ -322,7 +330,7 @@ internal sealed class ToolsPage : PageBase
             }
 
             return (done, failures, first);
-        })).ConfigureAwait(true);
+        }))).ConfigureAwait(true);
         if (restored > 0)
         {
             string title = string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Repair.ResultRestore, UiFormat.Plural(restored, Strings.Repair.OneFile, Strings.Repair.ManyFiles));
@@ -347,22 +355,23 @@ internal sealed class ToolsPage : PageBase
     private async Task DeleteForGoodAsync(IReadOnlyList<QuarantineEntry> entries)
     {
         List<QuarantineEntry> chosen = [.. entries];
-        if (chosen.Count == 0 || Services.Operations is not { } runner || FindForm() is not Form owner)
+        if (_working || chosen.Count == 0 || Services.Operations is not { } runner || FindForm() is not Form owner)
         {
             return;
         }
 
         long size = chosen.Sum(e => e.Size ?? 0);
-        string title = chosen.Count == 1
+        bool one = chosen.Count == 1;
+        string title = one
             ? string.Format(CultureInfo.CurrentCulture, Strings.Tools.DeleteOneTitle, Path.GetFileName(chosen[0].Operation.SourcePath))
             : string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteTitle, UiFormat.Count(chosen.Count));
-        string text = string.Format(CultureInfo.CurrentCulture, Strings.Dialogs.DeleteText, UiFormat.Size(size));
-        if (!MessageDialog.Confirm(owner, title, text, Strings.Dialogs.KeepThem, Strings.Dialogs.DeleteForGood, destructive: true))
+        string text = string.Format(CultureInfo.CurrentCulture, one ? Strings.Tools.DeleteOneText : Strings.Dialogs.DeleteText, UiFormat.Size(size));
+        if (!MessageDialog.Confirm(owner, title, text, one ? Strings.Tools.KeepIt : Strings.Dialogs.KeepThem, Strings.Dialogs.DeleteForGood, destructive: true))
         {
             return;
         }
 
-        (int deleted, long freed, int failed, string? firstFailure) = await Task.Run(async () =>
+        (int deleted, long freed, int failed, string? firstFailure) = await WorkingAsync(() => Task.Run(async () =>
         {
             int done = 0;
             long bytes = 0;
@@ -383,7 +392,7 @@ internal sealed class ToolsPage : PageBase
             }
 
             return (done, bytes, failures, first);
-        }).ConfigureAwait(true);
+        })).ConfigureAwait(true);
         if (deleted > 0)
         {
             Services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Tools.DeletedForGood, UiFormat.Facts(UiFormat.Plural(deleted, Strings.Repair.OneFile, Strings.Repair.ManyFiles), UiFormat.Size(freed))));
@@ -412,6 +421,31 @@ internal sealed class ToolsPage : PageBase
         }
     }
 
+    /// <summary>
+    /// Runs a Restore, Delete for good or Delete all… with those three disabled meanwhile, saying why (subplan 08, Busy):
+    /// nothing showed it, and a second one started on the same originals. The keyboard focus waits on the list, as a
+    /// disabled button sends it on to the next one.
+    /// </summary>
+    private async Task<T> WorkingAsync<T>(Func<Task<T>> work)
+    {
+        _working = true;
+        if (_restore.ContainsFocus || _delete.ContainsFocus || _deleteAll.ContainsFocus)
+        {
+            _table.Focus();
+        }
+
+        UpdateViewButtons();
+        try
+        {
+            return await work().ConfigureAwait(true);
+        }
+        finally
+        {
+            _working = false;
+            UpdateViewButtons();
+        }
+    }
+
     /// <summary>Runs <paramref name="work"/> with a running scan paused (subplan 12: an operation needs the engine idle), then lets it continue.</summary>
     private async Task<T> WithScanPausedAsync<T>(Func<Task<T>> work)
     {
@@ -435,7 +469,11 @@ internal sealed class ToolsPage : PageBase
         }
     }
 
-    /// <summary>Shows a batch's operations in the drawer, read off the UI thread.</summary>
+    /// <summary>
+    /// Shows a batch's operations in the drawer, read off the UI thread. Only the newest request is shown, and only
+    /// while its batch is still the one selected: arrowing from a large batch to a small one showed the large one last.
+    /// A drawer closed meanwhile (Esc) stays closed.
+    /// </summary>
     private async Task ShowBatchAsync(long batchId)
     {
         if (Services.IsDemo || _batches.FirstOrDefault(b => b.Id == batchId) is not OperationBatch batch)
@@ -443,8 +481,11 @@ internal sealed class ToolsPage : PageBase
             return;
         }
 
+        long request = ++_batchRequest;
+        bool open = _batchView.Parent is Drawer { IsOpen: true };
         List<OperationRecord> operations = await Task.Run(() => Services.Database.Journal.List(int.MaxValue, batchId)).ConfigureAwait(true);
-        if (IsDisposed || _view != 1)
+        if (IsDisposed || _view != 1 || request != _batchRequest || (open && _batchView.Parent is not Drawer { IsOpen: true })
+            || (SelectedBatch() is OperationBatch selected && selected.Id != batchId))
         {
             return;
         }
@@ -456,6 +497,8 @@ internal sealed class ToolsPage : PageBase
 
     private void CloseBatch()
     {
+        // A batch still being read is not shown afterwards.
+        _batchRequest++;
         if (_batchView.Batch is not null)
         {
             _batchView.Clear();
@@ -559,6 +602,10 @@ internal sealed class ToolsPage : PageBase
         private string _title = string.Empty;
         private string _facts = string.Empty;
 
+        /// <summary>The batch's result and its pill tier, worked out once per batch, not at every paint.</summary>
+        private string _result = string.Empty;
+        private Severity? _tier;
+
         public BatchView(ToolsPage page)
         {
             _page = page;
@@ -577,6 +624,8 @@ internal sealed class ToolsPage : PageBase
         {
             Batch = batch;
             _title = LiveUiData.ActionName(batch.ActionId);
+            _result = batch.Result;
+            _tier = ResultTier(_result);
             _facts = UiFormat.Facts(UiFormat.RecentDate(LiveUiData.Ticks(batch.Utc), _page.Services.Clock.UtcNow), UiFormat.Plural(operations.Count, Strings.Repair.OneFile, Strings.Repair.ManyFiles));
             _source.Ids = [.. operations.Select(o => o.Id)];
             _source.Rows = [.. operations.Select(o => new[] { Path.GetFileName(o.SourcePath), OperationResult(o.Status), o.Status is OperationStatus.Failed or OperationStatus.Cancelled ? o.DetailJson ?? string.Empty : string.Empty })];
@@ -587,14 +636,18 @@ internal sealed class ToolsPage : PageBase
             Invalidate();
         }
 
-        /// <summary>After a reload: the batch shown keeps its newest result (an Undo changes it), or the drawer closes when it is gone.</summary>
+        /// <summary>
+        /// After a reload: the drawer shows the selected batch (or the one shown) with its newest result (an Undo
+        /// changes it), or closes when that batch is gone.
+        /// </summary>
         public void Refresh(IReadOnlyList<OperationBatch> batches)
         {
             if (Batch is OperationBatch shown && Parent is Drawer { IsOpen: true })
             {
-                if (batches.FirstOrDefault(b => b.Id == shown.Id) is OperationBatch fresh)
+                long wanted = _page.SelectedBatch()?.Id ?? shown.Id;
+                if (batches.Any(b => b.Id == wanted))
                 {
-                    UiTask.Run(_page.ShowBatchAsync(fresh.Id));
+                    UiTask.Run(_page.ShowBatchAsync(wanted));
                 }
                 else
                 {
@@ -618,7 +671,7 @@ internal sealed class ToolsPage : PageBase
             ThemeTokens t = Tokens;
             Graphics g = e.Graphics;
             g.Clear(t.Surface);
-            if (Batch is not OperationBatch batch)
+            if (Batch is null)
             {
                 return;
             }
@@ -626,14 +679,13 @@ internal sealed class ToolsPage : PageBase
             TypeRamp type = Type;
             KitPaint.DrawText(g, _title, type.Subtitle, t.Text, S(20), S(32), Width - S(80));
             KitPaint.DrawText(g, _facts, type.Body, t.Text2, S(20), S(58), Width - S(40));
-            string result = batch.Result;
-            (Color fg, Color bg) = ResultTier(result) switch
+            (Color fg, Color bg) = _tier switch
             {
                 Severity s when s != Severity.None => (t.ForSeverity(s).Text, t.ForSeverity(s).Pill),
                 Severity => (t.Ok.Text, t.Ok.Pill),
                 null => (t.Text2, t.NeutralPill),
             };
-            BadgePainter.PaintPill(g, S(20), S(76), result, fg, bg, DeviceDpi);
+            BadgePainter.PaintPill(g, S(20), S(76), _result, fg, bg, DeviceDpi);
         }
 
         protected override void OnThemeChanged()
@@ -905,7 +957,8 @@ internal sealed class ToolsPage : PageBase
             int index = _buttons.Count;
             AddButton(text, caption, kind, () =>
             {
-                if (confirm is null || confirm())
+                // While another runs, Reset asked first and then did nothing.
+                if (_working < 0 && (confirm is null || confirm()))
                 {
                     Run(index, action, work);
                 }
@@ -913,8 +966,9 @@ internal sealed class ToolsPage : PageBase
         }
 
         /// <summary>
-        /// Runs one database action at a time and shows its result, or why it failed, in a toast. Meanwhile every
-        /// button is disabled and the action's caption reads Working… (a second click did nothing and said nothing).
+        /// Runs one database action at a time and shows its result, or why it failed, in a toast. Meanwhile the
+        /// action's caption reads Working… and the buttons wait (a second click did nothing and said nothing). They stay
+        /// enabled: a disabled button sends the keyboard focus on, and it left the view at every action.
         /// </summary>
         private async void Run(int index, string action, Func<Task<ToastContent?>> work)
         {
@@ -924,7 +978,7 @@ internal sealed class ToolsPage : PageBase
             }
 
             _working = index;
-            SetBusy(true);
+            Invalidate();
             ToastContent? result;
             try
             {
@@ -938,7 +992,10 @@ internal sealed class ToolsPage : PageBase
             finally
             {
                 _working = -1;
-                SetBusy(false);
+                if (!IsDisposed)
+                {
+                    Invalidate();
+                }
             }
 
             if (result is not null)
@@ -947,21 +1004,6 @@ internal sealed class ToolsPage : PageBase
             }
 
             _page.Reload();
-        }
-
-        private void SetBusy(bool busy)
-        {
-            if (IsDisposed)
-            {
-                return;
-            }
-
-            foreach (KitButton button in _buttons)
-            {
-                button.Enabled = !busy;
-            }
-
-            Invalidate();
         }
 
         private bool ConfirmReset() =>

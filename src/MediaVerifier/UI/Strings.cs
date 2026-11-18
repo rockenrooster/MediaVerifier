@@ -693,6 +693,8 @@ internal static class Strings
         public const string ReportSaved = "Report saved";
         public const string Open = "Open";
         public const string DeleteOneTitle = "Delete {0} for good?";
+        public const string DeleteOneText = "This is the original kept in quarantine, {0}. This cannot be undone.";
+        public const string KeepIt = "Keep it";
         public const string DeletedForGood = "Deleted for good";
         public const string SelectOriginal = "Select an original first";
         public const string SelectOperation = "Select an operation that can be undone";

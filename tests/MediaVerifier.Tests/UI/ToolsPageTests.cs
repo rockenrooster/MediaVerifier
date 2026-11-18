@@ -150,6 +150,110 @@ public sealed class ToolsPageTests
     }
 
     /// <summary>
+    /// The database buttons stay enabled while an action runs: disabled, each sent the keyboard focus on, and it left the
+    /// view at every Back up, Compact or Check. The action still reports in its toast.
+    /// </summary>
+    [Fact]
+    public void Database_buttons_stay_enabled_while_an_action_runs()
+    {
+        List<bool> enabled = [];
+        List<ToastContent> toasts = [];
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("tools-database");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = toasts.Add;
+            ToolsPage tools = OpenView(form, 4);
+            KitButton[] buttons = [.. new[] { Strings.Tools.BackUpNow, Strings.Tools.Compact, Strings.Tools.Check, Strings.Tools.ResetEllipsis }.Select(text => Find<KitButton>(tools, b => b.Text == text && b.Visible))];
+            buttons[0].PerformClick();
+            enabled.AddRange(buttons.Select(b => b.Enabled));
+            Settle(() => toasts.Count > 0);
+            form.Close();
+        });
+
+        Assert.Equal([true, true, true, true], enabled);
+        Assert.Contains(toasts, t => t.Title == Strings.Tools.BackupSaved);
+    }
+
+    /// <summary>
+    /// Operations: the drawer follows the selected batch; closed with Esc while the next batch is being read, it stays
+    /// closed (it opened again when the read finished).
+    /// </summary>
+    [Fact]
+    public void An_operations_drawer_closed_while_its_batch_is_read_stays_closed()
+    {
+        bool openedBySelection = false;
+        bool reopened = true;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("tools-drawer");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = _ => { };
+            _ = Kept(services, temp, "a.flac");
+            _ = Kept(services, temp, "b.flac");
+            ToolsPage tools = OpenView(form, 1);
+            VirtualList table = Table(tools);
+            Assert.Equal(2, table.Count);
+            table.ApplyClickSelection(0, Keys.None);
+            Settle(() => form.Shell.Drawer.IsOpen);
+            openedBySelection = form.Shell.Drawer.IsOpen;
+
+            // The next row, and Esc before its files are read (the read finishes on a pool thread).
+            table.ApplyClickSelection(1, Keys.None);
+            form.SetDrawerContent(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            reopened = form.Shell.Drawer.IsOpen;
+            form.Close();
+        });
+
+        Assert.True(openedBySelection, "Selecting an operation did not open the drawer.");
+        Assert.False(reopened, "The drawer closed with Esc opened again.");
+    }
+
+    /// <summary>Open folder says why it is disabled when the chosen original's drive is out of reach (it said nothing).</summary>
+    [Fact]
+    public void Open_folder_says_why_an_original_out_of_reach_cannot_be_shown()
+    {
+        bool openEnabled = true;
+        string? tip = null;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("tools-unreachable");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = _ => { };
+
+            // An original kept on a drive that is not there (a disconnected disk or share).
+            char free = "QRSTUVWXYZ".First(letter => !DriveInfo.GetDrives().Any(d => char.ToUpperInvariant(d.Name[0]) == letter));
+            string backup = free + @":\Music\" + OperationRunner.QuarantineFolder + @"\1\gone.flac";
+            Task<long> add = services.Database.Journal.AddAsync(new OperationRecord { BatchId = 1, Utc = DateTime.UtcNow.Ticks, ActionId = "ACT-QUARANTINE", Status = OperationStatus.Done, SourcePath = free + @":\Music\gone.flac", BackupPath = backup, UndoJson = "{}" });
+            Settle(() => add.IsCompleted);
+
+            ToolsPage tools = OpenView(form, 0);
+            VirtualList table = Table(tools);
+            table.ApplyClickSelection(0, Keys.None);
+            KitButton open = Find<KitButton>(tools, b => b.Text == Strings.Tools.OpenFolder && b.Visible);
+            openEnabled = open.Enabled;
+            tip = KitToolTip.Get(open);
+            form.Close();
+        });
+
+        Assert.False(openEnabled, "Open folder is enabled for an original out of reach.");
+        Assert.Equal(Strings.Library.ErrorUnreachable, tip);
+    }
+
+    /// <summary>
     /// Create report says so while its folder has not answered (an offline network folder kept Create disabled with
     /// nothing shown), and writes the report once the folder answers.
     /// </summary>
