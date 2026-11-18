@@ -86,8 +86,12 @@ user overrides (enabled, severity cap, parameters).
   longer raises it, the finding becomes `Resolved` with the reason `not reproduced`. A scan at a
   shallower depth leaves it untouched.
 - A remediation that fixes the cause resolves the finding with the operation ID as the reason.
-- `Ignored` findings stay ignored across rescans until the file content changes (new fingerprint), at
-  which point they reopen if raised again. Ignores can also be scoped to a rule for a folder (subplan 03).
+- `Ignored` findings stay ignored across rescans and rule changes until the file content changes (new
+  fingerprint), at which point they reopen if raised again. Ignores can also be scoped to a rule for a
+  folder (subplan 03).
+- A rule change re-judges stored artifacts (subplan 05). The verification rules (`INT-ROT`,
+  `INT-META-DRIFT`) cannot be judged again without reading the file: switching one off resolves its open
+  findings with the reason `rule off`, and switching it back on reopens exactly those.
 - When a file is modified legitimately, all its findings are re-evaluated from scratch.
 
 ## Wording rules
