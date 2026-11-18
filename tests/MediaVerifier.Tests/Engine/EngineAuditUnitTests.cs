@@ -1,6 +1,7 @@
 using MediaVerifier.Core;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Settings;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.Tests.TestSupport;
 
@@ -95,6 +96,19 @@ public sealed class EngineAuditUnitTests
         Assert.Equal(TimeSpan.FromSeconds(100), first);
         Assert.Equal(first, sameSecond);
         Assert.Equal(TimeSpan.FromSeconds(80), nextSecond);
+    }
+
+    [Fact]
+    public void A_folder_classifies_only_the_kinds_it_contains()
+    {
+        ScanSettings settings = new();
+        MediaClassifier photos = MediaClassifier.For(settings, MediaKindMask.Photo);
+        Assert.Equal(MediaKind.Photo, photos.Classify("a.jpg"));
+        Assert.Equal(MediaKind.Unknown, photos.Classify("a.mp4"));
+        Assert.Equal(MediaKind.Unknown, photos.Classify("memo.amr"));
+
+        // No kind chosen (an old or edited database): everything is media, as before Contains existed.
+        Assert.Equal(MediaKind.Audio, MediaClassifier.For(settings, MediaKindMask.None).Classify("memo.amr"));
     }
 
     [Fact]

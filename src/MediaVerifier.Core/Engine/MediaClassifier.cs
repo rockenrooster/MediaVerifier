@@ -1,4 +1,5 @@
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Settings;
 
 namespace MediaVerifier.Core.Engine;
 
@@ -43,6 +44,21 @@ public sealed class MediaClassifier
     }
 
     public static MediaClassifier Default { get; } = new();
+
+    /// <summary>
+    /// The classifier of one watched folder: the file types (Settings → Scanning) of the kinds the folder contains
+    /// (Library → Contains). A kind it does not contain gets an empty list, never null (null means the defaults). No
+    /// kind chosen (only possible in an old or edited database) means all of them.
+    /// </summary>
+    public static MediaClassifier For(ScanSettings settings, MediaKindMask contains)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        MediaKindMask mask = contains == MediaKindMask.None ? MediaKindMask.All : contains;
+        return new MediaClassifier(
+            mask.Includes(MediaKind.Photo) ? settings.PhotoExtensions : [],
+            mask.Includes(MediaKind.Video) ? settings.VideoExtensions : [],
+            mask.Includes(MediaKind.Audio) ? settings.AudioExtensions : []);
+    }
 
     /// <summary>The media kind for a file name; Unknown means "not media, do not index".</summary>
     public MediaKind Classify(string fileName)

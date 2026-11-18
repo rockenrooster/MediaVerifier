@@ -672,7 +672,7 @@ public sealed class ScanEngine : IDisposable
 
             state.PresentBefore = _s.Database.Files.CountPresent(root.Id);
             await _s.Database.Roots.MarkOnlineAsync(root.Id, _s.Clock.UtcNow, volume.Key, volume.Class, token).ConfigureAwait(false);
-            TreeEnumerator enumerator = new(_s.FileSystem, ClassifierFor(root), new EnumerationRules
+            TreeEnumerator enumerator = new(_s.FileSystem, MediaClassifier.For(_settings, root.MediaMask), new EnumerationRules
             {
                 ExcludedDirectories = _settings.AlwaysSkip,
                 IncludeGlobs = ParseGlobs(root.IncludePatternsJson),
@@ -746,20 +746,6 @@ public sealed class ScanEngine : IDisposable
             {
                 await ReleaseHeldNewAsync(root, volume, heldNew, token).ConfigureAwait(false);
             }
-        }
-
-        /// <summary>
-        /// The media kinds the folder holds (Library → Contains): extensions of a kind it does not hold are not media
-        /// there, so they are neither listed nor kept in the index. An empty list for a kind, never null (null means the
-        /// defaults). A folder with no kind chosen (only possible in an old or edited database) holds them all.
-        /// </summary>
-        private MediaClassifier ClassifierFor(RootRecord root)
-        {
-            MediaKindMask mask = root.MediaMask == MediaKindMask.None ? MediaKindMask.All : root.MediaMask;
-            return new MediaClassifier(
-                mask.Includes(MediaKind.Photo) ? _settings.PhotoExtensions : [],
-                mask.Includes(MediaKind.Video) ? _settings.VideoExtensions : [],
-                mask.Includes(MediaKind.Audio) ? _settings.AudioExtensions : []);
         }
 
         /// <summary>
