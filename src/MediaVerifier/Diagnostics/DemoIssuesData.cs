@@ -11,19 +11,19 @@ internal sealed partial class DemoUiData
 {
     private static readonly IssueRow[] Rows =
     [
-        Row(1, Severity.Critical, "INT-ROT", 1f, "IMG_2041.jpg", "Changed without being modified · intact on 14 Mar 2026", @"D:\Photos\2019\Rome", 4.2, MediaKind.Photo),
-        Row(2, Severity.Critical, "INT-ROT", 1f, "Harbor Lights - 03 - Low Tide.flac", "Changed without being modified · intact on 2 Mar 2026", @"D:\Music\Harbor Lights\Low Tide", 28.7, MediaKind.Audio),
-        Row(3, Severity.Critical, "COR-CONTAINER", 1f, "Birthday 2021.mp4", "Container is broken · index missing, recording was interrupted", @"D:\Videos\Family", 1.9 * 1024, MediaKind.Video),
-        Row(4, Severity.High, "AUD-FAKE-LOSSLESS", 0.85f, "Night Drive - 07 - Overpass.flac", "Likely made from a lossy source · hard cutoff at 16.6 kHz", @"D:\Music\Night Drive\Overpass", 31.2, MediaKind.Audio),
-        Row(5, Severity.High, "VID-UPSCALED", 0.85f, "Coastline 4K.mkv", "Likely upscaled · 2160p file with detail equivalent to 1080p", @"D:\Videos\Travel", 14.6 * 1024, MediaKind.Video),
-        Row(6, Severity.High, "COR-CHECKSUM", 1f, "Sunday Session - 02.flac", "Embedded checksum mismatch · audio differs from the stored MD5", @"D:\Music\Sunday Session", 41.0, MediaKind.Audio),
-        Row(7, Severity.High, "COR-DECODE", 1f, "Wedding - Speeches.mov", "Decoder errors · 14 errors, about 3 s affected", @"D:\Videos\Family", 6.3 * 1024, MediaKind.Video),
-        Row(8, Severity.High, "COR-PARTIAL-IMAGE", 1f, "DSC_0412.jpg", "Image decodes only partly · data ends before the image does", @"D:\Photos\2016\Lisbon", 2.1, MediaKind.Photo),
-        Row(9, Severity.Medium, "AUD-PADDED-BITS", 1f, "Glasshouse - 01 - Morning.flac", "Bit depth is padded · 24-bit file with 16 significant bits", @"D:\Music\Glasshouse", 88.4, MediaKind.Audio),
-        Row(10, Severity.Medium, "COR-INDEX", 1f, "Road Trip Day 3.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 3.8 * 1024, MediaKind.Video),
-        Row(11, Severity.Medium, "AUD-CLIPPING", 1f, "Static Bloom - 05.flac", "Clipping · 212 clipped peaks per minute", @"D:\Music\Static Bloom", 36.9, MediaKind.Audio),
-        Row(12, Severity.Medium, "AUD-CLIPPING", 1f, "Static Bloom - 06.flac", "Clipping · 148 clipped peaks per minute", @"D:\Music\Static Bloom", 34.2, MediaKind.Audio),
-        Row(13, Severity.Medium, "COR-INDEX", 1f, "Road Trip Day 4.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 4.1 * 1024, MediaKind.Video),
+        Row(1, Severity.Critical, "INT-ROT", "IMG_2041.jpg", "Changed without being modified · intact on 14 Mar 2026", @"D:\Photos\2019\Rome", 4.2, MediaKind.Photo),
+        Row(2, Severity.Critical, "INT-ROT", "Harbor Lights - 03 - Low Tide.flac", "Changed without being modified · intact on 2 Mar 2026", @"D:\Music\Harbor Lights\Low Tide", 28.7, MediaKind.Audio),
+        Row(3, Severity.Critical, "COR-CONTAINER", "Birthday 2021.mp4", "Container is broken · index missing, recording was interrupted", @"D:\Videos\Family", 1.9 * 1024, MediaKind.Video),
+        Row(4, Severity.High, "AUD-FAKE-LOSSLESS", "Night Drive - 07 - Overpass.flac", "Likely made from a lossy source · hard cutoff at 16.6 kHz", @"D:\Music\Night Drive\Overpass", 31.2, MediaKind.Audio),
+        Row(5, Severity.High, "VID-UPSCALED", "Coastline 4K.mkv", "Likely upscaled · 2160p file with detail equivalent to 1080p", @"D:\Videos\Travel", 14.6 * 1024, MediaKind.Video),
+        Row(6, Severity.High, "COR-CHECKSUM", "Sunday Session - 02.flac", "Embedded checksum mismatch · audio differs from the stored MD5", @"D:\Music\Sunday Session", 41.0, MediaKind.Audio),
+        Row(7, Severity.High, "COR-DECODE", "Wedding - Speeches.mov", "Decoder errors · 14 errors, about 3 s affected", @"D:\Videos\Family", 6.3 * 1024, MediaKind.Video),
+        Row(8, Severity.High, "COR-PARTIAL-IMAGE", "DSC_0412.jpg", "Image decodes only partly · data ends before the image does", @"D:\Photos\2016\Lisbon", 2.1, MediaKind.Photo),
+        Row(9, Severity.Medium, "AUD-PADDED-BITS", "Glasshouse - 01 - Morning.flac", "Bit depth is padded · 24-bit file with 16 significant bits", @"D:\Music\Glasshouse", 88.4, MediaKind.Audio),
+        Row(10, Severity.Medium, "COR-INDEX", "Road Trip Day 3.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 3.8 * 1024, MediaKind.Video),
+        Row(11, Severity.Medium, "AUD-CLIPPING", "Static Bloom - 05.flac", "Clipping · 212 clipped peaks per minute", @"D:\Music\Static Bloom", 36.9, MediaKind.Audio),
+        Row(12, Severity.Medium, "AUD-CLIPPING", "Static Bloom - 06.flac", "Clipping · 148 clipped peaks per minute", @"D:\Music\Static Bloom", 34.2, MediaKind.Audio),
+        Row(13, Severity.Medium, "COR-INDEX", "Road Trip Day 4.mkv", "Seek index missing · seeking will be slow or fail", @"D:\Videos\Travel", 4.1 * 1024, MediaKind.Video),
     ];
 
     public IssuesData LoadIssues(IssuesQuery query)
@@ -66,7 +66,9 @@ internal sealed partial class DemoUiData
 
     public long? FileOfFinding(long findingId) => Rows.FirstOrDefault(r => r.Id == findingId)?.FileId;
 
-    public FileDetail? LoadFileDetail(long fileId)
+    public FileDetail? LoadFileDetail(long fileId) => LoadFileDetail(fileId, FindingStatus.Open, findCopies: true);
+
+    public FileDetail? LoadFileDetail(long fileId, FindingStatus status, bool findCopies)
     {
         IssueRow row = Rows.FirstOrDefault(r => r.FileId == fileId) ?? Rows[3];
         RuleDefinition fake = RuleCatalog.Get("AUD-FAKE-LOSSLESS");
@@ -147,10 +149,13 @@ internal sealed partial class DemoUiData
     public byte[]? LoadCompare(FileDetail detail, FindingDetail finding, double time, CancellationToken token) => null;
 
     /// <summary>A demo row; <paramref name="line2"/> is "{title} · {detail}" as the mockups write it, the detail starting a sentence here.</summary>
-    private static IssueRow Row(long id, Severity severity, string rule, float confidence, string name, string line2, string folder, double megabytes, MediaKind kind)
+    private static IssueRow Row(long id, Severity severity, string rule, string name, string line2, string folder, double megabytes, MediaKind kind)
     {
         string[] parts = line2.Split(" · ", 2);
         string detail = parts.Length > 1 ? char.ToUpper(parts[1][0], System.Globalization.CultureInfo.InvariantCulture) + parts[1][1..] : line2;
-        return new(id, id, rule, severity, confidence, name, detail, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name), parts[0]);
+        return new(id, id, rule, severity, name, detail, folder, (long)(megabytes * 1024 * 1024), kind, Path.Combine(folder, name), parts[0])
+        {
+            Fixes = LiveUiData.ListFixes(rule, kind, name, new RootRecord { Path = folder[..3] }, hasHealthyCopy: false, decodesCleanly: false),
+        };
     }
 }

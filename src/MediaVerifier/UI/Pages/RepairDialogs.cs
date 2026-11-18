@@ -6,6 +6,7 @@ using MediaVerifier.UI.Theme;
 namespace MediaVerifier.UI.Pages;
 
 /// <summary>What dialog A shows (subplan 09, Dialogs, A).</summary>
+/// <param name="NothingToRun">Every file changed since the scan: the action stays disabled, the bar above it says why.</param>
 internal sealed record RepairPreview(
     string Title,
     string Paragraph,
@@ -17,7 +18,8 @@ internal sealed record RepairPreview(
     int ChangedSkipped,
     IReadOnlyList<string> ChangedNames,
     bool ScanRunning,
-    string Verb);
+    string Verb,
+    bool NothingToRun = false);
 
 /// <summary>
 /// Dialog A, confirm a repair (subplan 09; reference <c>dialogs</c>, A): the action's paragraph, four fact lines
@@ -30,6 +32,7 @@ internal sealed class RepairDialog : KitDialog
     private readonly RepairPreview _preview;
     private readonly InfoBar? _skipped;
     private readonly KitCheckBox? _pause;
+    private readonly KitButton _cancel;
     private readonly KitButton _action;
     private int _paragraphHeight;
 
@@ -56,12 +59,21 @@ internal sealed class RepairDialog : KitDialog
         }
 
         Body.Paint += (_, e) => PaintBody(e.Graphics);
-        AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
+        _cancel = AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
         _action = AddButton(preview.Verb, ButtonKind.Primary, DialogResult.OK);
+
+        // When every file changed since the scan there is nothing to run: the action stays off and the Medium bar says
+        // why (a confirmed dialog used to end without a result or a word).
+        _action.Enabled = !preview.NothingToRun;
+        if (preview.NothingToRun)
+        {
+            KitToolTip.Set(_action, Core.CoreStrings.Remediation.ChangedSinceScan);
+        }
+
         if (_pause is not null)
         {
             // The engine must be idle on the folder: without pausing, nothing can run.
-            _pause.CheckedChanged += (_, _) => _action.Enabled = _pause.Checked;
+            _pause.CheckedChanged += (_, _) => _action.Enabled = _pause.Checked && !preview.NothingToRun;
         }
 
         BodyHeight = Measure();
@@ -77,7 +89,7 @@ internal sealed class RepairDialog : KitDialog
         return dialog.ShowOver(owner) == DialogResult.OK;
     }
 
-    protected override Control? InitialFocus() => _action;
+    protected override Control? InitialFocus() => _action.Enabled ? _action : _cancel;
 
     protected override void LayoutBody()
     {

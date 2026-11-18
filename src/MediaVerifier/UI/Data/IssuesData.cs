@@ -1,3 +1,4 @@
+using System.Globalization;
 using MediaVerifier.Core.Analysis.Audio;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Storage;
@@ -7,14 +8,22 @@ namespace MediaVerifier.UI.Data;
 /// <summary>What the Issues list shows: filter, order and grouping.</summary>
 internal sealed record IssuesQuery(FindingFilter Filter, FindingSort Sort = FindingSort.Severity, bool Descending = false, FindingGroup Group = FindingGroup.Severity)
 {
-    /// <summary>True when anything but the defaults is set (the summary row and the empty state use it).</summary>
+    /// <summary>
+    /// True when anything but the defaults is set (the summary row and the empty state use it). "Problems found in this
+    /// scan" counts: without it the list could say "No problems found" while thousands were open, with no way to clear it.
+    /// </summary>
     public bool Filtered =>
         Filter.Severities is { Count: > 0 } || Filter.Kinds is { Count: > 0 } || Filter.Categories is { Count: > 0 } || Filter.RuleIds is { Count: > 0 }
-        || Filter.RootId is not null || Filter.DirId is not null || !string.IsNullOrEmpty(Filter.Text) || Filter.Status != FindingStatus.Open;
+        || Filter.RootId is not null || Filter.DirId is not null || !string.IsNullOrEmpty(Filter.Text) || Filter.Status != FindingStatus.Open
+        || Filter.FirstRun is not null;
 }
 
 /// <summary>A group of the list: header label, the count shown, and how many ids of the list belong to it.</summary>
-internal sealed record IssueGroup(string Key, string Label, Severity? Tier, int Count, int Rows);
+internal sealed record IssueGroup(string Key, string Label, Severity? Tier, int Count, int Rows)
+{
+    /// <summary>The header's count, formatted once with the data (the list paints without allocating).</summary>
+    public string CountText { get; } = UiFormat.Count(Count);
+}
 
 /// <summary>The Issues snapshot: ids in list order, groups, chip and drop-down counts.</summary>
 internal sealed record IssuesData(
@@ -28,7 +37,11 @@ internal sealed record IssuesData(
     bool HasFolders,
     bool AnyScanned,
     long FilesScanned,
-    DateTimeOffset? LastScan);
+    DateTimeOffset? LastScan)
+{
+    /// <summary>The filter summary row's text, <c>Showing {n} of {total}</c>, formatted once with the data.</summary>
+    public string ShowingText { get; } = string.Format(CultureInfo.CurrentCulture, Strings.Issues.Showing, UiFormat.Count(Ids.Length), UiFormat.Count(TotalOpen));
+}
 
 /// <summary>One row of the Issues list.</summary>
 internal sealed record IssueRow(
@@ -36,7 +49,6 @@ internal sealed record IssueRow(
     long FileId,
     string RuleId,
     Severity Severity,
-    float Confidence,
     string Name,
     string Line2,
     string Folder,
@@ -47,6 +59,18 @@ internal sealed record IssueRow(
 {
     /// <summary>Line 2 with the problem in front, for a list too narrow for the Problem column (built once, not per paint).</summary>
     public string Line2WithProblem { get; } = Problem is null ? Line2 : Problem + Strings.Separator + Line2;
+
+    /// <summary>The size as the row shows it, formatted once (the list paints without allocating).</summary>
+    public string SizeText { get; } = UiFormat.Size(Size);
+
+    /// <summary>
+    /// The fixes the list can offer for this finding, most recommended first: runnable, and valid for the file's kind,
+    /// format and folder (subplan 12, Action catalogue). Quarantine has its own button and is not among them.
+    /// </summary>
+    public IReadOnlyList<string> Fixes { get; init; } = [];
+
+    /// <summary>The recommended fix (the row menu's and Ctrl+Enter's), null when the app has none to run.</summary>
+    public string? RecommendedFix => Core.Remediation.ActionCatalog.Recommended(Fixes);
 }
 
 /// <summary>Which evidence view a finding gets in the drawer (subplan 09, task UI-14).</summary>
@@ -62,6 +86,8 @@ internal enum EvidenceView
 }
 
 /// <summary>A finding in the drawer, with the rule's three paragraphs.</summary>
+/// <param name="Status">Open, or the status the list shows (an ignored finding offers Stop ignoring).</param>
+/// <param name="ZeroRuns">For the byte map: zero-filled regions as offset and length pairs, in bytes.</param>
 internal sealed record FindingDetail(
     long Id,
     string RuleId,
@@ -74,7 +100,9 @@ internal sealed record FindingDetail(
     string WhatYouCanDo,
     EvidenceView View,
     IReadOnlyDictionary<string, object> Evidence,
-    string EvidenceCaption);
+    string EvidenceCaption,
+    FindingStatus Status = FindingStatus.Open,
+    IReadOnlyList<long>? ZeroRuns = null);
 
 /// <summary>The fingerprint line of the drawer.</summary>
 internal enum FingerprintState
@@ -86,6 +114,8 @@ internal enum FingerprintState
 }
 
 /// <summary>Everything the detail drawer shows about one file.</summary>
+/// <param name="RootSegments">How many breadcrumb segments the watched folder's own path has (the rest are its subfolders).</param>
+/// <param name="CopiesPending">The fixes were worked out without looking for a healthy copy; a second load looks for one.</param>
 internal sealed record FileDetail(
     long FileId,
     string Name,
@@ -104,7 +134,16 @@ internal sealed record FileDetail(
     IReadOnlyList<long> ZeroRunOffsets,
     string RecommendedAction = "",
     string RecommendedActionId = "",
-    IReadOnlyList<string>? FixActionIds = null);
+    IReadOnlyList<string>? FixActionIds = null,
+    long RootId = 0,
+    long DirId = 0,
+    string RelDir = "",
+    int RootSegments = 0,
+    bool CopiesPending = false)
+{
+    /// <summary><see cref="ZeroRunOffsets"/> as one-byte regions (offset and length pairs) for the byte map, built once.</summary>
+    public IReadOnlyList<long> ZeroRunStarts { get; } = [.. ZeroRunOffsets.SelectMany(offset => new[] { offset, 1L })];
+}
 
 /// <summary>Issues and drawer data (separate interface so pages depend only on what they read).</summary>
 internal interface IIssuesData
@@ -114,9 +153,18 @@ internal interface IIssuesData
     /// <summary>The tier counts <see cref="LoadIssues"/> gives for <paramref name="filter"/>, without the list (the new-problems pill).</summary>
     SeverityCounts CountIssues(FindingFilter filter);
 
+    /// <summary>The rows of the given findings, in the given order; findings that are gone are left out.</summary>
     IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids);
 
+    /// <summary>Everything the drawer shows about a file and its open findings, healthy copies looked for.</summary>
     FileDetail? LoadFileDetail(long fileId);
+
+    /// <summary>
+    /// The drawer's data with the file's open findings and those with <paramref name="status"/> (the list's Status
+    /// view). Without <paramref name="findCopies"/> no healthy copy is looked for, which can wait on an offline backup
+    /// drive: the drawer opens at once and <see cref="FileDetail.CopiesPending"/> says a second load is worthwhile.
+    /// </summary>
+    FileDetail? LoadFileDetail(long fileId, FindingStatus status, bool findCopies);
 
     /// <summary>The file a finding belongs to; null when there is no such finding.</summary>
     long? FileOfFinding(long findingId);

@@ -56,6 +56,9 @@ internal sealed class FileDetailView : KitControl
     private bool _holding;
     private Rectangle _compareRect;
     private readonly List<(Rectangle Hit, int Index)> _stripHits = [];
+
+    // The breadcrumb's segments as painted, for the links to Library > Browse.
+    private readonly List<(Rectangle Hit, int Index)> _crumbHits = [];
     private static readonly System.Drawing.Imaging.ImageAttributes Faded = FadedAttributes();
 
     public FileDetailView()
@@ -82,7 +85,7 @@ internal sealed class FileDetailView : KitControl
         {
             if (_detail is FileDetail shown)
             {
-                ShellActions.CopyText([shown.TechnicalText]);
+                CopyRequested?.Invoke(this, shown.TechnicalText);
             }
         };
         _historyToggle.TabIndex = 1000;
@@ -99,8 +102,14 @@ internal sealed class FileDetailView : KitControl
 
     public event EventHandler<Point>? MoreRequested;
 
-    /// <summary>Ignore or Scan again on one finding: finding id and which (true = ignore).</summary>
+    /// <summary>Ignore (for an ignored finding, Stop ignoring) or Scan again on one finding: finding id and which (true = the first).</summary>
     public event EventHandler<(long FindingId, bool Ignore)>? FindingAction;
+
+    /// <summary>Copy details: the technical text to copy.</summary>
+    public event EventHandler<string>? CopyRequested;
+
+    /// <summary>A breadcrumb segment was clicked (its index in <see cref="FileDetail.Breadcrumb"/>): a link to Library, Browse.</summary>
+    public event EventHandler<int>? CrumbClicked;
 
     public FileDetail? Detail => _detail;
 
@@ -151,7 +160,16 @@ internal sealed class FileDetailView : KitControl
         for (int i = 0; i < detail.Findings.Count; i++)
         {
             FindingDetail finding = detail.Findings[i];
-            KitButton ignore = new() { Kind = ButtonKind.Subtle, Icon = IconName.Ignore, Text = Strings.Issues.Ignore, TabIndex = 11 + (3 * i) };
+
+            // An ignored finding (the Ignored view) offers Stop ignoring; a resolved one only Scan again.
+            KitButton ignore = new()
+            {
+                Kind = ButtonKind.Subtle,
+                Icon = IconName.Ignore,
+                Text = finding.Status == FindingStatus.Ignored ? Strings.Menu.StopIgnoring : Strings.Issues.Ignore,
+                TabIndex = 11 + (3 * i),
+                Tag = finding.Status != FindingStatus.Resolved,
+            };
             KitButton rescan = new() { Kind = ButtonKind.Subtle, Icon = IconName.Refresh, Text = Strings.Issues.ScanAgain, TabIndex = 12 + (3 * i) };
             IconButton expander = new() { Icon = IconName.ChevronDown, Compact = true, ToolTipText = finding.Title, TabIndex = 10 + (3 * i) };
             long id = finding.Id;
@@ -166,6 +184,30 @@ internal sealed class FileDetailView : KitControl
             Controls.Add(rescan);
         }
 
+        Relayout();
+    }
+
+    /// <summary>
+    /// Takes the fixes of a second load of the shown file (one that looked for a healthy copy) without starting over:
+    /// open cards, evidence and the scroll position stay.
+    /// </summary>
+    public void UpdateFixes(FileDetail detail)
+    {
+        if (_detail is null || detail.FileId != _detail.FileId)
+        {
+            return;
+        }
+
+        _detail = _detail with
+        {
+            RecommendedAction = detail.RecommendedAction,
+            RecommendedActionId = detail.RecommendedActionId,
+            FixActionIds = detail.FixActionIds,
+            CopiesPending = false,
+        };
+        _primary.Text = detail.RecommendedAction;
+        _hasPrimary = detail.RecommendedAction.Length > 0;
+        _primary.Visible = _hasPrimary;
         Relayout();
     }
 
@@ -195,8 +237,7 @@ internal sealed class FileDetailView : KitControl
         _showInFolder.Bounds = new Rectangle(x, y, folderWidth, S(32));
         x += folderWidth + S(8);
         _more.Bounds = new Rectangle(x, y, S(32), S(32));
-        int height = MeasureFindings(true);
-        Height = height;
+        Height = LayoutFindings(null);
         Invalidate();
     }
 
@@ -255,12 +296,12 @@ internal sealed class FileDetailView : KitControl
         int textX = S(100);
         int textWidth = Width - textX - S(56);
         KitPaint.DrawText(g, d.Name, type.Subtitle, t.Text, textX, S(30), textWidth);
-        DrawCrumbs(g, d.Breadcrumb, textX, S(53), textWidth, t, type);
+        DrawCrumbs(g, d.Breadcrumb, textX, S(53), textWidth, t, type, _crumbHits);
         KitPaint.DrawText(g, d.FormatLine, type.Caption, t.Text2, textX, S(73), textWidth);
         DrawFingerprint(g, d, t, type);
         KitPaint.HorizontalLine(g, t.Stroke, 0, Width, S(174), SF(1));
         KitPaint.DrawText(g, string.Format(CultureInfo.CurrentCulture, Strings.Drawer.Findings, d.Findings.Count), type.CaptionStrong, t.Text3, S(Pad), S(196), Width - S(40));
-        PaintFindings(g, d, t, type);
+        LayoutFindings(g);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -283,6 +324,15 @@ internal sealed class FileDetailView : KitControl
             if (hit.Contains(e.Location))
             {
                 SelectFrame(index);
+                return;
+            }
+        }
+
+        foreach ((Rectangle hit, int index) in _crumbHits)
+        {
+            if (hit.Contains(e.Location))
+            {
+                CrumbClicked?.Invoke(this, index);
                 return;
             }
         }
@@ -359,6 +409,11 @@ internal sealed class FileDetailView : KitControl
             overMark |= hit.Contains(e.Location);
         }
 
+        foreach ((Rectangle hit, _) in _crumbHits)
+        {
+            overMark |= hit.Contains(e.Location);
+        }
+
         Cursor = overMark ? Cursors.Hand : Cursors.Default;
     }
 
@@ -368,10 +423,13 @@ internal sealed class FileDetailView : KitControl
         base.OnThemeChanged();
     }
 
-    private static void DrawCrumbs(Graphics g, IReadOnlyList<string> crumbs, int x, int y, int width, ThemeTokens t, TypeRamp type)
+    /// <summary>The breadcrumb (subplan 09, Detail drawer); each segment's rectangle goes to <paramref name="hits"/> for its link.</summary>
+    private static void DrawCrumbs(Graphics g, IReadOnlyList<string> crumbs, int x, int y, int width, ThemeTokens t, TypeRamp type, List<(Rectangle Hit, int Index)> hits)
     {
         int dpi = (int)Math.Round(type.Caption.Size * 96 / 11f);
         int right = x + width;
+        int half = Dpi.Scale(9, dpi);
+        hits.Clear();
         for (int i = 0; i < crumbs.Count && x < right; i++)
         {
             if (i > 0)
@@ -381,7 +439,9 @@ internal sealed class FileDetailView : KitControl
             }
 
             int w = KitPaint.MeasureWidth(crumbs[i], type.Caption);
-            KitPaint.DrawText(g, crumbs[i], type.Caption, i == crumbs.Count - 1 ? t.Text : t.Text2, x, y, Math.Min(w + 1, right - x));
+            int shown = Math.Min(w + 1, right - x);
+            KitPaint.DrawText(g, crumbs[i], type.Caption, i == crumbs.Count - 1 ? t.Text : t.Text2, x, y, shown);
+            hits.Add((new Rectangle(x, y - half, Math.Max(0, shown), 2 * half), i));
             x += w + Dpi.Scale(4, dpi);
         }
     }
@@ -417,12 +477,8 @@ internal sealed class FileDetailView : KitControl
         KitPaint.DrawText(g, text, type.Caption, t.Text2, S(44), y, Width - S(64));
     }
 
-    /// <summary>Lays out (and with <paramref name="layoutOnly"/> false, paints) the finding cards; returns the content height.</summary>
-    private int MeasureFindings(bool layoutOnly) => LayoutFindings(null, layoutOnly);
-
-    private void PaintFindings(Graphics g, FileDetail d, ThemeTokens t, TypeRamp type) => LayoutFindings(g, false);
-
-    private int LayoutFindings(Graphics? g, bool layoutOnly)
+    /// <summary>Lays out (and with a <paramref name="g"/>, paints) the finding cards, history and technical details; returns the content height.</summary>
+    private int LayoutFindings(Graphics? g)
     {
         if (_detail is not FileDetail d)
         {
@@ -585,7 +641,7 @@ internal sealed class FileDetailView : KitControl
                 DrawMessageTable(g, f, view, t, type);
                 break;
             case EvidenceView.ByteMap:
-                DrawByteMap(g, view, d, t);
+                DrawByteMap(g, view, f.ZeroRuns ?? d.ZeroRunStarts, d.SizeBytes, t);
                 break;
             case EvidenceView.Waveform:
                 DrawWaveform(g, f, view, d, t);
@@ -622,20 +678,24 @@ internal sealed class FileDetailView : KitControl
         }
     }
 
-    /// <summary>Byte map: one 4 px column per slice of the file; zero-filled regions in CritFill, the rest in Stroke.</summary>
-    private void DrawByteMap(Graphics g, Rectangle view, FileDetail d, ThemeTokens t)
+    /// <summary>
+    /// Byte map: one 4 px column per slice of the file; slices that overlap a zero-filled region in CritFill, the rest in
+    /// Stroke. <paramref name="runs"/> holds offset and length pairs: the longest run is drawn over its whole length (a
+    /// file that is 60 % zeros showed one red column where the run started).
+    /// </summary>
+    private void DrawByteMap(Graphics g, Rectangle view, IReadOnlyList<long> runs, long sizeBytes, ThemeTokens t)
     {
         int columns = Math.Max(1, view.Width / S(4));
         float columnWidth = view.Width / (float)columns;
-        long size = Math.Max(1, d.SizeBytes);
+        long size = Math.Max(1, sizeBytes);
         for (int i = 0; i < columns; i++)
         {
             long start = size * i / columns;
-            long end = size * (i + 1) / columns;
+            long end = Math.Max(start + 1, size * (i + 1) / columns);
             bool zero = false;
-            foreach (long offset in d.ZeroRunOffsets)
+            for (int r = 0; r + 1 < runs.Count; r += 2)
             {
-                if (offset >= start && offset < end)
+                if (runs[r] < end && runs[r] + Math.Max(1, runs[r + 1]) > start)
                 {
                     zero = true;
                     break;
@@ -1172,11 +1232,12 @@ internal sealed class FileDetailView : KitControl
         }
 
         (KitButton ignore, KitButton rescan) = _findingButtons[index];
-        int w1 = S(ignore.PreferredLogicalWidth);
+        bool canIgnore = ignore.Tag is not false;
+        int w1 = canIgnore ? S(ignore.PreferredLogicalWidth) + S(8) : 0;
         int w2 = S(rescan.PreferredLogicalWidth);
-        ignore.Bounds = new Rectangle(x, y, w1, S(32));
-        rescan.Bounds = new Rectangle(x + w1 + S(8), y, w2, S(32));
-        ignore.Visible = true;
+        ignore.Bounds = new Rectangle(x, y, Math.Max(0, w1 - S(8)), S(32));
+        rescan.Bounds = new Rectangle(x + w1, y, w2, S(32));
+        ignore.Visible = canIgnore;
         rescan.Visible = true;
     }
 
