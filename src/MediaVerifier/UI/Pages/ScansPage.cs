@@ -377,6 +377,7 @@ internal sealed class ScansPage : PageBase
         private EngineStatus _status = EngineStatus.Idle;
         private bool _updated;
         private bool _background;
+        private bool _planReload;
         private bool _stopping;
         private string? _reason;
         private int _rows;
@@ -429,6 +430,7 @@ internal sealed class ScansPage : PageBase
                 Array.Clear(_slots);
                 _rows = 0;
                 _stopping = false;
+                _planReload = false;
             }
 
             PlaceInFlight(status.InFlight);
@@ -629,9 +631,17 @@ internal sealed class ScansPage : PageBase
                 : string.Format(culture, Strings.Scans.Scanning, scope);
             DateTimeOffset now = _page.Services.Clock.UtcNow;
             string started = UiFormat.TimeOfDay((now - s.Elapsed).ToLocalTime().DateTime);
-            _sub = s.Trigger == RunTrigger.Scheduled
-                ? string.Format(culture, Strings.Scans.SubLineSchedule, UiFormat.DepthName(s.Depth), started, _page.Data?.RunningPlan ?? string.Empty)
-                : string.Format(culture, Strings.Scans.SubLineYou, UiFormat.DepthName(s.Depth), started);
+            // A schedule started while the page was open is not in its data yet: its name comes with the next load
+            // (the line read 'started by schedule ""').
+            string? plan = _page.Data?.RunningPlan;
+            _sub = s.Trigger != RunTrigger.Scheduled ? string.Format(culture, Strings.Scans.SubLineYou, UiFormat.DepthName(s.Depth), started)
+                : string.IsNullOrEmpty(plan) ? string.Format(culture, Strings.Scans.SubLineScheduled, UiFormat.DepthName(s.Depth), started)
+                : string.Format(culture, Strings.Scans.SubLineSchedule, UiFormat.DepthName(s.Depth), started, plan);
+            if (s.Trigger == RunTrigger.Scheduled && string.IsNullOrEmpty(plan) && !_planReload)
+            {
+                _planReload = true;
+                _page.Reload();
+            }
             _percent = UiFormat.Percent(s.Fraction * 100);
             _values[0] = string.Format(culture, Strings.Scans.OfTotal, UiFormat.Count(s.FilesDone), UiFormat.Count(s.Total));
             _values[1] = UiFormat.Size(s.BytesRead);

@@ -32,6 +32,9 @@ internal sealed class ShellBinder : IDisposable
     private bool _reloadPending;
     private bool _starting;
     private bool _readingRun;
+
+    /// <summary>Stop was confirmed for a scheduled scan in another process: it is finishing (Stop can do no more).</summary>
+    private bool _backgroundStopping;
     private RunRecord? _backgroundRun;
 
     /// <summary>Changes that alter the badge, the bell or the Scan button: folders, findings and their ignores, notifications, repairs.</summary>
@@ -185,6 +188,8 @@ internal sealed class ShellBinder : IDisposable
             if (backgroundEnded)
             {
                 _backgroundRun = null;
+                _backgroundStopping = false;
+                _form.StatusStrip.Stop.Enabled = true;
                 _form.RefreshAll();
             }
             else if (!active && !background)
@@ -211,7 +216,8 @@ internal sealed class ShellBinder : IDisposable
             UiTask.Run(ReadBackgroundRunAsync());
         }
 
-        string facts = Strings.Shell.ScheduledRunning;
+        string facts = _backgroundStopping ? Strings.Shell.Finishing : Strings.Shell.ScheduledRunning;
+        _form.StatusStrip.Stop.Enabled = !_backgroundStopping;
         string details = _backgroundRun is RunRecord run
             ? string.Format(CultureInfo.CurrentCulture, Strings.Shell.BackgroundChecked, UiFormat.Count(run.FilesAnalysed + run.FilesVerified))
             : string.Empty;
@@ -482,8 +488,9 @@ internal sealed class ShellBinder : IDisposable
             _services.ClearQueuedScans();
             if (background)
             {
-                // The headless run treats its stop event as Cancel (subplan 13, GUI opened during a headless run).
-                _ = PlanHost.StopBackgroundRun();
+                // The headless run treats its stop event as Cancel (subplan 13, GUI opened during a headless run). It ends
+                // at its next checkpoint: until then the strip says Finishing and Stop is disabled, as for a scan here.
+                _backgroundStopping = PlanHost.StopBackgroundRun();
             }
             else
             {

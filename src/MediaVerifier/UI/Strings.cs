@@ -482,6 +482,7 @@ internal static class Strings
         public const string FilesScope = "{0} files";
         public const string SubLineYou = "{0} depth · started {1} · started by you";
         public const string SubLineSchedule = "{0} depth · started {1} · started by schedule \"{2}\"";
+        public const string SubLineScheduled = "{0} depth · started {1} · started by a schedule";
         public const string Files = "Files";
         public const string DataRead = "Data read";
         public const string Speed = "Speed";
