@@ -11,7 +11,7 @@ internal sealed partial class LiveUiData
     private static readonly TimeSpan ProbeWait = TimeSpan.FromSeconds(2);
 
     /// <summary>Folder checks still waiting for an answer, reused by the next load instead of starting another.</summary>
-    private static readonly Dictionary<string, Task<bool>> Probes = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Probe> Probes = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lock ProbesLock = new();
 
     public LibraryData LoadLibrary()
@@ -120,21 +120,24 @@ internal sealed partial class LiveUiData
 
     /// <summary>
     /// Whether each folder answers, all asked at once with one shared wait: a share that is gone can take minutes, so
-    /// a folder that has not answered within <see cref="ProbeWait"/> counts as not connected. Its check keeps running
-    /// on its pool thread and the next load waits on that one instead of starting another.
+    /// a folder that has not answered within <see cref="ProbeWait"/> of its check starting counts as not connected.
+    /// Its check keeps running on its pool thread; the next load takes that one instead of starting another, and does
+    /// not wait for it again once its time is up.
     /// </summary>
     internal static Dictionary<string, bool> AreConnected(IEnumerable<string> paths)
     {
-        Dictionary<string, Task<bool>> probes = new(StringComparer.OrdinalIgnoreCase);
+        long now = Environment.TickCount64;
+        long wait = (long)ProbeWait.TotalMilliseconds;
+        Dictionary<string, Probe> probes = new(StringComparer.OrdinalIgnoreCase);
         lock (ProbesLock)
         {
             foreach (string path in paths)
             {
                 if (!probes.ContainsKey(path))
                 {
-                    if (!Probes.TryGetValue(path, out Task<bool>? probe))
+                    if (!Probes.TryGetValue(path, out Probe? probe))
                     {
-                        probe = Task.Run(() => Directory.Exists(path));
+                        probe = new Probe(Task.Run(() => Directory.Exists(path)), now);
                         Probes[path] = probe;
                     }
 
@@ -143,14 +146,19 @@ internal sealed partial class LiveUiData
             }
         }
 
-        _ = Task.WaitAll([.. probes.Values], ProbeWait);
+        Probe[] waiting = [.. probes.Values.Where(p => !p.Check.IsCompleted && p.StartedMs + wait > now)];
+        if (waiting.Length > 0)
+        {
+            _ = Task.WaitAll([.. waiting.Select(p => p.Check)], TimeSpan.FromMilliseconds(waiting.Max(p => p.StartedMs) + wait - now));
+        }
+
         Dictionary<string, bool> connected = new(StringComparer.OrdinalIgnoreCase);
         lock (ProbesLock)
         {
-            foreach ((string path, Task<bool> probe) in probes)
+            foreach ((string path, Probe probe) in probes)
             {
-                connected[path] = probe.IsCompletedSuccessfully && probe.Result;
-                if (probe.IsCompleted && Probes.TryGetValue(path, out Task<bool>? kept) && ReferenceEquals(kept, probe))
+                connected[path] = probe.Check.IsCompletedSuccessfully && probe.Check.Result;
+                if (probe.Check.IsCompleted && Probes.TryGetValue(path, out Probe? kept) && ReferenceEquals(kept, probe))
                 {
                     // Answered: the next load asks again.
                     Probes.Remove(path);
@@ -160,4 +168,7 @@ internal sealed partial class LiveUiData
 
         return connected;
     }
+
+    /// <summary>A folder check and when it started (<see cref="Environment.TickCount64"/>).</summary>
+    private sealed record Probe(Task<bool> Check, long StartedMs);
 }

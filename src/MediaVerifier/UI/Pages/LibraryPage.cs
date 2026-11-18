@@ -153,7 +153,7 @@ internal sealed class LibraryPage : PageBase
                 break;
             case LibrarySearchRequest search:
                 // The header's search: Browse lists the matching files of every watched folder.
-                ShowBrowse(_query with { RootId = null, DirId = null, Search = search.Text, State = BrowseState.All });
+                ShowBrowse(_query with { RootId = null, DirId = null, Search = string.IsNullOrWhiteSpace(search.Text) ? null : search.Text.Trim(), State = BrowseState.All });
                 break;
             case AddFolderRequest add:
                 AddFolder(add.Path);
