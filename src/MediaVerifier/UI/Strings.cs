@@ -791,7 +791,7 @@ internal static class Strings
         public const string InstallApp = "Install MediaVerifier";
         public const string ScanRunningTitle = "Interrupt the scan?";
         public const string ScanRunningUpdate = "A scan is running. It will be interrupted and can be resumed after the update.";
-        public const string FileTypesHelper = "Extensions, separated by commas.";
+        public const string FileTypesHelper = "Extensions, separated by commas or spaces.";
         public const string AlwaysSkipHelper = "Folder names, separated by commas. * matches any characters.";
         public const string FolderNames = "Folder names";
         public const string CopyReport = "Copy system report";

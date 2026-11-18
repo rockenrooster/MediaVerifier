@@ -347,6 +347,23 @@ column is as wide as the rule's longest label (at least 120 px), as far as the b
 change a Low info bar reports the effect: `{n} findings changed tier with this value.`, `{n} findings appeared.`, `{n} findings no longer apply.`, or `No findings changed.` A rule whose switch is off
 shows its title in `Text2`.
 
+Rules marked backlog in subplan 02 (no detector yet) are not listed. Changes wait 400 ms for the next
+key or click and apply together; while the stored analysis is judged again the bar reads
+`Checking findings…`, and judging runs one rule at a time. A closed rule shows the bar under its 64 px
+header (8 px above, 16 below); closing a rule or leaving the page removes it. The chevron's tooltip is
+`Show limits` or `Hide limits`. Up, Down, Page Up, Page Down, Home and End on a rule's switch move to
+another rule. A change that cannot be saved is undone and reported in a Critical toast titled with the
+rule, `The change was not saved. {reason}`; when judging fails, a Medium toast
+`Findings could not be checked again. {reason}`.
+
+A section taller than the content area scrolls with the page. A settings file that cannot be written
+is reported once, until a save works again, in a Critical toast `Settings` /
+`Settings could not be saved. The log has the details.` with `Open logs folder`. `Run self-check` and
+`Send test` are disabled while they run, with the tooltips `The self-check is running.` and
+`A test is being sent.`; `Copy system report` confirms with `The system report was copied.` or fails
+with `Copy system report failed` and the reason. `Always skip` lists only the user's patterns: the
+quarantine folder, `$RECYCLE.BIN` and `System Volume Information` are always skipped.
+
 Status lines for the update card: `Update status has not been checked.`, `Checking…`,
 `MediaVerifier is up to date.`, `Version {v} is available.`, `Downloading {pct}%`, `Update found, but it could not be verified. Nothing was installed.`, `Could not check for updates. {reason}`.
 

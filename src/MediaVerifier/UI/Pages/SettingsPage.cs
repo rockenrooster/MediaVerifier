@@ -201,13 +201,16 @@ internal sealed class SettingsPage : PageBase
 
         _nav.Invalidate();
         _nav.AnnounceSelection();
-        if (Parent is Shell.PageViewport viewport)
+        if (Viewport is Shell.PageViewport viewport)
         {
             viewport.ScrollOffset = 0;
         }
 
         RelayoutPage();
     }
+
+    /// <summary>The viewport while it shows this page (another page's scroll position is left alone).</summary>
+    private Shell.PageViewport? Viewport => Parent is Shell.PageViewport viewport && ReferenceEquals(viewport.Page, this) ? viewport : null;
 
     /// <summary>
     /// A section taller than the content area scrolls with the page (Scanning has 11 rows): the page is as tall as the
@@ -218,7 +221,7 @@ internal sealed class SettingsPage : PageBase
     /// <summary>Sizes the page to the shown section again (another section, quiet-hours rows shown or hidden).</summary>
     private void RelayoutPage()
     {
-        (Parent as Shell.PageViewport)?.LayoutPage();
+        Viewport?.LayoutPage();
         PerformLayout();
     }
 
