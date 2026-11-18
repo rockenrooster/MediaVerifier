@@ -1097,8 +1097,8 @@ internal sealed class LibraryPage : PageBase
 
     /// <summary>
     /// Schedules that scanned a folder no longer watched: it leaves their folder list, and one left without a folder is
-    /// switched off (its definition then asks for a folder), so it no longer runs "Completed" over nothing. The
-    /// scheduled tasks are then brought up to date, as the Schedule page does after a change.
+    /// switched off (an empty folder list fails validation, so it cannot run), so it no longer runs "Completed" over
+    /// nothing. The scheduled tasks are then brought up to date, as the Schedule page does after a change.
     /// </summary>
     private async Task ForgetInPlansAsync(Database database, long rootId)
     {
