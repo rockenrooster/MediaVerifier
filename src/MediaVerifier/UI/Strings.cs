@@ -690,6 +690,16 @@ internal static class Strings
         public const string Create = "Create";
         public const string ReportSaved = "Report saved";
         public const string Open = "Open";
+        public const string DeleteOneTitle = "Delete {0} for good?";
+        public const string DeletedForGood = "Deleted for good";
+        public const string SelectOriginal = "Select an original first";
+        public const string SelectOperation = "Select an operation that can be undone";
+        public const string Running = "Running";
+        public const string Working = "Working…";
+        public const string OneDay = "1 day";
+        public const string FileReason = "{0}: {1}";
+        public const string NoLastScan = "No scan has finished yet.";
+        public const string ColMessage = "Message";
     }
 
     public static class Settings
