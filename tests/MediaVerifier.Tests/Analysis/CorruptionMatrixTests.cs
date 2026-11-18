@@ -111,7 +111,7 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
     [InlineData("av.mp4", 2000)]
     public async Task Decode_errors_are_placed_in_the_file(string fixture, int bytes)
     {
-        Scan scan = await ScanOneAsync(fixture, path => Mutate.RandomBlock(path, 0.5, bytes, seed: 1), ScanDepth.Standard);
+        Scan scan = await ScanOneAsync(fixture, path => Mutate.RandomBlock(path, MiddleReadAtStandard(path), bytes, seed: 1), ScanDepth.Standard);
         FindingRecord decode = Assert.Single(scan.Findings, f => f.RuleId == "COR-DECODE");
         output.WriteLine(decode.Summary);
         double[]? spots = fixture.EndsWith(".mp3", StringComparison.Ordinal)
@@ -208,6 +208,37 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
     }
 
     private static IEnumerable<string> Words(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// Mid-file where Standard is sure to read the damage: the middle of an MP3; in a video, the start of the audio
+    /// packet nearest the middle. Standard decodes all audio but only key frames, and what sits mid-file depends on the
+    /// machine: x264's output changes with its thread count, so on a 4-core CI runner the middle is a non-key frame.
+    /// </summary>
+    private static double MiddleReadAtStandard(string path)
+    {
+        if (!path.EndsWith(".mp4", StringComparison.Ordinal))
+        {
+            return 0.5;
+        }
+
+        FfmpegLocation engine = FfmpegEnvironment.Engine ?? throw new InvalidOperationException("No FFmpeg engine; the test should have been skipped.");
+        ProcessStartInfo start = new(engine.FfprobeExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        foreach (string argument in new[] { "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pos", "-of", "csv=p=0", path })
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(start)!;
+        string[] lines = process.StandardOutput.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        process.WaitForExit();
+        long length = new FileInfo(path).Length;
+
+        // A packet with side data ends its line with a comma.
+        long packet = lines.Select(line => long.Parse(line.Split(',')[0], System.Globalization.CultureInfo.InvariantCulture)).MinBy(pos => Math.Abs(pos - (length / 2)));
+
+        // Half a byte in, so RandomBlock's rounding starts the block exactly at the packet.
+        return (packet + 0.5) / length;
+    }
 
     /// <summary>The matrix damages files at mid-file (subplan 15); several bytes are spread around the middle.</summary>
     private static void Apply(string path, string mutation)
