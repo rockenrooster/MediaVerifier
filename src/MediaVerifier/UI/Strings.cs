@@ -513,11 +513,6 @@ internal static class Strings
         public const string Interrupted = "Interrupted";
         public const string CouldNotRun = "Could not run";
         public const string Skipped = "Skipped";
-        public const string StageReading = "Reading";
-        public const string StageDecoding = "Decoding";
-        public const string StageAnalysing = "Decoding and analysing";
-        public const string StageSampling = "Sampling frames";
-        public const string StageEveryFrame = "Decoding every frame";
         public const string RunOf = "Scan of {0}";
         public const string ShowProblems = "Show problems found in this scan";
         public const string LargeTitle = "Scan {0} files?";
@@ -682,7 +677,6 @@ internal static class Strings
         public const string CheckDamaged = "The database is damaged";
         public const string ActionFailed = "{0} failed";
         public const string Move = "Move…";
-        public const string MoveText = "Use a different folder";
         public const string ResetEllipsis = "Reset…";
         public const string ResetText = "Forget everything and start again";
         public const string ResetTitle = "Reset the library?";
@@ -711,7 +705,6 @@ internal static class Strings
         public const string Undone = "Undone";
         public const string Cancelled = "Cancelled";
         public const string ReportWhat = "What";
-        public const string ReportCurrent = "Open problems (current filters)";
         public const string ReportAll = "All open problems";
         public const string ReportLastScan = "Last scan";
         public const string ReportFormat = "Format";
@@ -836,8 +829,6 @@ internal static class Strings
         public const string SelfCheckPassed = "The self-check passed.";
         public const string SelfCheckFailed = "The self-check found a problem.";
         public const string InstallApp = "Install MediaVerifier";
-        public const string ScanRunningTitle = "Interrupt the scan?";
-        public const string ScanRunningUpdate = "A scan is running. It will be interrupted and can be resumed after the update.";
         public const string FileTypesHelper = "Extensions, separated by commas or spaces.";
         public const string DownloadFailed = "Could not download the update. {0}";
         public const string InstallFailed = "Could not start the installer. {0}";
@@ -971,7 +962,6 @@ internal static class Strings
         public const string Skipped = "{0} skipped";
         public const string OriginalsInQuarantine = "originals are in quarantine";
         public const string Undone = "Undone";
-        public const string UndoFailed = "Undo failed";
         public const string StartedFor = "{0} started for {1}";
         public const string AlreadyRunning = "A repair is already running";
         public const string TryAfterScan = "Try again when it has finished.";

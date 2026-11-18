@@ -56,8 +56,7 @@ internal sealed record BrowseData(
     IReadOnlyDictionary<long, string> RootPaths,
     bool NotScanned = false);
 
-/// <summary>Library data (separate interface so pages depend only on what they read).</summary>
-internal interface ILibraryData
+internal partial interface IUiData
 {
     LibraryData LoadLibrary();
 

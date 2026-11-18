@@ -218,42 +218,12 @@ internal static class Remediator
         return true;
     }
 
-    /// <summary>Ctrl+Z: undoes the newest batch that still has an undoable operation; says so when there is none.</summary>
-    public static async Task UndoLatestAsync(UiServices services, Control? owner = null)
-    {
-        if (services.Operations is null || services.IsDemo)
-        {
-            return;
-        }
-
-        long? batch = await Task.Run(() => services.Database.Journal.List(500)
-            .Where(o => o.Status == OperationStatus.Done && o.UndoJson is not null && !o.UndoJson.Contains("\"actionClass\":\"Recycle\"", StringComparison.Ordinal))
-            .OrderByDescending(o => o.Id)
-            .Select(o => (long?)o.BatchId)
-            .FirstOrDefault()).ConfigureAwait(true);
-        if (batch is long id)
-        {
-            await UndoBatchAsync(services, id, owner).ConfigureAwait(true);
-        }
-        else
-        {
-            services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Repair.NothingToUndo, string.Empty));
-        }
-    }
-
     /// <summary>
     /// Undoes every done operation of a batch (newest first) and reports. Every one is tried: one that fails (a file
     /// open in a player) no longer stops the rest. A running scan pauses meanwhile, as for a repair.
     /// </summary>
     public static Task UndoBatchAsync(UiServices services, long batch, Control? owner = null) =>
         UndoAsync(services, () => [.. services.Database.Journal.List(int.MaxValue, batch).Where(o => o.Status == OperationStatus.Done).OrderByDescending(o => o.Id).Select(o => o.Id)], owner);
-
-    /// <summary>
-    /// Undoes the given operations in order (Tools, Quarantine: Restore), as <see cref="UndoBatchAsync"/> does: every
-    /// one is tried, a running scan pauses, the result is one toast (two when some failed) and the shell refreshes.
-    /// </summary>
-    public static Task UndoOperationsAsync(UiServices services, IReadOnlyList<long> operationIds, Control? owner = null) =>
-        UndoAsync(services, () => operationIds, owner);
 
     /// <param name="operations">The operations to undo, read on a pool thread.</param>
     private static async Task UndoAsync(UiServices services, Func<IReadOnlyList<long>> operations, Control? owner)

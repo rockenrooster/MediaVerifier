@@ -296,8 +296,6 @@ internal sealed class VirtualList : KitControl
 
     public int SortColumn => _sortColumn;
 
-    public bool SortDescending => _sortDescending;
-
     /// <summary>Scroll offset in device pixels.</summary>
     public int ScrollOffset
     {

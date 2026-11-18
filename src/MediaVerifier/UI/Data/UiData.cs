@@ -73,7 +73,7 @@ internal sealed record ShellCounts(int OpenMediumOrAbove, Severity Worst, int Un
 /// Everything the pages read, as immutable snapshots loaded off the UI thread (subplan 09). The live
 /// implementation queries the library database; the render harness returns the mockups' data.
 /// </summary>
-internal interface IUiData : IIssuesData, ILibraryData, IScansData, IToolsData, IScheduleData
+internal partial interface IUiData
 {
     ShellCounts LoadShell();
 

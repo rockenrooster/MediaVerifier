@@ -31,7 +31,7 @@ internal sealed record ScheduleData(IReadOnlyList<PlanRow> Plans, double Verifie
     }
 }
 
-internal interface IScheduleData
+internal partial interface IUiData
 {
     ScheduleData LoadSchedule();
 }
@@ -118,7 +118,7 @@ internal static class ScheduleText
     };
 }
 
-internal sealed partial class LiveUiData : IScheduleData
+internal sealed partial class LiveUiData
 {
     public ScheduleData LoadSchedule()
     {

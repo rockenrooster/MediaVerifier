@@ -55,7 +55,7 @@ internal sealed record FolderCount(long Photos, long Videos, long Music, long By
     }
 }
 
-internal interface IScansData
+internal partial interface IUiData
 {
     ScansData LoadScans();
 

@@ -711,11 +711,11 @@ public sealed class IssuesPageTests
     }
 
     /// <summary>
-    /// Open file on a file that is gone says so (it did nothing at all), and Ctrl+Z with nothing to undo says that.
-    /// Neither opens a program or touches the clipboard.
+    /// Open file on a file that is gone says so (it did nothing at all); it opens no program and leaves the clipboard
+    /// alone.
     /// </summary>
     [Fact]
-    public void Open_file_and_undo_say_when_there_is_nothing_to_do()
+    public void Open_file_says_when_the_file_is_gone()
     {
         List<ToastContent> toasts = [];
         WithIssues(
@@ -725,11 +725,9 @@ public sealed class IssuesPageTests
                 services.ShowToast = toasts.Add;
                 Task open = DrawerActions.OpenFileAsync(services, Path.Combine(Path.GetTempPath(), "mv-gone-" + Guid.NewGuid().ToString("N") + ".mp4"));
                 Settle(() => open.IsCompleted);
-                Task undo = Remediator.UndoLatestAsync(services, form);
-                Settle(() => undo.IsCompleted);
             });
 
-        Assert.Equal([Strings.Drawer.OpenFailed, Strings.Repair.NothingToUndo], toasts.Select(t => t.Title));
+        Assert.Equal([Strings.Drawer.OpenFailed], toasts.Select(t => t.Title));
         Assert.Equal(MediaVerifier.Core.CoreStrings.Remediation.Missing, toasts[0].Text);
         Assert.Equal(Strings.Drawer.PathCopied, DrawerActions.PathsCopied(1));
         Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Drawer.PathsCopied, "3"), DrawerActions.PathsCopied(3));

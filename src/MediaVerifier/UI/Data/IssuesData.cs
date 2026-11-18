@@ -145,8 +145,7 @@ internal sealed record FileDetail(
     public IReadOnlyList<long> ZeroRunStarts { get; } = [.. ZeroRunOffsets.SelectMany(offset => new[] { offset, 1L })];
 }
 
-/// <summary>Issues and drawer data (separate interface so pages depend only on what they read).</summary>
-internal interface IIssuesData
+internal partial interface IUiData
 {
     IssuesData LoadIssues(IssuesQuery query);
 

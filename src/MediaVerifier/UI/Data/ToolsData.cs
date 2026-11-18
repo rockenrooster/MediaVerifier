@@ -26,7 +26,7 @@ internal sealed record ToolsData(
 /// </summary>
 internal sealed record QuarantineEntry(OperationRecord Operation, long? Size);
 
-internal interface IToolsData
+internal partial interface IUiData
 {
     ToolsData LoadTools();
 }
