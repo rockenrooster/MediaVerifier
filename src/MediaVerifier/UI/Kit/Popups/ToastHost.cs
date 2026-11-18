@@ -29,6 +29,7 @@ internal sealed class ToastHost : IDisposable
     private readonly Form _owner;
     private readonly Func<int> _bottomInset;
     private readonly List<ToastWindow> _toasts = [];
+    private bool _ownerActive;
 
     /// <param name="owner">The main window.</param>
     /// <param name="bottomInset">Logical pixels kept free at the bottom (the status strip while it shows).</param>
@@ -36,18 +37,19 @@ internal sealed class ToastHost : IDisposable
     {
         _owner = owner;
         _bottomInset = bottomInset;
+        _ownerActive = Form.ActiveForm == owner;
         owner.Move += OnOwnerMoved;
         owner.Resize += OnOwnerShowingChanged;
         owner.VisibleChanged += OnOwnerShowingChanged;
-        owner.Activated += OnOwnerActivation;
-        owner.Deactivate += OnOwnerActivation;
+        owner.Activated += OnOwnerActivated;
+        owner.Deactivate += OnOwnerDeactivated;
     }
 
     /// <summary>The window is on the screen: shown and not minimized.</summary>
     private bool OwnerShowing => !_owner.IsDisposed && _owner.Visible && _owner.WindowState != FormWindowState.Minimized;
 
     /// <summary>The user is in the window (a toast's 5 s run only then).</summary>
-    private bool OwnerActive => Form.ActiveForm == _owner;
+    private bool OwnerActive => _ownerActive;
 
     /// <summary>
     /// Windows' Animation effects setting (Settings, Accessibility, Visual effects; SPI_GETCLIENTAREAANIMATION, which Disk
@@ -109,8 +111,8 @@ internal sealed class ToastHost : IDisposable
         _owner.Move -= OnOwnerMoved;
         _owner.Resize -= OnOwnerShowingChanged;
         _owner.VisibleChanged -= OnOwnerShowingChanged;
-        _owner.Activated -= OnOwnerActivation;
-        _owner.Deactivate -= OnOwnerActivation;
+        _owner.Activated -= OnOwnerActivated;
+        _owner.Deactivate -= OnOwnerDeactivated;
         foreach (ToastWindow toast in _toasts.ToArray())
         {
             toast.Dispose();
@@ -213,8 +215,13 @@ internal sealed class ToastHost : IDisposable
         }
     }
 
-    private void OnOwnerActivation(object? sender, EventArgs e)
+    private void OnOwnerActivated(object? sender, EventArgs e) => SetOwnerActive(true);
+
+    private void OnOwnerDeactivated(object? sender, EventArgs e) => SetOwnerActive(false);
+
+    private void SetOwnerActive(bool active)
     {
+        _ownerActive = active;
         foreach (ToastWindow toast in _toasts)
         {
             toast.UpdateHold();
