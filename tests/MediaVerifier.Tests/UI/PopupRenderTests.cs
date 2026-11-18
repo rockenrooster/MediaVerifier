@@ -98,7 +98,7 @@ public sealed class PopupRenderTests
         Size later = Size.Empty;
         Sta.Run(() =>
         {
-            using Form owner = new() { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000), Size = new Size(900, 700), ShowInTaskbar = false };
+            using Form owner = new QuietOwner { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000), Size = new Size(900, 700), ShowInTaskbar = false };
             owner.Show();
             using ToastHost host = new(owner, () => 0);
             host.Show(new ToastContent(Severity.None, "Added Music", "1,204 files are waiting to be scanned", "Scan now"));
@@ -139,5 +139,21 @@ public sealed class PopupRenderTests
 
         protected override void PaintContent(Graphics g, Rectangle bounds, int dpi) =>
             KitPaint.DrawText(g, "Show in folder   Alt+Enter", TypeRamp.For(dpi).Body, ThemeService.Tokens.Text3, 8, 20, bounds.Width - 16);
+    }
+
+    /// <summary>An off-screen owner that never takes activation from the user's own window.</summary>
+    private sealed class QuietOwner : Form
+    {
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams parameters = base.CreateParams;
+                parameters.ExStyle |= 0x08000000;
+                return parameters;
+            }
+        }
     }
 }

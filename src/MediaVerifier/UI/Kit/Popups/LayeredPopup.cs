@@ -22,6 +22,8 @@ internal abstract class LayeredPopup : Form
     private const int UlwAlpha = 2;
     private const byte AcSrcOver = 0;
     private const byte AcSrcAlpha = 1;
+    private const int WmMouseActivate = 0x0021;
+    private const int MaNoActivate = 3;
 
     private Point _contentScreenLocation;
     private Bitmap? _frame;
@@ -60,6 +62,23 @@ internal abstract class LayeredPopup : Form
     protected abstract Size ContentSize { get; }
 
     protected override bool ShowWithoutActivation => true;
+
+    /// <summary>
+    /// A click must not activate the popup: WS_EX_NOACTIVATE alone does not stop WinForms from activating the
+    /// window on WM_MOUSEACTIVATE, and the owner losing activation closes menus and drop-down lists on the
+    /// mouse-down, so the click fell through to the window beneath and the item never ran (Disk Monitor 2.0
+    /// answers MA_NOACTIVATE the same way).
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmMouseActivate)
+        {
+            m.Result = MaNoActivate;
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
 
     protected override CreateParams CreateParams
     {
