@@ -44,6 +44,8 @@ All notable changes to MediaVerifier are documented here.
 - Fixed: a missing file's problems were still counted on the Dashboard and in the badges; they now leave the counts
   while it is gone and come back with it.
 - Fixed: Ignore and its Undo also changed findings that were not open; Ignore counts only what it changed.
+- Fixed: decoder errors in short videos were said to be "around 0:00" wherever they were, and errors in videos of a
+  few minutes were placed up to 20 s late.
 - Switching off bit rot or 'Metadata changed without a timestamp update' closes their findings, and switching them on
   reopens them. Settings → Rules no longer lists checks that are not built.
 

@@ -88,33 +88,52 @@ public static class ErrorSpots
     }
 
     /// <summary>
-    /// The media position of each error from when it was reported (wall-clock seconds since the decode started),
-    /// linear between the progress reports around it; before the first report from the start, after the last one
-    /// its position. Both lists are in time order.
+    /// The media position of each error from when it was reported (wall-clock seconds), linear between the progress
+    /// reports around it; before the first report from <paramref name="start"/> (when FFmpeg started, media 0), after
+    /// the last one its position. Both lists are in time order. <paramref name="ended"/>: the last report is the final
+    /// one, whose position is exact.
     /// </summary>
-    public static List<double> Interpolate(IReadOnlyList<double> errorWall, IReadOnlyList<(double Wall, double Media)> marks)
+    public static List<double> Interpolate(IReadOnlyList<double> errorWall, IReadOnlyList<(double Wall, double Media)> marks, double start = 0, bool ended = false)
     {
         ArgumentNullException.ThrowIfNull(errorWall);
         ArgumentNullException.ThrowIfNull(marks);
+        List<(double Wall, double Media)> points = [(marks.Count > 0 ? Math.Min(start, marks[0].Wall) : start, 0), .. marks];
+
+        // Reports give the slowest stream, and a key-frame decode (Standard) can pass a frame on only key frames later:
+        // reports may trail the reading by whole key-frame intervals, all of a 6 s clip. A final jump beyond the pace of
+        // the reports before it is how far they trailed by the last one; the trail grew as the reading ran ahead, so
+        // each earlier report moves forward by its share.
+        if (ended && points.Count >= 3)
+        {
+            double w0 = points[0].Wall;
+            (double w1, double m1) = points[^2];
+            (double w2, double m2) = points[^1];
+            double trail = w1 > w0 ? m2 - m1 - (m1 / (w1 - w0) * (w2 - w1)) : 0;
+            for (int i = 1; trail > 0 && i < points.Count - 1; i++)
+            {
+                points[i] = (points[i].Wall, Math.Min(points[i].Media + (trail * (points[i].Wall - w0) / (w1 - w0)), m2));
+            }
+        }
+
         List<double> positions = new(errorWall.Count);
-        int next = 0;
+        int next = 1;
         foreach (double wall in errorWall)
         {
-            while (next < marks.Count && marks[next].Wall < wall)
+            while (next < points.Count && points[next].Wall < wall)
             {
                 next++;
             }
 
-            (double Wall, double Media) before = next > 0 ? marks[next - 1] : (0, 0);
-            if (next == marks.Count)
+            (double Wall, double Media) before = points[next - 1];
+            if (next == points.Count)
             {
                 positions.Add(before.Media);
                 continue;
             }
 
-            (double Wall, double Media) after = marks[next];
+            (double Wall, double Media) after = points[next];
             double span = after.Wall - before.Wall;
-            positions.Add(span <= 0 ? after.Media : before.Media + ((after.Media - before.Media) * (wall - before.Wall) / span));
+            positions.Add(span <= 0 ? after.Media : before.Media + ((after.Media - before.Media) * Math.Max(0, wall - before.Wall) / span));
         }
 
         return positions;

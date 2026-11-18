@@ -104,14 +104,16 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
 
     /// <summary>
     /// A decode finding says where in the file the errors were (owner request 2026-11-17): damage in the middle of an
-    /// MP3 is placed near its middle, from the audio read so far; in a video, between the progress reports.
+    /// MP3 is placed near its middle, from the audio read so far; in a video, between the progress reports, within a
+    /// second of the damaged packet although the reports of this short clip trail the reading by all of it.
     /// </summary>
     [FixtureTheory]
     [InlineData("m128.mp3", 3000)]
     [InlineData("av.mp4", 2000)]
     public async Task Decode_errors_are_placed_in_the_file(string fixture, int bytes)
     {
-        Scan scan = await ScanOneAsync(fixture, path => Mutate.RandomBlock(path, MiddleReadAtStandard(path), bytes, seed: 1), ScanDepth.Standard);
+        double damagedAt = double.NaN;
+        Scan scan = await ScanOneAsync(fixture, path => Mutate.RandomBlock(path, MiddleReadAtStandard(path, out damagedAt), bytes, seed: 1), ScanDepth.Standard);
         FindingRecord decode = Assert.Single(scan.Findings, f => f.RuleId == "COR-DECODE");
         output.WriteLine(decode.Summary);
         double[]? spots = fixture.EndsWith(".mp3", StringComparison.Ordinal)
@@ -127,6 +129,10 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
         if (fixture.EndsWith(".mp3", StringComparison.Ordinal))
         {
             Assert.InRange(spots[0], duration * 0.3, duration * 0.8);
+        }
+        else
+        {
+            Assert.InRange(spots[0], damagedAt - 1, damagedAt + 1);
         }
     }
 
@@ -211,11 +217,13 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
 
     /// <summary>
     /// Mid-file where Standard is sure to read the damage: the middle of an MP3; in a video, the start of the audio
-    /// packet nearest the middle. Standard decodes all audio but only key frames, and what sits mid-file depends on the
-    /// machine: x264's output changes with its thread count, so on a 4-core CI runner the middle is a non-key frame.
+    /// packet nearest the middle, and <paramref name="seconds"/> its time. Standard decodes all audio but only key
+    /// frames, and what sits mid-file depends on the machine: x264's output changes with its thread count, so on a
+    /// 4-core CI runner the middle is a non-key frame.
     /// </summary>
-    private static double MiddleReadAtStandard(string path)
+    private static double MiddleReadAtStandard(string path, out double seconds)
     {
+        seconds = double.NaN;
         if (!path.EndsWith(".mp4", StringComparison.Ordinal))
         {
             return 0.5;
@@ -223,7 +231,7 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
 
         FfmpegLocation engine = FfmpegEnvironment.Engine ?? throw new InvalidOperationException("No FFmpeg engine; the test should have been skipped.");
         ProcessStartInfo start = new(engine.FfprobeExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-        foreach (string argument in new[] { "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pos", "-of", "csv=p=0", path })
+        foreach (string argument in new[] { "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time,pos", "-of", "csv=p=0", path })
         {
             start.ArgumentList.Add(argument);
         }
@@ -233,8 +241,12 @@ public sealed class CorruptionMatrixTests(ITestOutputHelper output)
         process.WaitForExit();
         long length = new FileInfo(path).Length;
 
-        // A packet with side data ends its line with a comma.
-        long packet = lines.Select(line => long.Parse(line.Split(',')[0], System.Globalization.CultureInfo.InvariantCulture)).MinBy(pos => Math.Abs(pos - (length / 2)));
+        // "pts_time,pos"; a packet with side data ends its line with a comma.
+        (double time, long packet) = lines
+            .Select(line => line.Split(','))
+            .Select(parts => (double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture), long.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture)))
+            .MinBy(p => Math.Abs(p.Item2 - (length / 2)));
+        seconds = time;
 
         // Half a byte in, so RandomBlock's rounding starts the block exactly at the packet.
         return (packet + 0.5) / length;

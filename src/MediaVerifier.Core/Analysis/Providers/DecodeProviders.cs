@@ -261,6 +261,7 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         Lock spotsGate = new();
         List<(double Wall, double Media)> marks = [];
         ErrorTimes errorWall = new();
+        double started = -1;
 
         // The digest's top messages and first line, without the lines Ignored drops.
         LogCollector kept = new();
@@ -286,6 +287,12 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                 },
                 OnLogLine = line =>
                 {
+                    // FFmpeg's first line comes as it starts: positions count from there, not from the launch.
+                    if (started < 0)
+                    {
+                        started = wall.Elapsed.TotalSeconds;
+                    }
+
                     if (Ignored(line, deep))
                     {
                         return;
@@ -376,7 +383,7 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         int spotCount;
         lock (spotsGate)
         {
-            spots = ErrorSpots.Merge(ErrorSpots.Interpolate(errorWall.Times, marks), out spotCount);
+            spots = ErrorSpots.Merge(ErrorSpots.Interpolate(errorWall.Times, marks, Math.Max(0, started), result.FinalProgress is { IsEnd: true, OutTimeSeconds: > 0 }), out spotCount);
         }
 
         return new VideoDecodeArtifact(
