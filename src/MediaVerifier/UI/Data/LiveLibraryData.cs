@@ -1,3 +1,4 @@
+using System.Globalization;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Storage;
 
@@ -6,10 +7,18 @@ namespace MediaVerifier.UI.Data;
 /// <summary>Library snapshots from the library database (off the UI thread).</summary>
 internal sealed partial class LiveUiData
 {
+    /// <summary>How long a load waits, in all, for watched folders to answer before showing them as not connected.</summary>
+    private static readonly TimeSpan ProbeWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>Folder checks still waiting for an answer, reused by the next load instead of starting another.</summary>
+    private static readonly Dictionary<string, Probe> Probes = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Lock ProbesLock = new();
+
     public LibraryData LoadLibrary()
     {
         List<RootRecord> roots = database.Roots.List();
         Dictionary<long, RootSummary> summaries = database.Queries.RootSummaries().ToDictionary(s => s.RootId);
+        Dictionary<string, bool> connected = AreConnected(roots.Select(r => r.Path));
         List<FolderCard> cards = [];
         foreach (RootRecord root in roots)
         {
@@ -19,11 +28,11 @@ internal sealed partial class LiveUiData
                 RootName(root),
                 root.Path,
                 root.Role,
-                IsConnected(root.Path),
+                connected[root.Path],
                 summary.Files,
                 summary.Bytes,
                 summary.Open,
-                Math.Max(0, summary.Files - summary.Open.Total),
+                summary.HealthyFiles,
                 root.StorageClass,
                 summary.LastScannedUtc is long scanned ? Ticks(scanned) : null,
                 root.LastOnlineUtc,
@@ -36,6 +45,7 @@ internal sealed partial class LiveUiData
     public BrowseData LoadBrowse(BrowseQuery query)
     {
         List<RootRecord> roots = database.Roots.List();
+        Dictionary<long, string> rootPaths = roots.ToDictionary(r => r.Id, r => r.Path);
         List<BrowseFolder> tree = [];
         Dictionary<long, (FolderNode Node, RootRecord Root)> byDir = [];
         foreach (RootRecord root in roots)
@@ -46,56 +56,126 @@ internal sealed partial class LiveUiData
             }
         }
 
-        // The header's search (subplan 09, Shell): every watched folder's files whose name or folder holds the text.
+        // The header's search (subplan 09, Shell): the files of every watched folder whose name holds the text.
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            FileFilter search = new() { DirectOnly = false, Text = query.Search.Trim() };
+            string text = query.Search.Trim();
+            FileFilter search = new() { DirectOnly = false, Text = text };
             long[] found = database.Queries.FileIds(WithState(search, query.State), query.Sort, query.Descending);
-            FolderStateCounts counts = new(
-                database.Queries.FileIds(WithState(search, BrowseState.All)).Length,
-                database.Queries.FileIds(WithState(search, BrowseState.Ok)).Length,
-                database.Queries.FileIds(WithState(search, BrowseState.Problems)).Length);
-            string crumb = string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Library.SearchResults, query.Search.Trim());
-            return new BrowseData(query with { RootId = null, DirId = null }, tree, [crumb], found, counts);
+            string crumb = string.Format(CultureInfo.CurrentCulture, Strings.Library.SearchResults, text);
+            return new BrowseData(query with { RootId = null, DirId = null }, tree, [crumb], found, ChipCounts(search), rootPaths);
         }
 
-        // No folder chosen yet: the first root's top folder.
-        long? dirId = query.DirId ?? (tree.Count > 0 ? tree[0].DirId : null);
-        if (dirId is not long dir || !byDir.TryGetValue(dir, out (FolderNode Node, RootRecord Root) shown))
+        // The folder asked for. Without one (a card, the first visit), or when it is gone (its watched folder was
+        // removed), the top folder of the watched folder asked for, else of the first one.
+        if (query.DirId is not long dir || !byDir.ContainsKey(dir))
         {
-            return new BrowseData(query, tree, [], [], new FolderStateCounts(0, 0, 0));
+            RootRecord? asked = query.RootId is long rootId ? roots.Find(r => r.Id == rootId) : null;
+            BrowseFolder? top = asked is null ? tree.FirstOrDefault() : tree.Find(t => t.RootId == asked.Id);
+            if (top is null)
+            {
+                // A watched folder with nothing indexed (never scanned, or no media in it), else the first one: its name
+                // and no files, never another folder's files under its name. A scan marks a folder it reaches online.
+                asked ??= roots.FirstOrDefault();
+                return new BrowseData(query with { RootId = asked?.Id, DirId = null }, tree, asked is null ? [] : [RootName(asked)], [], new FolderStateCounts(0, 0, 0), rootPaths, NotScanned: asked is { LastOnlineUtc: null });
+            }
+
+            dir = top.DirId;
         }
 
-        FileFilter filter = WithState(new FileFilter { RootId = shown.Root.Id, DirId = dir, DirectOnly = true }, query.State);
-        long[] ids = database.Queries.FileIds(filter, query.Sort, query.Descending);
-        List<string> crumbs = [RootName(shown.Root)];
-        crumbs.AddRange(shown.Node.RelPath.Split('\\', StringSplitOptions.RemoveEmptyEntries));
-        return new BrowseData(query with { RootId = shown.Root.Id, DirId = dir }, tree, crumbs, ids, database.Queries.FolderStates(dir));
+        (FolderNode shown, RootRecord shownRoot) = byDir[dir];
+        FileFilter folder = new() { RootId = shownRoot.Id, DirId = dir, DirectOnly = true };
+        long[] ids = database.Queries.FileIds(WithState(folder, query.State), query.Sort, query.Descending);
+        List<string> crumbs = [RootName(shownRoot), .. shown.RelPath.Split('\\', StringSplitOptions.RemoveEmptyEntries)];
+        return new BrowseData(query with { RootId = shownRoot.Id, DirId = dir }, tree, crumbs, ids, ChipCounts(folder), rootPaths);
     }
 
     public IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids) => database.Queries.FileRows(ids);
 
-    /// <summary>The chip's files: all, OK (no finding above Low) or with problems (Medium and above).</summary>
+    /// <summary>
+    /// The chip's files: all present files, OK (scanned, no finding above Low) or with problems (Medium and above). A
+    /// missing file is in none of them, as in the chip counts.
+    /// </summary>
     private static FileFilter WithState(FileFilter filter, BrowseState state) => filter with
     {
-        States = state == BrowseState.All ? [FileState.Pending, FileState.Ok, FileState.Issues, FileState.Skipped, FileState.Error] : state == BrowseState.Ok ? [FileState.Ok, FileState.Issues] : null,
+        States = state == BrowseState.Ok ? [FileState.Ok, FileState.Issues] : [FileState.Pending, FileState.Ok, FileState.Issues, FileState.Skipped, FileState.Error],
         MaxSeverity = state == BrowseState.Ok ? Severity.Low : null,
         MinSeverity = state == BrowseState.Problems ? Severity.Medium : null,
     };
 
+    /// <summary>The three chips' counts, from the same conditions as their lists (subplan 09, Pitfalls).</summary>
+    private FolderStateCounts ChipCounts(FileFilter scope)
+    {
+        int[] counts = database.Queries.FileCounts(scope, [WithState(scope, BrowseState.All), WithState(scope, BrowseState.Ok), WithState(scope, BrowseState.Problems)]);
+        return new FolderStateCounts(counts[0], counts[1], counts[2]);
+    }
+
     private static BrowseFolder ToBrowse(RootRecord root, FolderNode node, string? name, Dictionary<long, (FolderNode, RootRecord)> byDir)
     {
         byDir[node.Id] = (node, root);
-        List<BrowseFolder> children = [.. node.Children.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).Select(c => ToBrowse(root, c, null, byDir))];
-        return new BrowseFolder(root.Id, node.Id, name ?? node.Name, node.Worst, children);
+        List<BrowseFolder> children = [.. node.Children.Select(c => ToBrowse(root, c, null, byDir))];
+        return new BrowseFolder(root.Id, node.Id, name ?? node.Name, node.RelPath, node.Worst, node.Files, node.Bytes, children);
     }
 
     private static string RootName(RootRecord root) => root.Label ?? Path.GetFileName(root.Path.TrimEnd('\\'));
 
-    /// <summary>A share that is gone can take many seconds to answer; after two it counts as not connected.</summary>
-    private static bool IsConnected(string path)
+    /// <summary>
+    /// Whether each folder answers, all asked at once with one shared wait: a share that is gone can take minutes, so
+    /// a folder that has not answered within <see cref="ProbeWait"/> of its check starting counts as not connected.
+    /// Its check keeps running on its pool thread; a load meanwhile takes that one instead of starting another, and does
+    /// not wait for it again once its time is up. A check leaves once it answers, so no load takes an old answer.
+    /// </summary>
+    internal static Dictionary<string, bool> AreConnected(IEnumerable<string> paths, Func<string, bool>? exists = null, TimeSpan? probeWait = null)
     {
-        Task<bool> probe = Task.Run(() => Directory.Exists(path));
-        return probe.Wait(TimeSpan.FromSeconds(2)) && probe.Result;
+        Func<string, bool> check = exists ?? Directory.Exists;
+        long now = Environment.TickCount64;
+        long wait = (long)(probeWait ?? ProbeWait).TotalMilliseconds;
+        Dictionary<string, Probe> probes = new(StringComparer.OrdinalIgnoreCase);
+        lock (ProbesLock)
+        {
+            foreach (string path in paths)
+            {
+                if (!probes.ContainsKey(path))
+                {
+                    if (!Probes.TryGetValue(path, out Probe? probe))
+                    {
+                        probe = new Probe(Task.Run(() => Ask(path, check)), now);
+                        Probes[path] = probe;
+                    }
+
+                    probes[path] = probe;
+                }
+            }
+        }
+
+        Probe[] waiting = [.. probes.Values.Where(p => !p.Check.IsCompleted && p.StartedMs + wait > now)];
+        if (waiting.Length > 0)
+        {
+            _ = Task.WaitAll([.. waiting.Select(p => p.Check)], TimeSpan.FromMilliseconds(waiting.Max(p => p.StartedMs) + wait - now));
+        }
+
+        return probes.ToDictionary(p => p.Key, p => p.Value.Check.IsCompletedSuccessfully && p.Value.Check.Result, StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// One folder check. It leaves <see cref="Probes"/> before its task completes (only it removes its entry, and a new
+    /// check for the folder starts only once it has gone), so the next load asks again.
+    /// </summary>
+    private static bool Ask(string path, Func<string, bool> exists)
+    {
+        try
+        {
+            return exists(path);
+        }
+        finally
+        {
+            lock (ProbesLock)
+            {
+                Probes.Remove(path);
+            }
+        }
+    }
+
+    /// <summary>A folder check and when it started (<see cref="Environment.TickCount64"/>).</summary>
+    private sealed record Probe(Task<bool> Check, long StartedMs);
 }

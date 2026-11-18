@@ -156,7 +156,7 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         long[] folderIds = q.FileIds(new FileFilter { RootId = 1, DirId = top.Id, DirectOnly = false }, FileSort.Name);
         folderSnapshot.Stop();
 
-        // Search box: name or folder text over the whole library.
+        // Search box: file name text over the whole library (subplan 09: it searches file names).
         Stopwatch searchSnapshot = Stopwatch.StartNew();
         long[] searchIds = q.FileIds(new FileFilter { Text = "0001" }, FileSort.Name);
         searchSnapshot.Stop();
@@ -190,7 +190,7 @@ public sealed class QueryPerformanceTests(ITestOutputHelper output)
         output.WriteLine($"200-row fetch: {fetch.ElapsedMilliseconds} ms");
         PerfReport.Add("Issues snapshot", $"all open findings ({findingIds.Length:N0} ids) of 1,000,000 files", $"{snapshot.ElapsedMilliseconds} ms", "under 300 ms");
         PerfReport.Add("Library folder snapshot", $"a folder subtree ({folderIds.Length:N0} ids)", $"{folderSnapshot.ElapsedMilliseconds} ms", "under 300 ms");
-        PerfReport.Add("Search snapshot", $"names and folders of 1,000,000 files ({searchIds.Length:N0} ids)", $"{searchSnapshot.ElapsedMilliseconds} ms", "under 300 ms");
+        PerfReport.Add("Search snapshot", $"file names of 1,000,000 files ({searchIds.Length:N0} ids)", $"{searchSnapshot.ElapsedMilliseconds} ms", "under 300 ms");
         PerfReport.Add("Fetch rows", "200 rows by id", $"{fetch.ElapsedMilliseconds} ms", "under 20 ms");
         output.WriteLine($"severity counts ({tiers.Total:N0}): {counts.ElapsedMilliseconds} ms");
 
