@@ -58,7 +58,6 @@ internal class KitControl : KitPaintLayer
     private bool _pressed;
     private bool _keyboardFocus;
     private bool _spaceDown;
-    private bool _enterDown;
     private bool _keyRepeat;
     private Form? _hookedForm;
 
@@ -106,6 +105,9 @@ internal class KitControl : KitPaintLayer
 
     /// <summary>Enter acts at once, once per press (holding the key does not repeat the action).</summary>
     protected virtual bool ActsOnEnter => false;
+
+    /// <summary>True while a key-down that auto-repeats a held key is handled (a held key acts once).</summary>
+    protected bool IsKeyRepeat => _keyRepeat;
 
     protected bool IsHovered => _hovered;
 
@@ -332,7 +334,6 @@ internal class KitControl : KitPaintLayer
     protected override void OnLostFocus(EventArgs e)
     {
         _keyboardFocus = false;
-        _enterDown = false;
         if (_spaceDown)
         {
             _spaceDown = false;
@@ -385,9 +386,8 @@ internal class KitControl : KitPaintLayer
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
-            if (!_enterDown && !_keyRepeat)
+            if (!_keyRepeat)
             {
-                _enterDown = true;
                 OnKeyboardAction();
             }
         }
@@ -396,11 +396,7 @@ internal class KitControl : KitPaintLayer
     protected override void OnKeyUp(KeyEventArgs e)
     {
         base.OnKeyUp(e);
-        if (e.KeyCode == Keys.Enter)
-        {
-            _enterDown = false;
-        }
-        else if (e.KeyCode == Keys.Space && _spaceDown)
+        if (e.KeyCode == Keys.Space && _spaceDown)
         {
             _spaceDown = false;
             _pressed = false;

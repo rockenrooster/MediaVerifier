@@ -175,28 +175,53 @@ public sealed class KitBehaviourTests
     [Fact]
     public void Space_acts_on_release_and_keys_do_not_repeat()
     {
-        using ToggleSwitch toggle = new();
-        KeyDown(toggle, Keys.Space);
-        Assert.False(toggle.Checked);
-        KeyDown(toggle, Keys.Space);
-        KeyDown(toggle, Keys.Space);
-        KeyUp(toggle, Keys.Space);
-        Assert.True(toggle.Checked);
-
-        using KitButton button = new() { Text = "OK" };
         int clicks = 0;
-        button.Click += (_, _) => clicks++;
-        KeyDown(button, Keys.Enter);
-        KeyDown(button, Keys.Enter);
-        KeyDown(button, Keys.Enter);
-        Assert.Equal(1, clicks);
-        KeyUp(button, Keys.Enter);
-        KeyDown(button, Keys.Enter);
-        Assert.Equal(2, clicks);
-        KeyDown(button, Keys.Space);
-        Assert.Equal(2, clicks);
-        KeyUp(button, Keys.Space);
+        bool afterPress = true;
+        bool afterRelease = false;
+        int opened = 0;
+        Sta.Run(() =>
+        {
+            using Form owner = OffscreenForm();
+            ToggleSwitch toggle = new() { Bounds = new Rectangle(10, 10, 40, 20) };
+            KitButton button = new() { Text = "OK", Bounds = new Rectangle(10, 40, 100, 32) };
+            DropDown drop = new() { Bounds = new Rectangle(10, 90, 200, 32) };
+            drop.Items.Add("Severity");
+            drop.Items.Add("Folder");
+            button.Click += (_, _) => clicks++;
+            owner.Controls.AddRange([toggle, button, drop]);
+            owner.Show();
+            Application.DoEvents();
+
+            Key(toggle, WmKeyDown, Keys.Space, repeat: false);
+            afterPress = toggle.Checked;
+            Key(toggle, WmKeyDown, Keys.Space, repeat: true);
+            Key(toggle, WmKeyDown, Keys.Space, repeat: true);
+            Key(toggle, WmKeyUp, Keys.Space, repeat: true);
+            afterRelease = toggle.Checked;
+
+            Key(button, WmKeyDown, Keys.Enter, repeat: false);
+            Key(button, WmKeyDown, Keys.Enter, repeat: true);
+            Key(button, WmKeyDown, Keys.Enter, repeat: true);
+            Key(button, WmKeyUp, Keys.Enter, repeat: true);
+            Key(button, WmKeyDown, Keys.Enter, repeat: false);
+            Key(button, WmKeyUp, Keys.Enter, repeat: true);
+            Key(button, WmKeyDown, Keys.Space, repeat: false);
+            Key(button, WmKeyUp, Keys.Space, repeat: true);
+
+            // A held Enter that chose an item in the open list must not open it again.
+            Key(drop, WmKeyDown, Keys.Enter, repeat: true);
+            opened += drop.IsOpen ? 1 : 0;
+            Key(drop, WmKeyDown, Keys.Enter, repeat: false);
+            opened += drop.IsOpen ? 1 : 0;
+            drop.Dispose();
+            Application.DoEvents();
+            owner.Close();
+        });
+
+        Assert.False(afterPress, "Space acted on the press");
+        Assert.True(afterRelease, "Space did not act on the release");
         Assert.Equal(3, clicks);
+        Assert.Equal(1, opened);
     }
 
     /// <summary>

@@ -17,7 +17,6 @@ internal sealed class DropDown : KitControl
     private PopupList? _open;
     private bool _closedByPress;
     private bool _ignoreRelease;
-    private bool _openKeyHeld;
     private string? _shownFor;
     private string? _shownFormat;
     private string _shown = string.Empty;
@@ -216,11 +215,10 @@ internal sealed class DropDown : KitControl
             case Keys.F4:
             case Keys.Enter:
             case Keys.Space:
-                // Holding the key opens the list once: the list takes Enter and Space as a choice, so a repeat would
-                // choose, close and open it again for as long as the key is held.
-                if (!_openKeyHeld)
+                // A held key opens the list once: the list takes Enter and Space as a choice, so a repeat would choose,
+                // close and open it again for as long as the key is held.
+                if (!IsKeyRepeat)
                 {
-                    _openKeyHeld = true;
                     OpenList();
                 }
 
@@ -236,21 +234,6 @@ internal sealed class DropDown : KitControl
                 e.Handled = true;
                 break;
         }
-    }
-
-    protected override void OnKeyUp(KeyEventArgs e)
-    {
-        base.OnKeyUp(e);
-        if (e.KeyCode is Keys.Enter or Keys.Space or Keys.F4 or Keys.Down)
-        {
-            _openKeyHeld = false;
-        }
-    }
-
-    protected override void OnLostFocus(EventArgs e)
-    {
-        base.OnLostFocus(e);
-        _openKeyHeld = false;
     }
 
     protected override void Dispose(bool disposing)
