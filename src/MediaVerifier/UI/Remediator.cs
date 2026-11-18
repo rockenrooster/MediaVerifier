@@ -409,7 +409,7 @@ internal static class Remediator
     /// The result toasts (subplan 09, D): <c>{Result} for {n} {things}</c> with Undo, and <c>{Action} failed for {n}
     /// {things}</c> with the first reason and Show, which lists every file that failed and why.
     /// </summary>
-    private static void Report(UiServices services, Form owner, IRemediationAction action, IReadOnlyList<FileRecord> files, IReadOnlyList<OperationOutcome> outcomes, long batch)
+    internal static void Report(UiServices services, Form owner, IRemediationAction action, IReadOnlyList<FileRecord> files, IReadOnlyList<OperationOutcome> outcomes, long batch)
     {
         Dictionary<long, FileRecord> byId = files.ToDictionary(f => f.Id);
         List<FileRecord> done = [.. outcomes.Where(o => o.Status == OperationStatus.Done).Select(o => byId.GetValueOrDefault(o.FileId)).OfType<FileRecord>()];

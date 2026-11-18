@@ -4,6 +4,7 @@ using System.Reflection;
 using MediaVerifier.App;
 using MediaVerifier.Core.Ffmpeg;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Remediation;
 using MediaVerifier.Core.Rules;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.Diagnostics;
@@ -428,6 +429,79 @@ public sealed class IssuesPageTests
         });
 
         Assert.False(enabled);
+    }
+
+    /// <summary>
+    /// Open file on a file that is gone says so (it did nothing at all), and Ctrl+Z with nothing to undo says that.
+    /// Neither opens a program or touches the clipboard.
+    /// </summary>
+    [Fact]
+    public void Open_file_and_undo_say_when_there_is_nothing_to_do()
+    {
+        List<ToastContent> toasts = [];
+        WithIssues(
+            database => IssueFixtures.Root(database, @"Q:\Media", "Media"),
+            (form, services, page) =>
+            {
+                services.ShowToast = toasts.Add;
+                Task open = DrawerActions.OpenFileAsync(services, Path.Combine(Path.GetTempPath(), "mv-gone-" + Guid.NewGuid().ToString("N") + ".mp4"));
+                Settle(() => open.IsCompleted);
+                Task undo = Remediator.UndoLatestAsync(services, form);
+                Settle(() => undo.IsCompleted);
+            });
+
+        Assert.Equal([Strings.Drawer.OpenFailed, Strings.Repair.NothingToUndo], toasts.Select(t => t.Title));
+        Assert.Equal(MediaVerifier.Core.CoreStrings.Remediation.Missing, toasts[0].Text);
+        Assert.Equal(Strings.Drawer.PathCopied, DrawerActions.PathsCopied(1));
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Drawer.PathsCopied, "3"), DrawerActions.PathsCopied(3));
+    }
+
+    /// <summary>
+    /// A file stopped with the start toast's Stop is skipped, not reported as a failure; a second batch while one runs
+    /// is refused with a word instead of putting the same files through twice.
+    /// </summary>
+    [Fact]
+    public void Stopped_files_are_skipped_and_a_second_batch_waits_its_turn()
+    {
+        List<ToastContent> toasts = [];
+        bool second = true;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("issues-report");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using Form owner = new();
+            services.ShowToast = toasts.Add;
+            FileRecord[] files = [.. Enumerable.Range(1, 3).Select(i => new FileRecord { Id = i, Name = $"IMG_{i}.jpg", Ext = "jpg", MediaKind = MediaKind.Photo })];
+            OperationOutcome[] outcomes = [new(1, 1, OperationStatus.Done, null, null), new(2, 2, OperationStatus.Cancelled, MediaVerifier.Core.CoreStrings.Remediation.Cancelled, null)];
+            Remediator.Report(services, owner, ActionCatalog.Create(ActionIds.Quarantine, MediaVerifier.Core.Engine.WindowsFileSystem.Instance)!, files, outcomes, 1);
+
+            // A batch in progress: a second one is refused before anything is asked.
+            FieldInfo running = typeof(Remediator).GetField("s_running", BindingFlags.NonPublic | BindingFlags.Static)!;
+            using CancellationTokenSource busy = new();
+            running.SetValue(null, busy);
+            try
+            {
+                using UiServices live = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+                live.ShowToast = toasts.Add;
+                Task<bool> run = Remediator.RunAsync(live, owner, [1], ActionIds.Quarantine);
+                Settle(() => run.IsCompleted);
+                second = run.Result;
+            }
+            finally
+            {
+                running.SetValue(null, null);
+            }
+        });
+
+        Assert.Equal(
+            [
+                string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Repair.ResultQuarantine, Strings.Repair.OnePhoto),
+                Strings.Repair.AlreadyRunning,
+            ],
+            toasts.Select(t => t.Title));
+        Assert.StartsWith(string.Format(CultureInfo.CurrentCulture, Strings.Repair.Skipped, "2"), toasts[0].Text, StringComparison.Ordinal);
+        Assert.False(second);
     }
 
     private static void WithIssues(Action<Database> fill, Action<MainForm, UiServices, IssuesPage> body)
