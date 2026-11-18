@@ -65,7 +65,7 @@ public sealed class AppPathsTests
         Directory.CreateDirectory(job);
         File.WriteAllText(Path.Combine(job, "stats.log"), "x");
 
-        int removed = paths.CleanTemp();
+        int removed = paths.CleanRunTemp();
 
         Assert.Equal(1, removed);
         Assert.Empty(Directory.EnumerateFileSystemEntries(paths.TempDirectory));

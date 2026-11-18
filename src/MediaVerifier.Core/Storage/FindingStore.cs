@@ -4,8 +4,23 @@ using Microsoft.Data.Sqlite;
 
 namespace MediaVerifier.Core.Storage;
 
-/// <summary>What one <see cref="FindingStore.ReplaceForFile"/> call changed, for run counters.</summary>
-public readonly record struct FindingChange(int New, int Updated, int Resolved, int NewCritical = 0, int NewHigh = 0, int NewMedium = 0, int NewLow = 0);
+/// <summary>
+/// What one <see cref="FindingStore.ReplaceForFile"/> call changed, for run counters and the Rules effect line:
+/// findings that became open (<paramref name="New"/>), open ones that resolved (<paramref name="Resolved"/>) and open
+/// ones whose tier changed (<paramref name="SeverityChanged"/>). Ignored findings that stay ignored count in none.
+/// </summary>
+public readonly record struct FindingChange(int New, int Updated, int Resolved, int NewCritical = 0, int NewHigh = 0, int NewMedium = 0, int NewLow = 0, int SeverityChanged = 0)
+{
+    public static FindingChange operator +(FindingChange a, FindingChange b) => new(
+        a.New + b.New,
+        a.Updated + b.Updated,
+        a.Resolved + b.Resolved,
+        a.NewCritical + b.NewCritical,
+        a.NewHigh + b.NewHigh,
+        a.NewMedium + b.NewMedium,
+        a.NewLow + b.NewLow,
+        a.SeverityChanged + b.SeverityChanged);
+}
 
 /// <summary>
 /// Findings with the lifecycle of subplan 02 (task S-05): unique per (file, rule); re-detection updates
@@ -18,6 +33,9 @@ public sealed class FindingStore(Database database)
     public const string IgnoredByUser = "ignored";
     public const string IgnoredScopePrefix = "ignore:";
 
+    /// <summary>Resolved because the user switched the rule off (verification rules); switching it on reopens them.</summary>
+    public const string RuleOff = "rule off";
+
     private const string Columns =
         "id, file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc, resolved_utc, resolution";
 
@@ -26,20 +44,22 @@ public sealed class FindingStore(Database database)
 
     /// <summary>
     /// Applies one evaluation of a file in a single operation: upserts <paramref name="raised"/>, resolves
-    /// open or ignored findings of <paramref name="evaluatedRules"/> that were not raised, leaves other
-    /// rules alone (a shallower scan cannot judge them), then recomputes the file's summary columns.
+    /// open findings of <paramref name="evaluatedRules"/> that were not raised, leaves other rules alone (a
+    /// shallower scan cannot judge them), then recomputes the file's summary columns. An ignored finding that is
+    /// not raised stays ignored while the content is unchanged (subplan 02): a rule switched off and on again, or a
+    /// limit moved and moved back, must not undo the user's Ignore.
     /// </summary>
     public static FindingChange ReplaceForFile(WriteContext context, long fileId, long runId, IReadOnlyCollection<string> evaluatedRules, IReadOnlyList<Finding> raised, bool contentChanged)
     {
         long now = context.NowTicks;
-        Dictionary<string, (long Id, FindingStatus Status, string? Resolution)> existing = new(StringComparer.Ordinal);
-        SqliteCommand select = context.Command("SELECT id, rule_id, status, resolution FROM findings WHERE file_id = $file");
+        Dictionary<string, (long Id, FindingStatus Status, string? Resolution, Severity Severity)> existing = new(StringComparer.Ordinal);
+        SqliteCommand select = context.Command("SELECT id, rule_id, status, resolution, severity FROM findings WHERE file_id = $file");
         select.Add("$file", fileId);
         using (SqliteDataReader reader = select.ExecuteReader())
         {
             while (reader.Read())
             {
-                existing[reader.GetString(1)] = (reader.GetInt64(0), (FindingStatus)reader.GetInt32(2), reader.GetStringOrNull(3));
+                existing[reader.GetString(1)] = (reader.GetInt64(0), (FindingStatus)reader.GetInt32(2), reader.GetStringOrNull(3), (Severity)reader.GetInt32(4));
             }
         }
 
@@ -47,6 +67,7 @@ public sealed class FindingStore(Database database)
         int added = 0;
         int updated = 0;
         int resolved = 0;
+        int tierChanged = 0;
         int[] newBySeverity = new int[5];
         HashSet<string> raisedRules = new(StringComparer.Ordinal);
         foreach (Finding finding in raised)
@@ -59,7 +80,7 @@ public sealed class FindingStore(Database database)
             RuleDefinition rule = RuleCatalog.Get(finding.RuleId);
             string evidence = EvidenceJson.Serialize(finding.Evidence);
             (long ScopeId, bool Ignored) scoped = scope.Match(finding.RuleId);
-            if (existing.TryGetValue(finding.RuleId, out (long Id, FindingStatus Status, string? Resolution) row))
+            if (existing.TryGetValue(finding.RuleId, out (long Id, FindingStatus Status, string? Resolution, Severity Severity) row))
             {
                 FindingStatus status = row.Status switch
                 {
@@ -95,6 +116,10 @@ public sealed class FindingStore(Database database)
                 else
                 {
                     updated++;
+                    if (row.Status == FindingStatus.Open && status == FindingStatus.Open && row.Severity != finding.Severity)
+                    {
+                        tierChanged++;
+                    }
                 }
             }
             else
@@ -123,9 +148,10 @@ public sealed class FindingStore(Database database)
             }
         }
 
-        foreach ((string ruleId, (long Id, FindingStatus Status, string? Resolution) row) in existing)
+        foreach ((string ruleId, (long Id, FindingStatus Status, string? Resolution, Severity Severity) row) in existing)
         {
-            if (raisedRules.Contains(ruleId) || row.Status == FindingStatus.Resolved || !evaluatedRules.Contains(ruleId))
+            if (raisedRules.Contains(ruleId) || row.Status == FindingStatus.Resolved || !evaluatedRules.Contains(ruleId)
+                || (row.Status == FindingStatus.Ignored && !contentChanged))
             {
                 continue;
             }
@@ -138,7 +164,51 @@ public sealed class FindingStore(Database database)
         }
 
         RecomputeFileSummary(context, fileId);
-        return new FindingChange(added, updated, resolved, newBySeverity[4], newBySeverity[3], newBySeverity[2], newBySeverity[1]);
+        return new FindingChange(added, updated, resolved, newBySeverity[4], newBySeverity[3], newBySeverity[2], newBySeverity[1], tierChanged);
+    }
+
+    /// <summary>
+    /// Switches the stored findings of a rule that no detector re-judges (the verification rules INT-ROT and
+    /// INT-META-DRIFT, which only a fingerprint read raises): off resolves its open findings as <see cref="RuleOff"/>, on
+    /// reopens exactly those. Ignored findings are left as they are. Returns how many became open or resolved.
+    /// </summary>
+    public static FindingChange SwitchRule(WriteContext context, string ruleId, bool enabled)
+    {
+        FindingStatus from = enabled ? FindingStatus.Resolved : FindingStatus.Open;
+        SqliteCommand select = context.Command(
+            "SELECT DISTINCT file_id FROM findings WHERE rule_id = $rule AND status = $from AND ($enabled = 0 OR resolution = $off)");
+        select.Add("$rule", ruleId);
+        select.Add("$from", (int)from);
+        select.Add("$enabled", enabled ? 1 : 0);
+        select.Add("$off", RuleOff);
+        List<long> files = [];
+        using (SqliteDataReader reader = select.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                files.Add(reader.GetInt64(0));
+            }
+        }
+
+        SqliteCommand update = context.Command(enabled
+            ? "UPDATE findings SET status = $open, resolved_utc = NULL, resolution = NULL WHERE rule_id = $rule AND status = $resolved AND resolution = $off"
+            : "UPDATE findings SET status = $resolved, resolved_utc = $now, resolution = $off WHERE rule_id = $rule AND status = $open");
+        update.Add("$open", (int)FindingStatus.Open);
+        update.Add("$resolved", (int)FindingStatus.Resolved);
+        update.Add("$rule", ruleId);
+        update.Add("$off", RuleOff);
+        if (!enabled)
+        {
+            update.Add("$now", context.NowTicks);
+        }
+
+        int changed = update.ExecuteNonQuery();
+        foreach (long fileId in files)
+        {
+            RecomputeFileSummary(context, fileId);
+        }
+
+        return enabled ? new FindingChange(changed, 0, 0) : new FindingChange(0, 0, changed);
     }
 
     /// <summary>Resolves one finding with a reason (an operation id after a repair).</summary>
@@ -182,8 +252,11 @@ public sealed class FindingStore(Database database)
         RecomputeFileSummary(context, fileId);
     }
 
-    /// <summary>Ignores or reopens findings chosen by the user. Ignored findings leave the file's open counts.</summary>
-    public Task SetStatusAsync(IReadOnlyCollection<long> findingIds, FindingStatus status, CancellationToken cancellationToken = default) =>
+    /// <summary>
+    /// Ignores or reopens findings chosen by the user. Ignored findings leave the file's open counts. Returns the ids
+    /// that changed (see <see cref="SetStatus"/>): the toast and its Undo cover only those.
+    /// </summary>
+    public Task<IReadOnlyList<long>> SetStatusAsync(IReadOnlyCollection<long> findingIds, FindingStatus status, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => SetStatus(context, findingIds, status), ChangeFlags.Findings | ChangeFlags.Files, cancellationToken);
 
     /// <summary>
@@ -232,17 +305,43 @@ public sealed class FindingStore(Database database)
         return reopened;
     }
 
-    public static void SetStatus(WriteContext context, IReadOnlyCollection<long> findingIds, FindingStatus status)
+    /// <summary>
+    /// Sets the status of chosen findings, only from the status the change makes sense from: Ignore takes open
+    /// findings, reopening takes ignored ones, resolving takes any that is not resolved yet. A resolved finding
+    /// (fixed, quarantined, no longer reproduced) can therefore not be ignored, and so not be turned into an open
+    /// problem by the Undo of that Ignore. Returns the ids that changed.
+    /// </summary>
+    public static IReadOnlyList<long> SetStatus(WriteContext context, IReadOnlyCollection<long> findingIds, FindingStatus status)
     {
         HashSet<long> files = [];
-        SqliteCommand owner = context.Command("SELECT file_id FROM findings WHERE id = $id");
+        List<long> changed = [];
+        SqliteCommand owner = context.Command("SELECT file_id, status FROM findings WHERE id = $id");
         SqliteCommand update = context.Command(
             "UPDATE findings SET status = $status, resolution = $resolution, resolved_utc = CASE WHEN $status = 2 THEN $now ELSE NULL END WHERE id = $id");
         foreach (long id in findingIds)
         {
             owner.Parameters.Clear();
             owner.Add("$id", id);
-            if (owner.ExecuteScalar() is not long fileId)
+            long fileId;
+            FindingStatus current;
+            using (SqliteDataReader reader = owner.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    continue;
+                }
+
+                fileId = reader.GetInt64(0);
+                current = (FindingStatus)reader.GetInt32(1);
+            }
+
+            bool allowed = status switch
+            {
+                FindingStatus.Ignored => current == FindingStatus.Open,
+                FindingStatus.Open => current == FindingStatus.Ignored,
+                _ => current != FindingStatus.Resolved,
+            };
+            if (!allowed)
             {
                 continue;
             }
@@ -254,12 +353,15 @@ public sealed class FindingStore(Database database)
             update.Add("$id", id);
             update.ExecuteNonQuery();
             files.Add(fileId);
+            changed.Add(id);
         }
 
         foreach (long fileId in files)
         {
             RecomputeFileSummary(context, fileId);
         }
+
+        return changed;
     }
 
     /// <summary>Keeps files.worst_severity, open_findings and the Ok/Issues state in step with the findings.</summary>

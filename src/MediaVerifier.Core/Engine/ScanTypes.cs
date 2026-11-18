@@ -45,6 +45,12 @@ public sealed record InFlightItem(string Path, string Stage, double Fraction, Me
 /// Immutable progress snapshot (subplan 05, Progress and estimates). The UI polls it at up to 10 Hz; the
 /// engine never raises per-file UI events.
 /// </summary>
+/// <param name="FilesSeen">Files listed in the run's scope so far (the chosen files for a file-list scope).</param>
+/// <param name="FilesQueued">Files waiting for work or being worked on.</param>
+/// <param name="FilesDone">
+/// Files settled: worked on, or found to need no work (unchanged, skipped). An unchanged library therefore reaches
+/// 100 %, and a rescan with a few changes does not sit near 0 %.
+/// </param>
 public sealed record EngineStatus(
     EnginePhase Phase,
     long? RunId,
@@ -125,7 +131,8 @@ public sealed record WorkItem
 
     public bool Modified { get; init; }
 
-    public bool Returned { get; init; }
+    /// <summary>Analyse from scratch: stored artifacts are not reused ("Scan again" on chosen files).</summary>
+    public bool Force { get; init; }
 
     public ScanDepth Depth { get; init; }
 

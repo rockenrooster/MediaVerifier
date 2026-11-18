@@ -153,6 +153,36 @@ public sealed class TreeEnumerator
         }
     }
 
+    /// <summary>
+    /// Whether these rules leave a file out, as a listing from <paramref name="startRelDir"/> would: a skipped folder
+    /// name below the start, an extension that is not media here (the file types, or the folder's Contains choices),
+    /// or the folder's include and exclude patterns. Missing-file detection uses it: a file the rules leave out is out
+    /// of scope, not missing.
+    /// </summary>
+    public bool Excludes(string relDir, string name, string startRelDir = "")
+    {
+        relDir = FileIndex.NormalizeRelDir(relDir);
+        string start = FileIndex.NormalizeRelDir(startRelDir);
+        string below = start.Length == 0 ? relDir
+            : relDir.Length > start.Length && relDir.StartsWith(start + "\\", StringComparison.Ordinal) ? relDir[(start.Length + 1)..]
+            : "";
+        foreach (string folder in below.Split('\\', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (IsExcludedDirectory(folder))
+            {
+                return true;
+            }
+        }
+
+        if (_classifier.Classify(name) == MediaKind.Unknown)
+        {
+            return true;
+        }
+
+        string relPath = relDir.Length == 0 ? name : relDir + "\\" + name;
+        return (_include is not null && !_include.IsMatch(relPath)) || (_exclude is not null && _exclude.IsMatch(relPath));
+    }
+
     /// <summary>Skip reasons decidable from the listing alone; Locked and AccessDenied come from the read.</summary>
     public SkipReason DecideSkip(FsEntry entry, IReadOnlySet<string> siblingNames, long nowTicks)
     {

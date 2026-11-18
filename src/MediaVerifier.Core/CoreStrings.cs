@@ -57,4 +57,14 @@ public static class CoreStrings
         public const string NoPreview = "The file holds no intact embedded preview.";
         public const string NoRecycleBin = "This drive has no Recycle Bin.";
     }
+
+    /// <summary>What the engine is doing with a file, as the Scans page's WORKING ON list shows it (subplan 09, Scans).</summary>
+    public static class ScanStage
+    {
+        public const string Reading = "Reading";
+        public const string Decoding = "Decoding";
+        public const string Analysing = "Decoding and analysing";
+        public const string Sampling = "Sampling frames";
+        public const string EveryFrame = "Decoding every frame";
+    }
 }

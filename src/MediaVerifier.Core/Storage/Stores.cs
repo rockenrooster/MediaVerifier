@@ -149,11 +149,17 @@ public sealed class RunStore(Database database)
     public ValueTask CheckpointAsync(long runId, RunCounters counters, CancellationToken cancellationToken = default) =>
         database.Writer.PostAsync(context => Checkpoint(context, runId, counters), ChangeFlags.Runs, cancellationToken);
 
+    /// <summary>
+    /// Writes the counters. A run still Running also gets its end time set to now, a heartbeat: when the process dies,
+    /// the next start marks the run Interrupted at its last checkpoint instead of at that start. <see cref="List(int)"/>
+    /// reports no end time for a Running run.
+    /// </summary>
     public static void Checkpoint(WriteContext context, long runId, RunCounters counters)
     {
         SqliteCommand command = context.Command(
             "UPDATE runs SET files_seen = $seen, files_analysed = $analysed, files_verified = $verified, bytes_read = $bytes, " +
-            "new_findings = $new, resolved_findings = $resolved, errors = $errors WHERE id = $id");
+            "new_findings = $new, resolved_findings = $resolved, errors = $errors, " +
+            "ended_utc = CASE WHEN status = $running THEN MAX($now, started_utc) ELSE ended_utc END WHERE id = $id");
         command.Add("$seen", counters.FilesSeen);
         command.Add("$analysed", counters.FilesAnalysed);
         command.Add("$verified", counters.FilesVerified);
@@ -161,6 +167,8 @@ public sealed class RunStore(Database database)
         command.Add("$new", counters.NewFindings);
         command.Add("$resolved", counters.ResolvedFindings);
         command.Add("$errors", counters.Errors);
+        command.Add("$running", (int)RunStatus.Running);
+        command.Add("$now", context.NowTicks);
         command.Add("$id", runId);
         command.ExecuteNonQuery();
     }
@@ -186,9 +194,6 @@ public sealed class RunStore(Database database)
 
     public List<RunRecord> List(int limit = 50) => List(limit, null);
 
-    /// <summary>The most recent run left Interrupted, which the Scans page offers to resume.</summary>
-    public RunRecord? LatestInterrupted() => List(1, null, RunStatus.Interrupted).FirstOrDefault();
-
     /// <summary>The most recent run still marked Running (a background run's checkpoints, subplan 13).</summary>
     public RunRecord? LatestRunning() => List(1, null, RunStatus.Running).FirstOrDefault();
 
@@ -212,7 +217,9 @@ public sealed class RunStore(Database database)
                 ScopeJson = r.GetString(4),
                 Status = (RunStatus)r.GetInt32(5),
                 StartedUtc = r.GetInt64(6),
-                EndedUtc = r.GetInt64OrNull(7),
+
+                // A Running run's ended_utc is only its checkpoint heartbeat: it has not ended.
+                EndedUtc = (RunStatus)r.GetInt32(5) == RunStatus.Running ? null : r.GetInt64OrNull(7),
                 FilesSeen = r.GetInt64(8),
                 FilesAnalysed = r.GetInt64(9),
                 FilesVerified = r.GetInt64(10),
@@ -308,16 +315,6 @@ public sealed class Journal(Database database)
 {
     private const string Columns = "id, batch_id, utc, action_id, file_id, status, source_path, result_path, backup_path, undo_json, detail_json";
 
-    public Task<long> NextBatchIdAsync(CancellationToken cancellationToken = default) =>
-        database.Writer.ExecuteAsync(
-            context =>
-            {
-                SqliteCommand command = context.Command("SELECT COALESCE(MAX(batch_id), 0) + 1 FROM operations");
-                return context.Insert(command);
-            },
-            ChangeFlags.None,
-            cancellationToken);
-
     public static long Add(WriteContext context, OperationRecord operation)
     {
         SqliteCommand command = context.Command(
@@ -355,6 +352,20 @@ public sealed class Journal(Database database)
 
     public Task UpdateAsync(long operationId, OperationStatus status, string? resultPath = null, string? backupPath = null, string? undoJson = null, string? detailJson = null, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => Update(context, operationId, status, resultPath, backupPath, undoJson, detailJson), ChangeFlags.Operations, cancellationToken);
+
+    /// <summary>
+    /// Forgets the kept original of an operation once it is deleted for good: no backup path and nothing to undo, so the
+    /// quarantine list, Restore and Undo stop offering it. <see cref="Update"/> cannot clear them (null keeps a value).
+    /// </summary>
+    public static void ClearBackup(WriteContext context, long operationId)
+    {
+        SqliteCommand command = context.Command("UPDATE operations SET backup_path = NULL, undo_json = NULL WHERE id = $id");
+        command.Add("$id", operationId);
+        command.ExecuteNonQuery();
+    }
+
+    public Task ClearBackupAsync(long operationId, CancellationToken cancellationToken = default) =>
+        database.Writer.ExecuteAsync(context => ClearBackup(context, operationId), ChangeFlags.Operations, cancellationToken);
 
     public List<OperationRecord> List(int limit = 500, long? batchId = null, OperationStatus? status = null) => database.Read(connection =>
     {
@@ -402,13 +413,6 @@ public sealed class ArtifactStore(Database database)
         command.ExecuteNonQuery();
     }
 
-    public static void DeleteAll(WriteContext context, long fileId)
-    {
-        SqliteCommand command = context.Command("DELETE FROM artifacts WHERE file_id = $file");
-        command.Add("$file", fileId);
-        command.ExecuteNonQuery();
-    }
-
     public Task PutAsync(long fileId, ArtifactKind kind, int providerVersion, string json, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => Put(context, fileId, kind, providerVersion, json), ChangeFlags.Artifacts, cancellationToken);
 
@@ -436,6 +440,38 @@ public sealed class ArtifactStore(Database database)
         }
 
         return rows;
+    });
+
+    /// <summary>The artifacts of many files in one query per 500 ids (re-evaluation after a rule change), keyed by file.</summary>
+    public Dictionary<long, Dictionary<ArtifactKind, (int ProviderVersion, string Data)>> ForFiles(IReadOnlyCollection<long> fileIds) => database.Read(connection =>
+    {
+        Dictionary<long, Dictionary<ArtifactKind, (int, string)>> byFile = [];
+        if (fileIds.Count == 0)
+        {
+            return byFile;
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT file_id, kind, provider_version, data FROM artifacts WHERE file_id IN (" + SqlHelpers.InList() + ")";
+        foreach (ArraySegment<long> chunk in SqlHelpers.Chunks([.. fileIds]))
+        {
+            command.Parameters.Clear();
+            SqlHelpers.BindChunk(command, chunk);
+            using SqliteDataReader r = command.ExecuteReader();
+            while (r.Read())
+            {
+                long fileId = r.GetInt64(0);
+                if (!byFile.TryGetValue(fileId, out Dictionary<ArtifactKind, (int, string)>? rows))
+                {
+                    rows = [];
+                    byFile[fileId] = rows;
+                }
+
+                rows[(ArtifactKind)r.GetInt32(1)] = (r.GetInt32(2), r.GetString(3));
+            }
+        }
+
+        return byFile;
     });
 }
 

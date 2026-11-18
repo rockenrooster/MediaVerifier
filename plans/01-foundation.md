@@ -42,7 +42,7 @@ Reference implementation for patterns in this phase: FastTaskMgr
 | Caches (thumbnails, evidence images) | `%LOCALAPPDATA%\MediaVerifier\cache\` |
 | Bundled FFmpeg (read-only, part of the install) | `<folder of MediaVerifier.exe>\ffmpeg\` |
 | Update downloads | `%LOCALAPPDATA%\MediaVerifier\Updates\` |
-| Scratch for child processes | `%LOCALAPPDATA%\MediaVerifier\temp\<run>\<job>\` (deleted after each job and at startup) |
+| Scratch for child processes | `%LOCALAPPDATA%\MediaVerifier\temp\<run>\<job>\` (deleted after each job; each scan run deletes the run folders that earlier runs left behind when it starts, and its own when it ends) |
 
 Expose these through a single `AppPaths` class in Core. Tests override the base directory.
 

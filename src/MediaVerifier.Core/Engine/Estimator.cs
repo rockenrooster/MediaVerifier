@@ -19,17 +19,20 @@ public sealed class EstimateAverages
 /// Remaining-time estimates (task E-11): remaining bytes ÷ smoothed read rate for integrity work, plus
 /// remaining files per kind × an exponentially weighted average of analysis time, divided by the files
 /// worked on in parallel. Says "estimating" until 50 files or 30 seconds of data exist, and never lets
-/// an estimate move by more than 20 % per update.
+/// an estimate move by more than 20 % per update. An update happens at most once a second, however often the
+/// status is read (the strip, the Scans page and the scan buttons all read it).
 /// </summary>
 public sealed class Estimator
 {
     private const double Alpha = 0.1;
     private const double MaxStep = 0.2;
+    private static readonly TimeSpan UpdateInterval = TimeSpan.FromSeconds(1);
     private readonly Lock _gate = new();
     private readonly Dictionary<string, double> _seconds = [];
     private double _bytesPerSecond;
     private long _samples;
     private double? _lastEstimateSeconds;
+    private TimeSpan _lastEstimateAt;
 
     public Estimator(EstimateAverages? seed = null)
     {
@@ -99,16 +102,25 @@ public sealed class Estimator
             return null;
         }
 
+        lock (_gate)
+        {
+            if (_lastEstimateSeconds is double cached && elapsed >= _lastEstimateAt && elapsed - _lastEstimateAt < UpdateInterval)
+            {
+                return TimeSpan.FromSeconds(Math.Max(0, cached));
+            }
+        }
+
         double seconds = RawSeconds(remainingBytes, remainingFiles, depth, parallel);
         lock (_gate)
         {
             if (_lastEstimateSeconds is double last && last > 0)
             {
-                // Expected progress since the last update is folded in by the caller's cadence; clamp jumps.
+                // At most one update a second, each within 20 % of the one before.
                 seconds = Math.Clamp(seconds, last * (1 - MaxStep), last * (1 + MaxStep));
             }
 
             _lastEstimateSeconds = seconds;
+            _lastEstimateAt = elapsed;
         }
 
         return TimeSpan.FromSeconds(Math.Max(0, seconds));
