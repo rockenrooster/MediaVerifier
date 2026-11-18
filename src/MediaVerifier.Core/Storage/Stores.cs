@@ -197,6 +197,9 @@ public sealed class RunStore(Database database)
     /// <summary>The most recent run still marked Running (a background run's checkpoints, subplan 13).</summary>
     public RunRecord? LatestRunning() => List(1, null, RunStatus.Running).FirstOrDefault();
 
+    /// <summary>The most recent run that was interrupted (the Dashboard's and Scans' Continue).</summary>
+    public RunRecord? LatestInterrupted() => List(1, null, RunStatus.Interrupted).FirstOrDefault();
+
     private List<RunRecord> List(int limit, long? id, RunStatus? status = null) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
@@ -410,6 +413,14 @@ public sealed class ArtifactStore(Database database)
         command.Add("$kind", (int)kind);
         command.Add("$version", providerVersion);
         command.Add("$data", json);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>Forgets every stored analysis of a file (a repair changed its content).</summary>
+    public static void DeleteAll(WriteContext context, long fileId)
+    {
+        SqliteCommand command = context.Command("DELETE FROM artifacts WHERE file_id = $file");
+        command.Add("$file", fileId);
         command.ExecuteNonQuery();
     }
 
