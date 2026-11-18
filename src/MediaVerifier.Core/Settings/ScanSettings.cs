@@ -4,15 +4,6 @@ using MediaVerifier.Core.Model;
 
 namespace MediaVerifier.Core.Settings;
 
-/// <summary>Where originals go after a repair (Settings → Integrity).</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<OriginalsDestination>))]
-public enum OriginalsDestination
-{
-    Quarantine,
-    RecycleBin,
-    OtherFolder,
-}
-
 /// <summary>Which tiers raise a Windows notification (Settings → Notifications).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<NotifyThreshold>))]
 public enum NotifyThreshold
@@ -68,11 +59,7 @@ public sealed class ScanSettings
 
     public bool VerifyOnAnalysis { get; set; } = true;
 
-    [JsonConverter(typeof(JsonStringEnumConverter<OriginalsDestination>))]
-    public OriginalsDestination KeepOriginalsIn { get; set; } = OriginalsDestination.Quarantine;
-
-    public string? OriginalsFolder { get; set; }
-
+    /// <summary>Originals kept after a repair stay in each root's quarantine folder this long (subplan 12).</summary>
     public int EmptyQuarantineAfterDays { get; set; } = 30;
 
     public bool ShowWindowsNotifications { get; set; } = true;

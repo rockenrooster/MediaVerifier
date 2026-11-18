@@ -107,7 +107,9 @@ internal sealed class SettingsPage : PageBase
                 Number(Strings.Settings.ReReadEvery, null, Strings.Units.Days, 7, 3650, () => scan.ScrubPeriodDays, v => scan.ScrubPeriodDays = v),
                 Number(Strings.Settings.TimeEachRun, null, Strings.Units.MinutesUnit, 0, 1440, () => scan.ScrubBudgetMinutes, v => scan.ScrubBudgetMinutes = v),
                 Toggle(Strings.Settings.VerifyOnAnalysis, null, () => scan.VerifyOnAnalysis, v => scan.VerifyOnAnalysis = v),
-                Drop(Strings.Settings.KeepOriginals, null, [Strings.Settings.QuarantineFolder, Strings.Settings.RecycleBin, Strings.Settings.AnotherFolder], () => (int)scan.KeepOriginalsIn, i => scan.KeepOriginalsIn = (OriginalsDestination)i),
+
+                // Originals always go to the root's quarantine folder: "Keep originals after a repair in" was saved but
+                // never read, so Recycle Bin and Another folder… did nothing (deviation logged; subplan 12).
                 Number(Strings.Settings.EmptyQuarantine, null, Strings.Units.Days, 1, 3650, () => scan.EmptyQuarantineAfterDays, v => scan.EmptyQuarantineAfterDays = v),
             ]),
             Section(Strings.Settings.Notifications, Strings.Settings.NotificationsIntro,

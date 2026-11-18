@@ -122,6 +122,26 @@ public sealed class SettingsSaveTests
         Assert.Equal(ThemeMode.Dark, new SettingsStore(path).Load().Theme);
     }
 
+    /// <summary>"Keep originals after a repair in" is gone (it was never read): files that still hold it load, and drop it.</summary>
+    [Fact]
+    public void The_removed_keep_originals_values_load_and_are_dropped()
+    {
+        using TempDirectory temp = new("settings-old");
+        string path = temp.Combine("settings.json");
+        File.WriteAllText(path, """{ "theme": "Dark", "scanning": { "keepOriginalsIn": "RecycleBin", "originalsFolder": "D:\\Old", "emptyQuarantineAfterDays": 12 } }""");
+
+        SettingsStore store = new(path);
+        AppSettings loaded = store.Load();
+        store.Save(loaded);
+
+        Assert.Null(store.LastCorruptCopy);
+        Assert.Equal(ThemeMode.Dark, loaded.Theme);
+        Assert.Equal(12, loaded.Scanning.EmptyQuarantineAfterDays);
+        string saved = File.ReadAllText(path);
+        Assert.DoesNotContain("keepOriginalsIn", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("originalsFolder", saved, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_settings_file_held_for_a_moment_is_read_on_a_later_try()
     {

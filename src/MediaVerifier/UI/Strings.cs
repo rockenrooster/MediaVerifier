@@ -741,10 +741,6 @@ internal static class Strings
         public const string ReReadEvery = "Re-read every file at least every";
         public const string TimeEachRun = "Time for this in each scheduled scan";
         public const string VerifyOnAnalysis = "Also verify whenever a file is analysed";
-        public const string KeepOriginals = "Keep originals after a repair in";
-        public const string QuarantineFolder = "Quarantine folder";
-        public const string RecycleBin = "Recycle Bin";
-        public const string AnotherFolder = "Another folder…";
         public const string EmptyQuarantine = "Empty quarantine after";
         public const string Notifications = "Notifications";
         public const string NotificationsIntro = "When MediaVerifier tells you something outside its window.";
