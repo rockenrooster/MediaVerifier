@@ -30,4 +30,14 @@
     <InternalsVisibleTo Include="MediaVerifier.Tests" />
   </ItemGroup>
 
+  <!-- Debug builds run with the bundled media engine (deps\ffmpeg\bin, fetched by scripts\Get-FfmpegBundle.ps1), so Scan
+       works in a development build. A target, not content items: test projects that reference this one must not get a
+       copy (AppContext.BaseDirectory\ffmpeg would change which engine the tests use). -->
+  <Target Name="CopyDevFfmpegBundle" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And Exists('$(MSBuildThisFileDirectory)..\..\deps\ffmpeg\bin\bundle.json')">
+    <ItemGroup>
+      <DevFfmpegFile Include="$(MSBuildThisFileDirectory)..\..\deps\ffmpeg\bin\*" Exclude="$(MSBuildThisFileDirectory)..\..\deps\ffmpeg\bin\.lock-sha256" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DevFfmpegFile)" DestinationFolder="$(OutDir)ffmpeg" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
