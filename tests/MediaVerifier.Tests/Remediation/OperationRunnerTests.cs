@@ -149,7 +149,19 @@ public sealed class OperationRunnerTests
         Assert.True(File.Exists(done.ResultPath));
         FileRecord renamed = harness.Database.Files.Get(file.Id)!;
         Assert.Equal("photo (2).jpg", renamed.Name);
+        Assert.Equal("jpg", renamed.Ext);
         Assert.Equal(2, harness.AllFiles().Count);
+
+        // The rename settles the finding, so "Fix all" is not offered again for a file that is already right.
+        Assert.DoesNotContain(harness.Database.Findings.ForFile(file.Id), f => f.RuleId == "GEN-EXT-MISMATCH" && f.Status == FindingStatus.Open);
+        Assert.DoesNotContain(RecommendationEngine.Build(harness.Database, new Core.Settings.ScanSettings(), WindowsFileSystem.Instance, DateTimeOffset.UtcNow, max: 20), r => r.Kind == RecommendationKind.WrongExtension);
+
+        // Undo puts the name, the extension and the finding back.
+        Assert.Null(await Runner(harness, runner).UndoAsync(done.OperationId, 2, CancellationToken.None));
+        FileRecord back = harness.Database.Files.Get(file.Id)!;
+        Assert.Equal("photo.png", back.Name);
+        Assert.Equal("png", back.Ext);
+        Assert.Contains(harness.Database.Findings.ForFile(file.Id), f => f.RuleId == "GEN-EXT-MISMATCH" && f.Status == FindingStatus.Open);
     }
 
     [FixtureFact]
@@ -164,11 +176,14 @@ public sealed class OperationRunnerTests
         await harness.AddRootAsync(harness.Backup, RootRole.Backup);
         await harness.ScanAsync(ScanDepth.Quick);
 
-        // Rot: the same size and time, different bytes.
+        // Rot: the same size and time, different bytes, found by the next verification.
         DateTime written = File.GetLastWriteTimeUtc(damaged);
         Mutate.FlipByte(damaged, 0.5);
         File.SetLastWriteTimeUtc(damaged, written);
         FileRecord file = harness.AllFiles().Single(f => f.Name == "src16.flac" && f.RootId == harness.Database.Roots.List().Single(r => r.Role == RootRole.Library).Id);
+        Assert.False(ActionCatalog.HasHealthyCopy(harness.Database, WindowsFileSystem.Instance, file));
+        await harness.ScanAsync(ScanDepth.Quick, new ScanOptions { VerifyEverything = true });
+        Assert.Contains(harness.Database.Findings.ForFile(file.Id), f => f.RuleId == "INT-ROT" && f.Status == FindingStatus.Open);
         Assert.True(ActionCatalog.HasHealthyCopy(harness.Database, WindowsFileSystem.Instance, file));
         IReadOnlyList<string> actions = ActionCatalog.ForFinding("INT-ROT", file, harness.Database.Roots.Get(file.RootId)!, hasHealthyCopy: true, decodesCleanly: false);
         Assert.Equal(ActionIds.RestoreCopy, actions[0]);
@@ -179,10 +194,12 @@ public sealed class OperationRunnerTests
         Assert.Equal(SHA256.HashData(good), SHA256.HashData(await File.ReadAllBytesAsync(damaged)));
 
         // A "healthy" copy that changed since it was fingerprinted is refused.
+        Assert.DoesNotContain(harness.Database.Findings.ForFile(file.Id), f => f.RuleId == "INT-ROT" && f.Status == FindingStatus.Open);
         Mutate.FlipByte(healthy, 0.3);
         Mutate.FlipByte(damaged, 0.6);
         FileRecord again = harness.Database.Files.Get(file.Id)!;
         File.SetLastWriteTimeUtc(damaged, new DateTime(again.MtimeUtc, DateTimeKind.Utc));
+        await harness.ScanAsync(ScanDepth.Quick, new ScanOptions { VerifyEverything = true });
         OperationOutcome refused = await Runner(harness, runner).RunAsync(file.Id, new RestoreCopyAction(WindowsFileSystem.Instance), 2, CancellationToken.None);
         Assert.Equal(OperationStatus.Failed, refused.Status);
         Assert.Equal(CoreStrings.Remediation.NoHealthyCopy, refused.Reason);

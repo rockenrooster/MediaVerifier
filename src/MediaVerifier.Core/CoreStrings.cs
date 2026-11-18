@@ -56,5 +56,11 @@ public static class CoreStrings
         public const string ToolFailed = "The media engine could not write the new file.";
         public const string NoPreview = "The file holds no intact embedded preview.";
         public const string NoRecycleBin = "This drive has no Recycle Bin.";
+        public const string NotAllowed = "MediaVerifier is not allowed to change the file.";
+        public const string RootOffline = "The folder is not available.";
+        public const string RotFirst = "The file changed without being modified. Restore it or accept the change first.";
+        public const string TagsLost = "The new file would lose some of the original's tags.";
+        public const string FormatChanged = "The new file is in a different format from the original.";
+        public const string WrongFormat = "This action does not apply to this file's format.";
     }
 }

@@ -49,6 +49,9 @@ public sealed class UpdateService : IDisposable
     public Version CurrentVersion { get; }
     public UpdateCheckResult? LastResult { get; private set; }
 
+    /// <summary>No bytes for this long ends a download (the HTTP timeout stops covering it once the headers arrive).</summary>
+    internal TimeSpan StallTimeout { get; init; } = TimeSpan.FromSeconds(60);
+
     public bool IsChecking
     {
         get
@@ -104,18 +107,31 @@ public sealed class UpdateService : IDisposable
             throw new InvalidOperationException("No downloadable update is available.");
         }
 
-        return await DownloadSetupAsync(result, cancellationToken);
+        return await DownloadSetupAsync(result, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<string> DownloadInstallerAsync(CancellationToken cancellationToken = default)
     {
-        UpdateCheckResult result = LastResult ?? await CheckAsync(cancellationToken);
+        UpdateCheckResult result = LastResult ?? await CheckAsync(cancellationToken).ConfigureAwait(false);
         if (!result.CanInstall || result.DownloadUrl is null)
         {
             throw new InvalidOperationException("No signed installer is available.");
         }
 
-        return await DownloadSetupAsync(result, cancellationToken);
+        return await DownloadSetupAsync(result, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Keeps the status line of a failed download or install on the update card until the next check (the toast alone
+    /// was gone while the card went back to "Version {v} is available.").
+    /// </summary>
+    public void RecordFailure(string statusLine)
+    {
+        if (LastResult is UpdateCheckResult result)
+        {
+            LastResult = result with { Failure = statusLine };
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     internal async Task<string> DownloadSetupAsync(UpdateCheckResult result, CancellationToken cancellationToken)
@@ -127,14 +143,16 @@ public sealed class UpdateService : IDisposable
 
         SetDownloading(true, 0);
         string updateDir = _updatesDirectory;
-        Directory.CreateDirectory(updateDir);
-
         string targetPath = Path.Combine(updateDir, "MediaVerifier-Setup.exe");
         string tempPath = targetPath + ".download";
 
+        // Re-armed with every chunk: a connection that stops sending ends the download instead of hanging it.
+        using CancellationTokenSource stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        stall.CancelAfter(StallTimeout);
         try
         {
-            using HttpResponseMessage response = await _http.GetAsync(result.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            Directory.CreateDirectory(updateDir);
+            using HttpResponseMessage response = await _http.GetAsync(result.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, stall.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
             long? total = response.Content.Headers.ContentLength;
@@ -145,7 +163,7 @@ public sealed class UpdateService : IDisposable
 
             string hash;
             {
-                await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken);
+                await using Stream input = await response.Content.ReadAsStreamAsync(stall.Token).ConfigureAwait(false);
                 await using FileStream output = File.Create(tempPath);
                 using IncrementalHash sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
@@ -153,13 +171,14 @@ public sealed class UpdateService : IDisposable
                 long received = 0;
                 while (true)
                 {
-                    int read = await input.ReadAsync(buffer, cancellationToken);
+                    int read = await input.ReadAsync(buffer, stall.Token).ConfigureAwait(false);
                     if (read == 0)
                     {
                         break;
                     }
 
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    stall.CancelAfter(StallTimeout);
+                    await output.WriteAsync(buffer.AsMemory(0, read), stall.Token).ConfigureAwait(false);
                     sha256.AppendData(buffer, 0, read);
                     received += read;
                     if (total is > 0)
@@ -184,6 +203,12 @@ public sealed class UpdateService : IDisposable
             File.Move(tempPath, targetPath, overwrite: true);
             SetDownloading(false, 100);
             return targetPath;
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            TryDelete(tempPath);
+            SetDownloading(false, 0);
+            throw new IOException("The connection stopped sending data.", ex);
         }
         catch
         {
@@ -222,15 +247,15 @@ public sealed class UpdateService : IDisposable
         SetChecking(true);
         try
         {
-            using HttpResponseMessage response = await _http.GetAsync(LatestReleaseApi, cancellationToken);
+            using HttpResponseMessage response = await _http.GetAsync(LatestReleaseApi, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 return StoreResult(UpdateCheckResult.NotFound(CurrentVersion));
             }
 
             response.EnsureSuccessStatusCode();
-            await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            GitHubRelease? release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, cancellationToken);
+            await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            GitHubRelease? release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
             if (release is null || string.IsNullOrWhiteSpace(release.TagName))
             {
                 return StoreResult(UpdateCheckResult.Error(CurrentVersion, "GitHub returned an empty release response."));
@@ -258,8 +283,8 @@ public sealed class UpdateService : IDisposable
             {
                 try
                 {
-                    byte[] manifestBytes = await DownloadBytesAsync(new Uri(manifestAsset.BrowserDownloadUrl), cancellationToken);
-                    byte[] signatureBytes = await DownloadBytesAsync(new Uri(signatureAsset.BrowserDownloadUrl), cancellationToken);
+                    byte[] manifestBytes = await DownloadBytesAsync(new Uri(manifestAsset.BrowserDownloadUrl), cancellationToken).ConfigureAwait(false);
+                    byte[] signatureBytes = await DownloadBytesAsync(new Uri(signatureAsset.BrowserDownloadUrl), cancellationToken).ConfigureAwait(false);
                     if (!UpdateTrust.VerifyManifestSignature(manifestBytes, signatureBytes, _publicKeyPem))
                     {
                         throw new InvalidOperationException("manifest signature is invalid");
@@ -361,9 +386,9 @@ public sealed class UpdateService : IDisposable
 
     private async Task<byte[]> DownloadBytesAsync(Uri uri, CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await _http.GetAsync(uri, cancellationToken);
+        using HttpResponseMessage response = await _http.GetAsync(uri, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static GitHubAsset? SelectAsset(IReadOnlyList<GitHubAsset>? assets, string name)
@@ -510,6 +535,9 @@ public sealed record UpdateCheckResult(
     string? AssetSha256,
     string Message)
 {
+    /// <summary>The status line of a download or install that failed after this check, shown until the next check.</summary>
+    public string? Failure { get; init; }
+
     public static UpdateCheckResult NotFound(Version currentVersion) => new(
         currentVersion,
         null,

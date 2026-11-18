@@ -90,7 +90,24 @@ public static class ActionCatalog
 
     private static bool Lossless(string extension) => extension.ToLowerInvariant() is "flac" or "wav" or "aif" or "aiff" or "wv" or "ape";
 
-    /// <summary>Whether a fingerprint-verified copy exists in another root (the finder checks name, size and fingerprint).</summary>
-    public static bool HasHealthyCopy(Database database, IMediaFileSystem fileSystem, FileRecord file) =>
-        file.Hash is not null && new HealthyCopyFinder(database, fileSystem).Find(file).Any(c => c.FingerprintMatch);
+    /// <summary>
+    /// Whether a fingerprint-verified copy exists in another root and the file needs it: a copy of the fingerprint
+    /// helps only when the content no longer matches that fingerprint (see <see cref="ContentDiffersFromBaseline"/>).
+    /// </summary>
+    public static bool HasHealthyCopy(Database database, IMediaFileSystem fileSystem, FileRecord file)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(file);
+        return file.Hash is not null && ContentDiffersFromBaseline(database, file.Id) && new HealthyCopyFinder(database, fileSystem).Find(file).Any(c => c.FingerprintMatch);
+    }
+
+    /// <summary>
+    /// Whether the file's content has left its fingerprint: bit rot, or read errors. Damage that was already there when
+    /// the fingerprint was taken (an empty file, a truncated one) is in every copy with that fingerprint too.
+    /// </summary>
+    public static bool ContentDiffersFromBaseline(Database database, long fileId)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        return database.Findings.ForFile(fileId).Any(f => f.Status == FindingStatus.Open && f.RuleId is "INT-ROT" or "GEN-UNREADABLE");
+    }
 }
