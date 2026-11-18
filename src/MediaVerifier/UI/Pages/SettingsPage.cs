@@ -161,6 +161,9 @@ internal sealed class SettingsPage : PageBase
 
     public override Control? FilterBox => _current == RulesSection ? _rules.Filter : null;
 
+    /// <summary>F1 on a rule opens that rule's help (subplan 09, Keyboard); elsewhere the page's.</summary>
+    public override string? HelpRule => _current == RulesSection ? _rules.FocusedRuleId : null;
+
     internal int Current => _current;
 
     internal bool UpdateAvailable { get; private set; }
@@ -250,6 +253,12 @@ internal sealed class SettingsPage : PageBase
         base.OnActivated();
         Reload();
         UiTask.Run(DetectInstallAsync());
+    }
+
+    protected override void OnDeactivated()
+    {
+        base.OnDeactivated();
+        _rules.ClearEffects();
     }
 
     protected override void Dispose(bool disposing)

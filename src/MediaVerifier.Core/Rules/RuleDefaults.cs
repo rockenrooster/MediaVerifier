@@ -121,7 +121,7 @@ public static class RuleDefaults
         ByKey = All.ToDictionary(p => p.Key, StringComparer.Ordinal);
     }
 
-    public static IReadOnlyList<RuleParameter> All { get; private set; }
+    public static IReadOnlyList<RuleParameter> All { get; }
 
     public static IEnumerable<RuleParameter> ForRule(string ruleId) => All.Where(p => p.RuleId == ruleId);
 
@@ -131,31 +131,6 @@ public static class RuleDefaults
             : throw new KeyNotFoundException($"Unknown rule parameter '{ruleId}.{name}'.");
 
     public static bool TryGet(string key, out RuleParameter parameter) => ByKey.TryGetValue(key, out parameter!);
-
-    /// <summary>
-    /// Adds parameters owned by a detector subplan. Called from static constructors of the detector
-    /// registries, so every threshold still has exactly one home and range.
-    /// </summary>
-    internal static void Register(IEnumerable<RuleParameter> parameters)
-    {
-        lock (ByKey)
-        {
-            foreach (RuleParameter parameter in parameters)
-            {
-                if (!ByKey.TryAdd(parameter.Key, parameter))
-                {
-                    if (ByKey[parameter.Key] != parameter)
-                    {
-                        throw new InvalidOperationException($"Rule parameter '{parameter.Key}' is defined twice.");
-                    }
-
-                    continue;
-                }
-            }
-
-            All = [.. ByKey.Values.OrderBy(p => p.RuleId, StringComparer.Ordinal).ThenBy(p => p.Name, StringComparer.Ordinal)];
-        }
-    }
 
     /// <summary>The value to use: the override when given (clamped and logged if out of range), else the default.</summary>
     public static double Resolve(RuleParameter parameter, double? overrideValue)

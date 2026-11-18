@@ -703,7 +703,6 @@ internal static class Strings
         public const string StartWithWindows = "Start with Windows";
         public const string StartWithWindowsHelper = "Starts hidden in the notification area";
         public const string KeepRunning = "Keep running in the notification area when closed";
-        public const string CheckNowLabel = "Check for a new version";
         public const string UpdateAvailableTitle = "Install version {0}?";
         public const string UpdateInstallText = "The verified installer is downloaded and started. MediaVerifier closes while it installs and opens again afterwards.";
         public const string DefaultDepth = "Default scan depth";
@@ -783,7 +782,6 @@ internal static class Strings
         public const string Advanced = "Advanced";
         public const string AdvancedIntro = "For troubleshooting.";
         public const string DatabaseLocation = "Database location";
-        public const string Change = "Change…";
         public const string Logs = "Logs";
         public const string OpenLogs = "Open logs folder";
         public const string Diagnostics = "Diagnostics";
@@ -823,6 +821,11 @@ internal static class Strings
         public const string SaveFailed = "Settings could not be saved. The log has the details.";
         public const string SelfCheckRunning = "The self-check is running.";
         public const string WebhookSending = "A test is being sent.";
+        public const string ShowLimits = "Show limits";
+        public const string HideLimits = "Hide limits";
+        public const string CheckingFindings = "Checking findings…";
+        public const string RuleNotSaved = "The change was not saved. {0}";
+        public const string RecheckFailed = "Findings could not be checked again. {0}";
     }
 
     public static class Dialogs

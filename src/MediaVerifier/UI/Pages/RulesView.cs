@@ -3,6 +3,7 @@ using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
 using MediaVerifier.UI.Kit;
+using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Pages;
@@ -30,6 +31,9 @@ internal sealed class RulesView : KitControl
     private readonly RuleList _list;
     private readonly ScrollPanel _scroll;
 
+    /// <summary>The last re-evaluation queued: each reads the whole library, so they run one after another (UI thread only).</summary>
+    private Task _reevaluations = Task.CompletedTask;
+
     public RulesView(SettingsPage page)
     {
         _page = page;
@@ -45,6 +49,8 @@ internal sealed class RulesView : KitControl
                     _chips[j].On = j == index;
                 }
 
+                // The selected chip's label is bold, so the chips are measured again.
+                PerformLayout();
                 ApplyFilter();
             };
         }
@@ -63,6 +69,34 @@ internal sealed class RulesView : KitControl
 
     internal Control Filter => _filter;
 
+    /// <summary>The rule of the row that has the keyboard focus (F1 opens its help), or null.</summary>
+    internal string? FocusedRuleId => RuleIdOf(FindForm()?.ActiveControl);
+
+    /// <summary>The rule whose row holds <paramref name="control"/> (its switch, cap, a limit), or null.</summary>
+    internal static string? RuleIdOf(Control? control)
+    {
+        for (; control is not null; control = control.Parent)
+        {
+            if (control is RuleRow row)
+            {
+                return row.Rule.Id;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Where a list key moves from row <paramref name="index"/> of <paramref name="count"/> shown rows.</summary>
+    internal static int MoveTarget(int index, int count, int page, Keys key) => Math.Clamp(key switch
+    {
+        Keys.Up => index - 1,
+        Keys.Down => index + 1,
+        Keys.PageUp => index - page,
+        Keys.PageDown => index + page,
+        Keys.Home => 0,
+        _ => count - 1,
+    }, 0, Math.Max(0, count - 1));
+
     /// <summary>The settings-rules mockup: Clipping open, High from 300, and its effect reported.</summary>
     internal async Task ShowDemoAsync()
     {
@@ -74,6 +108,34 @@ internal sealed class RulesView : KitControl
             List<RuleRow> shown = [.. _list.Rows.Where(r => r.Matches)];
             int index = shown.IndexOf(clipping);
             _scroll.ScrollOffset = index > 0 ? shown[index - 1].Top : clipping.Top;
+        }
+    }
+
+    /// <summary>Removes the effect lines (the page was left), so none is shown out of date later.</summary>
+    internal void ClearEffects()
+    {
+        foreach (RuleRow row in _list.Rows)
+        {
+            row.ClearEffect();
+        }
+
+        _list.Relayout();
+    }
+
+    /// <summary>Re-judges one rule after the re-evaluations queued before it (they used to run in parallel).</summary>
+    internal async Task<ReevaluationResult> ReevaluateInTurnAsync(string ruleId)
+    {
+        Task previous = _reevaluations;
+        TaskCompletionSource turn = new();
+        _reevaluations = turn.Task;
+        try
+        {
+            await previous.ConfigureAwait(true);
+            return await Services.Scans.ReevaluateAsync([ruleId]).ConfigureAwait(true);
+        }
+        finally
+        {
+            turn.SetResult();
         }
     }
 
@@ -123,13 +185,16 @@ internal sealed class RulesView : KitControl
         _scroll.ScrollToTop();
     }
 
-    /// <summary>The rules, in catalog order, stacked; the panel scrolls them.</summary>
+    /// <summary>
+    /// The rules, in catalog order, stacked; the panel scrolls them. Backlog rules have no detector yet (plans 02 and 16):
+    /// their switches did nothing, and two of them read on, so they are not listed.
+    /// </summary>
     private sealed class RuleList : KitControl
     {
         public RuleList(RulesView view)
         {
             TabStop = false;
-            Rows = [.. RuleCatalog.All.Select((r, i) => new RuleRow(view, r) { TabIndex = i })];
+            Rows = [.. RuleCatalog.All.Where(r => r.Milestone != Milestone.Backlog).Select((r, i) => new RuleRow(view, r) { TabIndex = i })];
             Controls.AddRange([.. Rows]);
         }
 
@@ -162,6 +227,29 @@ internal sealed class RulesView : KitControl
             Height = Math.Max(1, y);
         }
 
+        /// <summary>
+        /// Up, Down, Page Up, Page Down, Home and End from a rule's switch or chevron move to another shown rule's switch
+        /// (subplan 09, Keyboard: move in lists); the list scrolls to it. Controls that use the arrows keep them.
+        /// </summary>
+        public bool MoveFocus(RuleRow from, Keys key)
+        {
+            List<RuleRow> shown = [.. Rows.Where(r => r.Matches)];
+            int index = shown.IndexOf(from);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            int page = Math.Max(1, ((Parent?.Height ?? Height) / Math.Max(1, S(64))) - 1);
+            int target = MoveTarget(index, shown.Count, page, key);
+            if (target != index)
+            {
+                shown[target].FocusSwitch();
+            }
+
+            return true;
+        }
+
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
@@ -171,7 +259,11 @@ internal sealed class RulesView : KitControl
         protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Tokens.Surface);
     }
 
-    /// <summary>One rule: switch, title and meta line, severity cap, and its parameters when expanded.</summary>
+    /// <summary>
+    /// One rule: switch, title and meta line, severity cap, and its parameters when expanded. Changes wait 400 ms for the
+    /// next key or click, then apply together: one save and one re-evaluation, which runs after any other and is run
+    /// again when more changes arrive meanwhile. The effect line shows under the rule, open or not.
+    /// </summary>
     private sealed class RuleRow : KitControl
     {
         private static readonly Severity[] Caps = [Severity.Critical, Severity.High, Severity.Medium, Severity.Low];
@@ -183,6 +275,14 @@ internal sealed class RulesView : KitControl
         private readonly InfoBar _effect = new() { Tier = Severity.Low, Visible = false };
         private readonly Severity[] _caps;
         private readonly System.Windows.Forms.Timer _debounce = new() { Interval = 400 };
+
+        /// <summary>Limits typed or reset since the last apply, by name (null: back to the default).</summary>
+        private readonly Dictionary<string, double?> _pendingParameters = new(StringComparer.Ordinal);
+        private bool _pendingSwitch;
+        private bool _pendingCap;
+        private bool _applying;
+        private bool _checking;
+        private bool _checkAgain;
         private bool _expanded;
         private bool _binding;
 
@@ -198,9 +298,6 @@ internal sealed class RulesView : KitControl
             Rule = rule;
             TabStop = false;
             AccessibleName = rule.Title;
-            Core.Rules.RuleSettings settings = view.Services.Rules;
-            _binding = true;
-            _enabled.Checked = settings.IsEnabled(rule);
             _enabled.AccessibleName = rule.Title;
             _caps = [.. Caps.Where(rule.CanReach)];
             foreach (Severity cap in _caps)
@@ -214,12 +311,10 @@ internal sealed class RulesView : KitControl
                 });
             }
 
-            _cap.SelectedIndex = Math.Max(0, Array.IndexOf(_caps, settings.Cap(rule)));
             _cap.AccessibleName = rule.Title;
-            _binding = false;
-            _enabled.CheckedChanged += (_, _) => UiTask.Run(ChangedAsync(() => _view.Services.Rules.SetEnabled(Rule.Id, _enabled.Checked)));
-            _cap.SelectedIndexChanged += (_, _) => UiTask.Run(ChangedAsync(() => _view.Services.Rules.SetSeverityCap(Rule.Id, _caps[Math.Max(0, _cap.SelectedIndex)])));
-            _expand.ToolTipText = rule.Title;
+            _enabled.CheckedChanged += (_, _) => Queue(() => _pendingSwitch = true);
+            _cap.SelectedIndexChanged += (_, _) => Queue(() => _pendingCap = true);
+            _expand.ToolTipText = Strings.Settings.ShowLimits;
             _expand.Click += (_, _) =>
             {
                 Expanded = !Expanded;
@@ -228,18 +323,10 @@ internal sealed class RulesView : KitControl
             Controls.AddRange([_enabled, _cap, _expand, _effect]);
             foreach (RuleParameter parameter in RuleDefaults.ForRule(rule.Id))
             {
-                NumberBox box = new() { Minimum = parameter.Min, Maximum = parameter.Max, Decimals = parameter.Decimals, Step = Math.Pow(10, -parameter.Decimals), Number = settings.Value(rule.Id, parameter.Name), AccessibleName = parameter.Label, Inset = true, Visible = false };
+                NumberBox box = new() { Minimum = parameter.Min, Maximum = parameter.Max, Decimals = parameter.Decimals, Step = Math.Pow(10, -parameter.Decimals), AccessibleName = parameter.Label, Inset = true, Visible = false };
                 KitButton reset = new() { Kind = ButtonKind.Subtle, Text = Strings.Kit.Reset, Visible = false };
                 RuleParameter p = parameter;
-                box.ValueChanged += (_, _) =>
-                {
-                    if (!_binding)
-                    {
-                        _debounce.Tag = (p, box.Number);
-                        _debounce.Stop();
-                        _debounce.Start();
-                    }
-                };
+                box.ValueChanged += (_, _) => Queue(() => _pendingParameters[p.Name] = box.Number);
                 reset.Click += (_, _) => UiTask.Run(SetParameterAsync(p.Name, p.Default));
                 _parameters.Add((parameter, box, reset));
                 Controls.Add(box);
@@ -249,12 +336,10 @@ internal sealed class RulesView : KitControl
             _debounce.Tick += (_, _) =>
             {
                 _debounce.Stop();
-                if (_debounce.Tag is (RuleParameter parameter, double value))
-                {
-                    UiTask.Run(SetParameterAsync(parameter.Name, value));
-                }
+                UiTask.Run(ApplyPendingAsync());
             };
             _expand.Visible = _parameters.Count > 0;
+            Bind();
         }
 
         public RuleDefinition Rule { get; }
@@ -269,15 +354,23 @@ internal sealed class RulesView : KitControl
             get => _expanded;
             set
             {
+                bool wasExpanded = _expanded;
                 _expanded = value && _parameters.Count > 0;
                 _expand.Icon = _expanded ? IconName.ChevronUp : IconName.ChevronDown;
+                _expand.ToolTipText = _expanded ? Strings.Settings.HideLimits : Strings.Settings.ShowLimits;
                 foreach ((_, NumberBox box, KitButton reset) in _parameters)
                 {
                     box.Visible = _expanded;
                     reset.Visible = _expanded && IsChanged(box);
                 }
 
-                _effect.Visible = _expanded && _effect.Text.Length > 0;
+                if (wasExpanded && !_expanded && !_checking)
+                {
+                    // Closing a rule puts its effect away, so it never reappears out of date.
+                    _effect.Text = string.Empty;
+                }
+
+                _effect.Visible = _effect.Text.Length > 0;
                 PerformLayout();
                 Invalidate();
             }
@@ -285,9 +378,13 @@ internal sealed class RulesView : KitControl
 
         // The effect line counts when it has text, not when _effect.Visible: a resize while the Rules section is hidden
         // lays the list out with every row reading hidden, and the open rule lost the line's 48 px (clipped on return).
-        public int LogicalHeight => !_expanded ? 64 : 64 + 29 + ((_parameters.Count - 1) * 40) + 20 + (_effect.Text.Length > 0 ? 48 : 0) + 16;
+        // A closed rule shows it under its 64 px header (8 px above, 16 below), so a switch or cap change is answered.
+        public int LogicalHeight => _expanded
+            ? 64 + 29 + ((_parameters.Count - 1) * 40) + 20 + (_effect.Text.Length > 0 ? 48 : 0) + 16
+            : 64 + (_effect.Text.Length > 0 ? 8 + 32 + 16 : 0);
 
-        public async Task SetParameterAsync(string name, double value)
+        /// <summary>Sets a limit as if typed and applies it now (Reset, and the render harness).</summary>
+        public Task SetParameterAsync(string name, double value)
         {
             RuleParameter parameter = RuleDefaults.Get(Rule.Id, name);
             double clamped = parameter.Clamp(value);
@@ -301,7 +398,33 @@ internal sealed class RulesView : KitControl
             }
 
             _binding = false;
-            await ChangedAsync(() => _view.Services.Rules.SetParameter(Rule.Id, name, Math.Abs(clamped - parameter.Default) < 1e-9 ? null : clamped)).ConfigureAwait(true);
+            _pendingParameters[name] = Math.Abs(clamped - parameter.Default) < 1e-9 ? null : clamped;
+            return ApplyPendingAsync();
+        }
+
+        public void FocusSwitch() => _enabled.Focus();
+
+        /// <summary>Removes the effect line unless a re-evaluation is still running.</summary>
+        public void ClearEffect()
+        {
+            if (!_checking && _effect.Text.Length > 0)
+            {
+                _effect.Text = string.Empty;
+                _effect.Visible = false;
+                PerformLayout();
+            }
+        }
+
+        protected override bool ProcessDialogKey(Keys keyData)
+        {
+            if (keyData is Keys.Up or Keys.Down or Keys.PageUp or Keys.PageDown or Keys.Home or Keys.End
+                && Parent is RuleList list
+                && list.MoveFocus(this, keyData))
+            {
+                return true;
+            }
+
+            return base.ProcessDialogKey(keyData);
         }
 
         protected override void OnLayout(LayoutEventArgs levent)
@@ -338,7 +461,7 @@ internal sealed class RulesView : KitControl
                 reset.Bounds = new Rectangle(Width - S(16) - resetWidth, centre - S(16), resetWidth, S(32));
             }
 
-            int effectTop = S(64 + 29 + ((_parameters.Count - 1) * 40) + 20 + 8);
+            int effectTop = _expanded ? S(64 + 29 + ((_parameters.Count - 1) * 40) + 20 + 8) : S(64 + 8);
             _effect.Bounds = new Rectangle(S(56), effectTop, Width - S(72), S(32));
         }
 
@@ -411,34 +534,170 @@ internal sealed class RulesView : KitControl
             return false;
         }
 
-        private async Task ChangedAsync(Action apply)
+        /// <summary>Shows the values in effect without treating them as changes.</summary>
+        private void Bind()
+        {
+            Core.Rules.RuleSettings settings = _view.Services.Rules;
+            _binding = true;
+            _enabled.Checked = settings.IsEnabled(Rule);
+            _cap.SelectedIndex = Math.Max(0, Array.IndexOf(_caps, settings.Cap(Rule)));
+            foreach ((RuleParameter parameter, NumberBox box, _) in _parameters)
+            {
+                box.Number = settings.Value(Rule.Id, parameter.Name);
+            }
+
+            _binding = false;
+            RefreshResets();
+            Invalidate();
+        }
+
+        private void RefreshResets()
+        {
+            foreach ((_, NumberBox box, KitButton reset) in _parameters)
+            {
+                reset.Visible = _expanded && IsChanged(box);
+            }
+        }
+
+        /// <summary>Notes a change and waits for the next one (arrowing through the caps or typing a limit is one change).</summary>
+        private void Queue(Action note)
         {
             if (_binding)
             {
                 return;
             }
 
-            apply();
+            note();
             Invalidate();
-            if (!_view.Services.IsDemo)
+            _debounce.Stop();
+            _debounce.Start();
+        }
+
+        /// <summary>
+        /// Applies the noted changes, saves them and judges the library again. A save that fails is undone, on screen
+        /// too, and said in a Critical toast: the switch used to stay flipped while nothing was kept.
+        /// </summary>
+        private async Task ApplyPendingAsync()
+        {
+            _debounce.Stop();
+            if (!_pendingSwitch && !_pendingCap && _pendingParameters.Count == 0)
             {
-                await _view.Services.Database.RuleSettings.SaveAsync(_view.Services.Rules).ConfigureAwait(true);
+                return;
             }
 
-            ReevaluationResult result = await _view.Services.Scans.ReevaluateAsync([Rule.Id]).ConfigureAwait(true);
-            _effect.Text = result switch
+            if (_applying)
             {
-                { ChangedTier: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.ChangedTier, UiFormat.Count(result.ChangedTier)),
-                { Appeared: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.Appeared, UiFormat.Count(result.Appeared)),
-                { NoLongerApply: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.NoLongerApply, UiFormat.Count(result.NoLongerApply)),
-                _ => Strings.Settings.NoFindingsChanged,
-            };
-            _effect.Visible = _expanded;
-            foreach ((_, NumberBox box, KitButton reset) in _parameters)
-            {
-                reset.Visible = _expanded && IsChanged(box);
+                // The previous change is still being saved: this one follows it.
+                _debounce.Start();
+                return;
             }
 
+            _applying = true;
+            try
+            {
+                Core.Rules.RuleSettings rules = _view.Services.Rules;
+                RuleOverride? before = rules.Snapshot(Rule.Id);
+                if (_pendingSwitch)
+                {
+                    rules.SetEnabled(Rule.Id, _enabled.Checked);
+                }
+
+                if (_pendingCap)
+                {
+                    rules.SetSeverityCap(Rule.Id, _caps[Math.Max(0, _cap.SelectedIndex)]);
+                }
+
+                foreach ((string name, double? value) in _pendingParameters)
+                {
+                    rules.SetParameter(Rule.Id, name, value);
+                }
+
+                _pendingSwitch = false;
+                _pendingCap = false;
+                _pendingParameters.Clear();
+                RefreshResets();
+                Invalidate();
+                if (!_view.Services.IsDemo)
+                {
+                    try
+                    {
+                        await _view.Services.Database.RuleSettings.SaveAsync(rules).ConfigureAwait(true);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException or IOException)
+                    {
+                        _view.Services.State.Log.Warning("Rule settings could not be saved", ex);
+                        rules.Restore(Rule.Id, before);
+                        if (!IsDisposed)
+                        {
+                            Bind();
+                        }
+
+                        _view.Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, Rule.Title, string.Format(CultureInfo.CurrentCulture, Strings.Settings.RuleNotSaved, ex.Message)));
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                _applying = false;
+            }
+
+            await CheckAgainAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>
+        /// Judges the stored analysis again and reports the effect. While it runs the effect line says so; changes made
+        /// meanwhile run it once more instead of starting another in parallel, and the answer is the last run's.
+        /// </summary>
+        private async Task CheckAgainAsync()
+        {
+            if (_checking)
+            {
+                _checkAgain = true;
+                return;
+            }
+
+            _checking = true;
+            ShowEffect(Strings.Settings.CheckingFindings);
+            try
+            {
+                ReevaluationResult result;
+                do
+                {
+                    _checkAgain = false;
+                    result = await _view.ReevaluateInTurnAsync(Rule.Id).ConfigureAwait(true);
+                }
+                while (_checkAgain);
+
+                ShowEffect(result switch
+                {
+                    { ChangedTier: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.ChangedTier, UiFormat.Count(result.ChangedTier)),
+                    { Appeared: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.Appeared, UiFormat.Count(result.Appeared)),
+                    { NoLongerApply: > 0 } => string.Format(CultureInfo.CurrentCulture, Strings.Settings.NoLongerApply, UiFormat.Count(result.NoLongerApply)),
+                    _ => Strings.Settings.NoFindingsChanged,
+                });
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException or IOException)
+            {
+                _view.Services.State.Log.Warning($"Findings of {Rule.Id} could not be judged again", ex);
+                ShowEffect(string.Empty);
+                _view.Services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Rule.Title, string.Format(CultureInfo.CurrentCulture, Strings.Settings.RecheckFailed, ex.Message)));
+            }
+            finally
+            {
+                _checking = false;
+            }
+        }
+
+        private void ShowEffect(string text)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            _effect.Text = text;
+            _effect.Visible = text.Length > 0;
             (Parent as RuleList)?.Relayout();
             PerformLayout();
             Invalidate();

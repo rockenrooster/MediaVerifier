@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using MediaVerifier.Core.Model;
 
 namespace MediaVerifier.Core.Rules;
@@ -13,17 +11,21 @@ public sealed class RuleOverride
 
     public Dictionary<string, double> Parameters { get; set; } = new(StringComparer.Ordinal);
 
-    [JsonIgnore]
     public bool IsEmpty => Enabled is null && SeverityCap is null && Parameters.Count == 0;
+
+    internal RuleOverride Copy() => new() { Enabled = Enabled, SeverityCap = SeverityCap, Parameters = new Dictionary<string, double>(Parameters, StringComparer.Ordinal) };
 }
 
 /// <summary>
 /// User overrides layered over the catalog defaults (task M-04). Applied at evaluation time, stored
-/// separately from the defaults (subplan 03 persists the JSON), never changes the catalog itself.
+/// separately from the defaults (subplan 03 persists them as rows), never changes the catalog itself.
+/// Settings → Rules edits the overrides on the UI thread while scan workers and re-evaluation read them, so every
+/// access takes the lock (uncontended, a few dozen entries).
 /// </summary>
 public sealed class RuleSettings
 {
     private readonly Dictionary<string, RuleOverride> _overrides;
+    private readonly Lock _gate = new();
 
     public RuleSettings()
         : this(new Dictionary<string, RuleOverride>(StringComparer.Ordinal))
@@ -35,24 +37,39 @@ public sealed class RuleSettings
         _overrides = overrides;
     }
 
-    /// <summary>Defaults only.</summary>
-    public static RuleSettings Defaults { get; } = new();
+    /// <summary>Defaults only: a new instance each time, so an edit never reaches anyone else's defaults.</summary>
+    public static RuleSettings Defaults => new();
 
-    /// <summary>Raised after any change, so open findings can be re-evaluated without a rescan.</summary>
-    public event EventHandler<string>? Changed;
+    /// <summary>A copy of the overrides as they are now (the store saves it).</summary>
+    public IReadOnlyDictionary<string, RuleOverride> Overrides
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _overrides.ToDictionary(p => p.Key, p => p.Value.Copy(), StringComparer.Ordinal);
+            }
+        }
+    }
 
-    public IReadOnlyDictionary<string, RuleOverride> Overrides => _overrides;
-
-    public bool IsEnabled(RuleDefinition rule) =>
-        _overrides.TryGetValue(rule.Id, out RuleOverride? o) && o.Enabled is bool enabled ? enabled : rule.EnabledByDefault;
+    public bool IsEnabled(RuleDefinition rule)
+    {
+        lock (_gate)
+        {
+            return _overrides.TryGetValue(rule.Id, out RuleOverride? o) && o.Enabled is bool enabled ? enabled : rule.EnabledByDefault;
+        }
+    }
 
     /// <summary>The highest tier the rule may produce: the user's cap, never above the rule's own maximum.</summary>
     public Severity Cap(RuleDefinition rule)
     {
         Severity cap = rule.MaxSeverity;
-        if (_overrides.TryGetValue(rule.Id, out RuleOverride? o) && o.SeverityCap is Severity user && user < cap)
+        lock (_gate)
         {
-            cap = user < rule.MinSeverity ? rule.MinSeverity : user;
+            if (_overrides.TryGetValue(rule.Id, out RuleOverride? o) && o.SeverityCap is Severity user && user < cap)
+            {
+                cap = user < rule.MinSeverity ? rule.MinSeverity : user;
+            }
         }
 
         return cap;
@@ -61,12 +78,22 @@ public sealed class RuleSettings
     public double Value(string ruleId, string name)
     {
         RuleParameter parameter = RuleDefaults.Get(ruleId, name);
-        double? overrideValue = _overrides.TryGetValue(ruleId, out RuleOverride? o) && o.Parameters.TryGetValue(name, out double v) ? v : null;
+        double? overrideValue;
+        lock (_gate)
+        {
+            overrideValue = _overrides.TryGetValue(ruleId, out RuleOverride? o) && o.Parameters.TryGetValue(name, out double v) ? v : null;
+        }
+
         return RuleDefaults.Resolve(parameter, overrideValue);
     }
 
-    public bool IsOverridden(string ruleId, string name) =>
-        _overrides.TryGetValue(ruleId, out RuleOverride? o) && o.Parameters.ContainsKey(name);
+    public bool IsOverridden(string ruleId, string name)
+    {
+        lock (_gate)
+        {
+            return _overrides.TryGetValue(ruleId, out RuleOverride? o) && o.Parameters.ContainsKey(name);
+        }
+    }
 
     public void SetEnabled(string ruleId, bool enabled)
     {
@@ -96,6 +123,31 @@ public sealed class RuleSettings
         });
     }
 
+    /// <summary>A copy of one rule's override, or null when it has none (to put it back with <see cref="Restore"/>).</summary>
+    public RuleOverride? Snapshot(string ruleId)
+    {
+        lock (_gate)
+        {
+            return _overrides.TryGetValue(ruleId, out RuleOverride? o) ? o.Copy() : null;
+        }
+    }
+
+    /// <summary>Puts back one rule's override as <see cref="Snapshot"/> took it (a change that could not be saved).</summary>
+    public void Restore(string ruleId, RuleOverride? snapshot)
+    {
+        lock (_gate)
+        {
+            if (snapshot is null || snapshot.IsEmpty)
+            {
+                _overrides.Remove(ruleId);
+            }
+            else
+            {
+                _overrides[ruleId] = snapshot.Copy();
+            }
+        }
+    }
+
     /// <summary>
     /// Applies the overlay to a detector's raw finding: null when the rule is off; otherwise the severity
     /// is capped by the user, by the rule's range, and to Low for a heuristic below 0.5 confidence.
@@ -118,33 +170,6 @@ public sealed class RuleSettings
 
         severity = SeverityPolicy.CapForConfidence(severity, raw.Confidence);
         return severity == raw.Severity ? raw : raw with { Severity = severity };
-    }
-
-    public string ToJson()
-    {
-        Dictionary<string, RuleOverride> kept = _overrides.Where(p => !p.Value.IsEmpty).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-        return JsonSerializer.Serialize(kept, RuleSettingsJsonContext.Default.DictionaryStringRuleOverride);
-    }
-
-    /// <summary>Reads stored overrides, dropping unknown rules and parameters (a newer or older version wrote them).</summary>
-    public static RuleSettings FromJson(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new RuleSettings();
-        }
-
-        Dictionary<string, RuleOverride>? stored;
-        try
-        {
-            stored = JsonSerializer.Deserialize(json, RuleSettingsJsonContext.Default.DictionaryStringRuleOverride);
-        }
-        catch (JsonException)
-        {
-            return new RuleSettings();
-        }
-
-        return FromOverrides(stored ?? []);
     }
 
     /// <summary>Builds settings from stored overrides, dropping unknown rules and parameters and clamping values.</summary>
@@ -178,22 +203,19 @@ public sealed class RuleSettings
 
     private void Edit(string ruleId, Action<RuleOverride> edit)
     {
-        if (!_overrides.TryGetValue(ruleId, out RuleOverride? o))
+        lock (_gate)
         {
-            o = new RuleOverride();
-            _overrides[ruleId] = o;
-        }
+            if (!_overrides.TryGetValue(ruleId, out RuleOverride? o))
+            {
+                o = new RuleOverride();
+                _overrides[ruleId] = o;
+            }
 
-        edit(o);
-        if (o.IsEmpty)
-        {
-            _overrides.Remove(ruleId);
+            edit(o);
+            if (o.IsEmpty)
+            {
+                _overrides.Remove(ruleId);
+            }
         }
-
-        Changed?.Invoke(this, ruleId);
     }
 }
-
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-[JsonSerializable(typeof(Dictionary<string, RuleOverride>))]
-internal sealed partial class RuleSettingsJsonContext : JsonSerializerContext;

@@ -76,21 +76,25 @@ public sealed class PolicyTests
     }
 
     [Fact]
-    public void OverridesSurviveAJsonRoundTripAndUnknownEntriesAreDropped()
+    public void StoredOverridesSurviveAndUnknownEntriesAreDropped()
     {
         RuleSettings settings = new();
         settings.SetEnabled("AUD-DUAL-MONO", true);
         settings.SetSeverityCap("AUD-CLIPPING", Severity.Medium);
         settings.SetParameter("GEN-ZEROFILL", "criticalPercent", 60);
-        string stored = settings.ToJson();
-        string json = "{\"NOPE-RULE\":{\"enabled\":false}," + stored[1..];
+        Dictionary<string, RuleOverride> stored = new(settings.Overrides, StringComparer.Ordinal)
+        {
+            ["NOPE-RULE"] = new RuleOverride { Enabled = false },
+        };
+        stored["GEN-ZEROFILL"].Parameters["noSuchLimit"] = 3;
 
-        RuleSettings restored = RuleSettings.FromJson(json);
+        RuleSettings restored = RuleSettings.FromOverrides(stored);
 
         Assert.True(restored.IsEnabled(RuleCatalog.Get("AUD-DUAL-MONO")));
         Assert.Equal(Severity.Medium, restored.Cap(RuleCatalog.Get("AUD-CLIPPING")));
         Assert.Equal(60, restored.Value("GEN-ZEROFILL", "criticalPercent"));
         Assert.False(restored.Overrides.ContainsKey("NOPE-RULE"));
+        Assert.False(restored.IsOverridden("GEN-ZEROFILL", "noSuchLimit"));
     }
 
     [Fact]
@@ -101,8 +105,68 @@ public sealed class PolicyTests
         Assert.Equal(1, RuleDefaults.Resolve(parameter, -5));
         Assert.Equal(50, RuleDefaults.Resolve(parameter, null));
 
-        RuleSettings settings = RuleSettings.FromJson("""{"GEN-ZEROFILL":{"parameters":{"criticalPercent":1000}}}""");
+        RuleOverride stored = new();
+        stored.Parameters["criticalPercent"] = 1000;
+        RuleSettings settings = RuleSettings.FromOverrides(new Dictionary<string, RuleOverride> { ["GEN-ZEROFILL"] = stored });
         Assert.Equal(100, settings.Value("GEN-ZEROFILL", "criticalPercent"));
+    }
+
+    /// <summary>A change that could not be saved is put back exactly, including a rule that had no override.</summary>
+    [Fact]
+    public void ASnapshotPutsBackOneRule()
+    {
+        RuleSettings settings = new();
+        settings.SetParameter("AUD-CLIPPING", "highPerMinute", 300);
+        RuleOverride? clipping = settings.Snapshot("AUD-CLIPPING");
+        RuleOverride? none = settings.Snapshot("GEN-EMPTY");
+
+        settings.SetParameter("AUD-CLIPPING", "highPerMinute", 900);
+        settings.SetEnabled("GEN-EMPTY", false);
+        settings.Restore("AUD-CLIPPING", clipping);
+        settings.Restore("GEN-EMPTY", none);
+
+        Assert.Equal(300, settings.Value("AUD-CLIPPING", "highPerMinute"));
+        Assert.True(settings.IsEnabled(RuleCatalog.Get("GEN-EMPTY")));
+        Assert.Single(settings.Overrides);
+    }
+
+    /// <summary>Settings → Rules edits while scan workers read: neither throws nor sees a half-made change.</summary>
+    [Fact]
+    public async Task EditsWhileWorkersReadAreSafe()
+    {
+        RuleSettings settings = new();
+        RuleDefinition clipping = RuleCatalog.Get("AUD-CLIPPING");
+        using CancellationTokenSource stop = new();
+        Task[] readers = [.. Enumerable.Range(0, 4).Select(reader => Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                _ = settings.IsEnabled(clipping);
+                _ = settings.Cap(clipping);
+                double value = settings.Value("AUD-CLIPPING", "highPerMinute");
+                Assert.True(value is 600 or 300);
+                _ = settings.Overrides.Count;
+            }
+        }))];
+
+        for (int i = 0; i < 20_000; i++)
+        {
+            settings.SetParameter("AUD-CLIPPING", "highPerMinute", i % 2 == 0 ? 300 : null);
+            settings.SetEnabled("AUD-DC", i % 3 == 0);
+            settings.SetParameter("AUD-DC", "lowLevel", i % 5 == 0 ? 0.02 : null);
+        }
+
+        await stop.CancelAsync();
+        await Task.WhenAll(readers);
+    }
+
+    [Fact]
+    public void DefaultsAreNeverShared()
+    {
+        RuleSettings first = RuleSettings.Defaults;
+        first.SetEnabled("GEN-EMPTY", false);
+
+        Assert.True(RuleSettings.Defaults.IsEnabled(RuleCatalog.Get("GEN-EMPTY")));
     }
 
     [Fact]
