@@ -60,6 +60,9 @@ internal sealed class LibraryPage : PageBase
     private readonly FileSource _source;
     private readonly Dictionary<long, FileRow> _rows = [];
 
+    /// <summary>Ids whose rows no load returns (a file removed since the snapshot): not asked for again until the next.</summary>
+    private readonly HashSet<long> _gone = [];
+
     /// <summary>Per loaded row, the text of each cell (index = column), built once: painting allocates nothing.</summary>
     private readonly Dictionary<long, string?[]> _cells = [];
     private readonly FileDetailView _detail = new();
@@ -70,6 +73,7 @@ internal sealed class LibraryPage : PageBase
     private BrowseQuery _query = new(null, null);
     private bool _browsing;
     private bool _loadingRows;
+    private int _detailRequest;
     private bool _ignoreTreeSelection;
 
     /// <summary>The newest load started; an older one that finishes after it is not shown.</summary>
@@ -188,7 +192,7 @@ internal sealed class LibraryPage : PageBase
         List<long> missing = [];
         for (int i = start; i < end; i++)
         {
-            if (!_rows.ContainsKey(_browse.Ids[i]))
+            if (!_rows.ContainsKey(_browse.Ids[i]) && !_gone.Contains(_browse.Ids[i]))
             {
                 missing.Add(_browse.Ids[i]);
             }
@@ -368,6 +372,7 @@ internal sealed class LibraryPage : PageBase
         _browse = browse;
         _query = browse.Query;
         _rows.Clear();
+        _gone.Clear();
         _cells.Clear();
         foreach (FileRow row in first)
         {
@@ -561,14 +566,25 @@ internal sealed class LibraryPage : PageBase
                 {
                     Store(row);
                 }
+
+                // Ids whose rows are gone (a file moved or removed since the snapshot) come back empty: remembered, so
+                // painting does not ask for them again on every repaint (hover, scroll) until the next snapshot.
+                if (rows.Count < ids.Count)
+                {
+                    HashSet<long> returned = [.. rows.Select(r => r.Id)];
+                    _gone.UnionWith(ids.Where(id => !returned.Contains(id)));
+                }
             }
 
-            // Ids whose rows are gone (a file moved or removed since the snapshot) come back empty: no repaint, so
-            // painting does not ask for them again and again.
             if (rows.Count > 0 || !current)
             {
                 _table.Invalidate();
             }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            // Locked by a scan's write, or the file gone: the page carries on and the next repaint asks again.
+            State.Log.Warning("Library rows could not be loaded", ex);
         }
         finally
         {
@@ -731,10 +747,16 @@ internal sealed class LibraryPage : PageBase
         }
     }
 
+    /// <summary>
+    /// Opens the drawer on a file at once, from the database (as Issues does): a healthy copy, which can mean waiting on
+    /// an offline backup drive, is looked for afterwards and fills in the fix. Only the newest request is shown, and
+    /// only while the page is.
+    /// </summary>
     private async Task LoadDetailAsync(long fileId)
     {
-        FileDetail? detail = await Task.Run(() => Services.Data.LoadFileDetail(fileId)).ConfigureAwait(true);
-        if (detail is null || IsDisposed)
+        int request = ++_detailRequest;
+        FileDetail? detail = await Task.Run(() => Services.Data.LoadFileDetail(fileId, FindingStatus.Open, findCopies: false)).ConfigureAwait(true);
+        if (detail is null || IsDisposed || request != _detailRequest || !IsActive)
         {
             return;
         }
@@ -743,6 +765,14 @@ internal sealed class LibraryPage : PageBase
         _detail.Bind(detail, Services.Clock.UtcNow, detail.RecommendedAction);
         _detailScroll.ScrollToTop();
         Services.ShowDrawer?.Invoke(_detailScroll);
+        if (detail.CopiesPending)
+        {
+            FileDetail? withCopies = await Task.Run(() => Services.Data.LoadFileDetail(fileId, FindingStatus.Open, findCopies: true)).ConfigureAwait(true);
+            if (withCopies is not null && !IsDisposed && request == _detailRequest)
+            {
+                _detail.UpdateFixes(withCopies);
+            }
+        }
     }
 
     protected override void OnActivated()
