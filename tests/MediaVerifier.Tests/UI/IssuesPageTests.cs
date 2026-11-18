@@ -432,6 +432,93 @@ public sealed class IssuesPageTests
     }
 
     /// <summary>
+    /// A finding deleted after the list was read (its file moved, its folder removed) comes back from no row load: it is
+    /// not asked for again on every paint (a query and repaint loop for as long as its skeleton row was on screen).
+    /// </summary>
+    [Fact]
+    public void Rows_that_went_away_are_not_asked_for_again()
+    {
+        bool loadingAgain = true;
+        int gone = 0;
+        WithIssues(
+            database =>
+            {
+                long root = IssueFixtures.Root(database, @"Q:\Media", "Media");
+                Many(database, root, 300, MediaKind.Video, "COR-INDEX");
+            },
+            (form, services, page) =>
+            {
+                long[] ids = Field<IssuesData>(page, "_data").Ids;
+                long[] deleted = ids[250..253];
+                Db(() =>
+                {
+                    services.Database.Writer.ExecuteAsync(
+                        c => c.Command("DELETE FROM findings WHERE id IN (" + string.Join(',', deleted) + ")").ExecuteNonQuery(),
+                        ChangeFlags.Findings).GetAwaiter().GetResult();
+                    return true;
+                });
+
+                // The rows around position 250 are asked for (as painting does), then asked for again.
+                page.RequestRows(250);
+                Settle(() => !Field<bool>(page, "_loadingRows") && page.Rows.ContainsKey(ids[260]));
+                page.RequestRows(250);
+                loadingAgain = Field<bool>(page, "_loadingRows");
+                gone = deleted.Count(Field<HashSet<long>>(page, "_gone").Contains);
+            });
+
+        Assert.Equal(3, gone);
+        Assert.False(loadingAgain, "rows that went away were asked for again");
+    }
+
+    /// <summary>
+    /// The drop-down lists start with "All categories", "All rules" and "All folders" (they started with "Category",
+    /// "Rule", "Folder"); closed on that item the control shows its name. Stop ignoring says how many came back.
+    /// </summary>
+    [Fact]
+    public void Drop_downs_start_with_all_and_stop_ignoring_says_how_many()
+    {
+        string[] firstItems = [];
+        string? closed = null;
+        string? chosen = null;
+        List<ToastContent> toasts = [];
+        WithIssues(
+            database =>
+            {
+                long root = IssueFixtures.Root(database, @"Q:\Media", "Media");
+                Many(database, root, 4, MediaKind.Video, "COR-INDEX");
+            },
+            (form, services, page) =>
+            {
+                services.ShowToast = toasts.Add;
+                DropDown category = Field<DropDown>(page, "_category");
+                firstItems = [category.Items[0], Field<DropDown>(page, "_rule").Items[0], Field<DropDown>(page, "_folder").Items[0]];
+                closed = category.ShownText;
+                category.SelectedIndex = 2;
+                Settle(() => form.CurrentPageLoading.IsCompleted);
+                chosen = category.ShownText;
+                category.SelectedIndex = 0;
+                Settle(() => form.CurrentPageLoading.IsCompleted);
+
+                // Two findings ignored, then shown again from the Ignored view.
+                long[] ids = [.. Field<IssuesData>(page, "_data").Ids.Take(2)];
+                Db(() =>
+                {
+                    services.Database.Findings.SetStatusAsync(ids, FindingStatus.Ignored).GetAwaiter().GetResult();
+                    return true;
+                });
+                Field<DropDown>(page, "_status").SelectedIndex = (int)FindingStatus.Ignored;
+                Settle(() => form.CurrentPageLoading.IsCompleted);
+                Task reopen = (Task)typeof(IssuesPage).GetMethod("IgnoreAsync", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(page, [ids])!;
+                Settle(() => reopen.IsCompleted);
+            });
+
+        Assert.Equal([Strings.Issues.AllCategories, Strings.Issues.AllRules, Strings.Issues.AllFolders], firstItems);
+        Assert.Equal(Strings.Issues.Category, closed);
+        Assert.Equal(Strings.Issues.Integrity, chosen);
+        Assert.Contains(string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Issues.ShownAgain, string.Format(CultureInfo.CurrentCulture, Strings.Dashboard.Problems, "2")), toasts.Select(t => t.Title));
+    }
+
+    /// <summary>
     /// Open file on a file that is gone says so (it did nothing at all), and Ctrl+Z with nothing to undo says that.
     /// Neither opens a program or touches the clipboard.
     /// </summary>
