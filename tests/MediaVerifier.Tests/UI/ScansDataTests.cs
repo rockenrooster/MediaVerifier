@@ -18,15 +18,29 @@ public sealed class ScansDataTests
         new() { Id = 3, Path = @"E:\Backup", Label = "Backup", Role = RootRole.Backup },
     ];
 
+    /// <summary>
+    /// The Folders column names the scope; a subfolder scan is named by its folder (it read "All folders" or the whole
+    /// root's name, because both branches of the partial-scope test were the same).
+    /// </summary>
     [Theory]
     [InlineData("""[{"rootId":1,"dir":null,"files":null},{"rootId":2,"dir":null,"files":null}]""", "All folders")]
     [InlineData("""[{"rootId":2,"dir":null,"files":null}]""", "Photos")]
-    [InlineData("""[{"rootId":1,"dir":"Album","files":null}]""", "Music")]
+    [InlineData("""[{"rootId":1,"dir":"Album","files":null}]""", "Album")]
+    [InlineData("""[{"rootId":1,"dir":"Night Drive\\Overpass","files":null},{"rootId":2,"dir":null,"files":null}]""", "Overpass and Photos")]
     [InlineData("""[{"rootId":1,"dir":null,"files":3},{"rootId":2,"dir":null,"files":2}]""", "5 files")]
+    [InlineData("""[{"rootId":1,"dir":null,"files":1}]""", "1 file")]
     [InlineData("not json", "")]
     public void The_folders_column_names_the_scope(string scopeJson, string expected)
     {
-        Assert.Equal(expected, LiveUiData.ScopeText(scopeJson, Roots));
+        Assert.Equal(expected, ScansPage.AtLineStart(LiveUiData.ScopeText(scopeJson, Roots)));
+    }
+
+    /// <summary>In a sentence the scope stays lower case: the drawer read "Scan of All folders".</summary>
+    [Fact]
+    public void In_a_sentence_all_folders_stays_lower_case()
+    {
+        string scope = LiveUiData.ScopeText("""[{"rootId":1},{"rootId":2}]""", Roots);
+        Assert.Equal("Scan of all folders", string.Format(System.Globalization.CultureInfo.CurrentCulture, MediaVerifier.UI.Strings.Scans.RunOf, scope));
     }
 
     [Fact]

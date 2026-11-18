@@ -149,6 +149,7 @@ internal static class Strings
         public const string SinceLastScanDown = "−{0} since last scan";
         public const string NoChange = "No change";
         public const string FilesAndSize = "{0} files · {1}";
+        public const string FilesAndSizeOne = "1 file · {1}";
         public const string Problems = "{0} problems";
         public const string OneProblem = "1 problem";
         public const string NoProblems = "No problems";
@@ -195,13 +196,17 @@ internal static class Strings
         public const string RotNoCopy = "No healthy copy was found";
         public const string Review = "Review";
         public const string IndexTitle = "{0} videos have no seek index";
+        public const string IndexTitleOne = "1 video has no seek index";
         public const string IndexDetail = "Rebuilding is lossless and takes about {0}";
         public const string FixAll = "Fix all";
         public const string ExtensionTitle = "{0} files have the wrong extension";
+        public const string ExtensionTitleOne = "1 file has the wrong extension";
         public const string ExtensionDetail = "Renaming is safe and can be undone";
         public const string FakeLosslessTitle = "{0} albums look converted from MP3";
+        public const string FakeLosslessTitleOne = "1 album looks converted from MP3";
         public const string CannotRepair = "They cannot be repaired, only replaced";
         public const string UpscaledTitle = "{0} videos have less detail than their resolution";
+        public const string UpscaledTitleOne = "1 video has less detail than its resolution";
         public const string OverdueTitle = "{0} of files not verified in {1} days";
         public const string OverdueDetail = "At {0} per night a full pass takes {1} days";
         public const string VerifyNow = "Verify now";
@@ -212,6 +217,7 @@ internal static class Strings
         public const string NoScheduleDetail = "A schedule keeps checking in the background";
         public const string CreateSchedule = "Create schedule";
         public const string ReadErrorsTitle = "Drive {0}: returned read errors on {1} files";
+        public const string ReadErrorsTitleOne = "Drive {0}: returned read errors on 1 file";
         public const string ReadErrorsDetail = "Copy what you can elsewhere, then check the drive";
         public const string WhatToDo = "What to do";
         public const string InterruptedTitle = "The last scan was interrupted";
@@ -460,7 +466,8 @@ internal static class Strings
         public const string OfTotal = "{0} of {1}";
         public const string Estimating = "Estimating…";
         public const string FoundSoFar = "Found so far";
-        public const string ErrorsCount = "{0} files could not be read";
+        public const string ErrorsCount = "{0} files or folders could not be read";
+        public const string ErrorsCountOne = "1 file or folder could not be read";
         public const string WorkingOn = "WORKING ON";
         public const string NoScan = "No scan is running";
         public const string LastScan = "Last scan {0}.";
@@ -497,6 +504,7 @@ internal static class Strings
         public const string DeepText = "Also decodes every video frame";
         public const string NotKnown = "Not known yet";
         public const string InterruptedBar = "The last scan was interrupted.";
+        public const string RunGone = "This scan is no longer in the history";
         public const string Continue = "Continue";
     }
 
