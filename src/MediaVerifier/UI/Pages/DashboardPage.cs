@@ -50,6 +50,7 @@ internal sealed class DashboardPage : PageBase
         // The first-run screen says "or drop folders anywhere in this window" (subplan 09): a dropped folder opens Add
         // folder. Child controls have no drop target of their own, so a drop anywhere on the page arrives here.
         AllowDrop = true;
+        Services.ScanStarted += OnScanStarted;
     }
 
     public override PageId Id => PageId.Dashboard;
@@ -122,6 +123,25 @@ internal sealed class DashboardPage : PageBase
             default:
                 Services.Navigate?.Invoke(PageId.Issues, null);
                 break;
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Services.ScanStarted -= OnScanStarted;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>A scan started (from the header, say): Continue and Scan leave the list at once, not at the next load.</summary>
+    private void OnScanStarted()
+    {
+        if (_data is not null && !IsDisposed)
+        {
+            _recommendations.Bind(EffectiveRecommendations(_data));
         }
     }
 

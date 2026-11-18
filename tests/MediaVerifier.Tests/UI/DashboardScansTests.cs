@@ -489,6 +489,59 @@ public sealed class DashboardScansTests
         Assert.True(hooked, "The strip should follow its window.");
     }
 
+    /// <summary>
+    /// The Dashboard's Continue on a scan of one folder scans that folder again at the run's depth. It scanned every
+    /// Library folder (Music and Photos here) under the old run's heading.
+    /// </summary>
+    [FixtureFact]
+    public void Continue_on_the_dashboard_scans_only_the_interrupted_runs_folder()
+    {
+        long photos = 0;
+        string? scope = null;
+        ScanDepth depth = ScanDepth.None;
+        string heading = string.Empty;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("continue-scope");
+            string music = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+            string pictures = Directory.CreateDirectory(temp.Combine("My Photos")).FullName;
+            FixtureFactory.CopyTo("src16.flac", music, "song.flac");
+            FixtureFactory.CopyTo("src16.flac", pictures, "other.flac");
+            MediaVerifier.Core.AppPaths paths = temp.CreateAppPaths();
+            paths.EnsureCreated();
+
+            // A Quick scan of the Photos folder that was running when MediaVerifier closed.
+            using (Database before = Database.Open(paths.DefaultDatabaseFile))
+            {
+                _ = Db(() => before.Roots.AddAsync(new RootRecord { Path = music, Label = "My Music" }).GetAwaiter().GetResult());
+                photos = Db(() => before.Roots.AddAsync(new RootRecord { Path = pictures, Label = "My Photos" }).GetAwaiter().GetResult());
+                _ = Db(() => before.Runs.BeginAsync(RunTrigger.Manual, ScanDepth.Quick, $$"""[{"rootId":{{photos}},"dir":null,"files":null}]""", null).GetAwaiter().GetResult());
+            }
+
+            using AppState state = AppState.Load(paths, installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N"));
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            int runsBefore = Db(() => services.Database.Runs.List(10)).Count;
+
+            form.Navigate(PageId.Dashboard);
+            Settle(() => form.CurrentPageLoading.IsCompleted);
+            ((DashboardPage)form.CurrentPageControl!).RunRecommendation(new RecommendationItem(Severity.Medium, Strings.Recommendations.InterruptedTitle, string.Empty, Strings.Recommendations.Continue, "continue"));
+            Settle(() => Db(() => services.Database.Runs.List(10)).Count > runsBefore);
+            heading = services.Scans.ScopeText;
+            RunRecord continued = Db(() => services.Database.Runs.List(1))[0];
+            scope = continued.ScopeJson;
+            depth = continued.Depth;
+            Settle(() => !services.Scans.Status.IsActive, TimeSpan.FromMinutes(1));
+            form.Close();
+        });
+
+        Assert.Equal($$"""[{"rootId":{{photos}},"dir":null,"files":null}]""", scope);
+        Assert.Equal(ScanDepth.Quick, depth);
+        Assert.Equal("My Photos", heading);
+    }
+
     /// <summary>Services like the render harness's, with the media engine, the scan control and a background run chosen by the test.</summary>
     private static UiServices Services(AppState state, TempDirectory temp, BundleCheck engine, IScanControl? scans = null, bool? background = null)
     {
@@ -539,13 +592,16 @@ public sealed class DashboardScansTests
         throw new MissingMethodException(owner.GetType().Name, name);
     }
 
-    private static void Settle(Func<bool> done)
+    private static void Settle(Func<bool> done, TimeSpan? limit = null)
     {
         System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < TimeSpan.FromSeconds(10))
+        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
         {
             Application.DoEvents();
             Thread.Sleep(5);
         }
     }
+
+    /// <summary>The test's own database reads, made on a pool thread (the UI thread's guard throws).</summary>
+    private static T Db<T>(Func<T> read) => Task.Run(read).GetAwaiter().GetResult();
 }
