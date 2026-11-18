@@ -121,6 +121,83 @@ public sealed class SchedulePageTests
         Assert.True(registered, "The preset's task was not registered.");
     }
 
+    /// <summary>
+    /// A second click on a preset after its plan was stored, while the page reloads with the presets still showing,
+    /// adds nothing (the plan was added twice).
+    /// </summary>
+    [Fact]
+    public void A_preset_clicked_again_before_the_page_hides_it_adds_nothing()
+    {
+        int plans = -1;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("schedule-preset-twice");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = Live(state, temp);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            SchedulePage page = Open(form);
+            KitButton nightly = Find<KitButton>(page, b => b.Text == Strings.Schedule.Nightly && b.Visible);
+            nightly.PerformClick();
+            Settle(() => Db(services.Database.Plans.List).Count == 1 && !page.Loading.IsCompleted);
+            nightly.PerformClick();
+            Pump(TimeSpan.FromMilliseconds(300));
+            Settle(() => page.Loading.IsCompleted);
+            plans = Db(services.Database.Plans.List).Count;
+            form.Close();
+        });
+
+        Assert.Equal(1, plans);
+    }
+
+    /// <summary>
+    /// Space twice on a plan's switch, the second while the first change is stored: the switch stays enabled (disabled,
+    /// it sent the keyboard focus on to the row's Run now, and the next Space started a scan), and the plan ends as the
+    /// switch shows, with its task (the second Space was lost).
+    /// </summary>
+    [Fact]
+    public void The_switch_stays_enabled_and_its_last_state_is_stored()
+    {
+        bool enabledWhileStoring = false;
+        PlanRecord? stored = null;
+        bool registered = false;
+        bool shownOn = false;
+        long before = 0;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("schedule-switch");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = Live(state, temp);
+            Task<long> add = services.Database.Plans.AddAsync(new PlanRecord { Name = "Weekly check", Enabled = true, DefinitionJson = PlanDefinition.Templates[1].Definition.ToJson() });
+            Settle(() => add.IsCompleted);
+            long id = add.Result;
+            string task = "MediaVerifier\\" + TaskSchedulerBackend.TaskName(id);
+            before = Db(() => services.Database.Plans.Get(id)!.UpdatedUtc);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            SchedulePage page = Open(form);
+            ToggleSwitch toggle = Find<ToggleSwitch>(page, t => t.AccessibleName == "Weekly check");
+            PressSpace(toggle);
+            enabledWhileStoring = toggle.Enabled;
+            PressSpace(toggle);
+            Settle(() => Db(() => services.Database.Plans.Get(id)) is { Enabled: true } plan && plan.UpdatedUtc != before && TestScheduler.Backend.Tasks.ContainsKey(task));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Settle(() => page.Loading.IsCompleted);
+            stored = Db(() => services.Database.Plans.Get(id));
+            registered = TestScheduler.Backend.Tasks.ContainsKey(task);
+            shownOn = toggle.Checked;
+            form.Close();
+        });
+
+        Assert.True(enabledWhileStoring, "The switch was disabled while its change was stored.");
+        Assert.NotNull(stored);
+        Assert.True(stored.Enabled && stored.UpdatedUtc != before, "The second Space was lost: the plan stayed switched off.");
+        Assert.True(registered, "The plan's task is missing.");
+        Assert.True(shownOn, "The switch does not show the plan's state.");
+    }
+
     /// <summary>A reload keeps the row controls (the switch the keyboard just used lost its focus when they were all recreated).</summary>
     [Fact]
     public void A_reload_keeps_the_row_controls()
@@ -303,4 +380,10 @@ public sealed class SchedulePageTests
 
     /// <summary>The test's own database reads, made on a pool thread: on the UI thread they would trip the guard that keeps the app off it.</summary>
     private static T Db<T>(Func<T> read) => Task.Run(read).GetAwaiter().GetResult();
+
+    /// <summary>A Space key sent to the control itself, as the keyboard would (nothing is focused or activated).</summary>
+    private static void PressSpace(Control control) => _ = SendMessage(control.Handle, 0x0100, (IntPtr)Keys.Space, (IntPtr)1);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 }

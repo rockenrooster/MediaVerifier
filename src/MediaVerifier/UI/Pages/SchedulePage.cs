@@ -50,9 +50,10 @@ internal sealed class SchedulePage : PageBase
         _new.Click += (_, _) => UiTask.Run(EditAsync(null));
         _empty.SetButton(Strings.Schedule.NewSchedule).Click += (_, _) => UiTask.Run(EditAsync(null));
 
-        // Subplan 09, Schedule: the empty state's presets create those plans (subplan 13 templates).
-        _nightly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Nightly, PlanDefinition.Templates[0].Definition)]));
-        _weekly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition)]));
+        // Subplan 09, Schedule: the empty state's presets create those plans (subplan 13 templates). They exist only
+        // while there is no plan: a second click before the page hid them added the plan twice.
+        _nightly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Nightly, PlanDefinition.Templates[0].Definition)], onlyIntoEmpty: true));
+        _weekly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition)], onlyIntoEmpty: true));
 
         // The boxes save once the typing stops or focus leaves them: each save flushes settings.json to disk, and it
         // ran on every key and every arrow step.
@@ -101,13 +102,14 @@ internal sealed class SchedulePage : PageBase
         _data = (ScheduleData)data;
         _binding = true;
 
-        // A box being typed in keeps what is typed: the settings already hold it.
-        if (!_scrubDays.Focused)
+        // A box being typed in keeps what is typed: the settings already hold it. The focus is on the box's edit
+        // control, so Focused never applied, and the reload after each commit rewrote the text under the caret.
+        if (!_scrubDays.ContainsFocus)
         {
             _scrubDays.Value = State.Settings.Scanning.ScrubPeriodDays;
         }
 
-        if (!_budget.Focused)
+        if (!_budget.ContainsFocus)
         {
             _budget.Value = State.Settings.Scanning.ScrubBudgetMinutes;
         }
@@ -297,7 +299,7 @@ internal sealed class SchedulePage : PageBase
             {
                 if (!_binding)
                 {
-                    UiTask.Run(SetEnabledAsync(index, row.Toggle));
+                    UiTask.Run(SetEnabledAsync(row));
                 }
             };
             row.Run.Click += (_, _) => PlanAt(index, plan => UiTask.Run(RunNowAsync(plan)));
@@ -310,7 +312,12 @@ internal sealed class SchedulePage : PageBase
         _binding = true;
         for (int i = 0; i < plans.Count; i++)
         {
-            _rows[i].Toggle.Checked = plans[i].Enabled;
+            // A switch whose change is still being stored keeps what the user set; the store catches up with it.
+            if (!_rows[i].Changing)
+            {
+                _rows[i].Toggle.Checked = plans[i].Enabled;
+            }
+
             _rows[i].Toggle.AccessibleName = plans[i].Name;
         }
 
@@ -606,54 +613,60 @@ internal sealed class SchedulePage : PageBase
     }
 
     /// <summary>
-    /// The plan's switch; when Windows refuses the task, the plan stays switched off and a toast says why. The switch
-    /// waits until its change is registered: flipped again meanwhile, two updates raced and one could delete the task
-    /// the other had just made.
+    /// The plan's switch; when Windows refuses the task, the plan stays switched off and a toast says why. One change
+    /// per row at a time: flipped again while its change is stored, the switch's newest state is stored next (two
+    /// updates raced, and one could delete the task the other had just made). The switch stays enabled meanwhile:
+    /// disabled, it sent the keyboard focus on to Run now, and the next Space started a scan.
     /// </summary>
-    private async Task SetEnabledAsync(int index, ToggleSwitch toggle)
+    private async Task SetEnabledAsync(PlanControls row)
     {
-        if (Services.IsDemo || _data is null || index >= _data.Plans.Count)
+        if (Services.IsDemo || row.Changing)
         {
             return;
         }
 
-        PlanRow plan = _data.Plans[index];
-        bool enabled = toggle.Checked;
         Database database = Services.Database;
-        long now = Services.Clock.UtcNow.UtcTicks;
-        toggle.Enabled = false;
-        string? refused;
+        row.Changing = true;
         try
         {
-            refused = await Task.Run(async () =>
+            while (!row.Toggle.IsDisposed && _data is not null && row.Index < _data.Plans.Count)
             {
-                if (database.Plans.Get(plan.Id) is not PlanRecord record)
+                PlanRow plan = _data.Plans[row.Index];
+                bool enabled = row.Toggle.Checked;
+                long now = Services.Clock.UtcNow.UtcTicks;
+                string? refused = await Task.Run(async () =>
                 {
-                    return null;
+                    if (database.Plans.Get(plan.Id) is not PlanRecord record)
+                    {
+                        return null;
+                    }
+
+                    await database.Plans.UpdateAsync(record with { Enabled = enabled, UpdatedUtc = now }).ConfigureAwait(false);
+                    string? message = await RegisterAsync(database).ConfigureAwait(false);
+                    if (message is null || !enabled)
+                    {
+                        return null;
+                    }
+
+                    await SwitchOffAsync(database, [plan.Id], now).ConfigureAwait(false);
+                    return message;
+                }).ConfigureAwait(true);
+
+                if (refused is not null)
+                {
+                    Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, plan.Name, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused)));
+                    break;
                 }
 
-                await database.Plans.UpdateAsync(record with { Enabled = enabled, UpdatedUtc = now }).ConfigureAwait(false);
-                string? message = await RegisterAsync(database).ConfigureAwait(false);
-                if (message is null || !enabled)
+                if (row.Toggle.Checked == enabled)
                 {
-                    return null;
+                    break;
                 }
-
-                await SwitchOffAsync(database, [plan.Id], now).ConfigureAwait(false);
-                return message;
-            }).ConfigureAwait(true);
+            }
         }
         finally
         {
-            if (!toggle.IsDisposed)
-            {
-                toggle.Enabled = true;
-            }
-        }
-
-        if (refused is not null)
-        {
-            Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, plan.Name, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused)));
+            row.Changing = false;
         }
 
         Reload();
@@ -708,6 +721,9 @@ internal sealed class SchedulePage : PageBase
     private sealed class PlanControls(int index)
     {
         public int Index { get; } = index;
+
+        /// <summary>True while the switch's change is being stored.</summary>
+        public bool Changing { get; set; }
 
         public ToggleSwitch Toggle { get; } = new() { TabIndex = 10 + (index * 4) };
 

@@ -88,14 +88,15 @@ internal static class PlanHost
             self.PriorityClass = ProcessPriorityClass.BelowNormal;
         }
 
-        return RunPlan(state, planId, StopEventName, FfmpegLocator.Locate(state.Paths));
+        return RunPlan(state, planId, StopEventName, NamedMutexLock.EngineName, FfmpegLocator.Locate(state.Paths));
     }
 
     /// <summary>
     /// Loads the plan, checks its conditions, scans, records the notification and posts the webhook. Tests pass a stop
-    /// event of their own, so an open MediaVerifier never takes their run for a scheduled scan.
+    /// event of their own, so an open MediaVerifier never takes their run for a scheduled scan. <paramref name="launcherLock"/>
+    /// is the engine mutex the launcher holds for the whole run.
     /// </summary>
-    internal static int RunPlan(AppState state, long planId, string stopEventName, FfmpegLocation mediaEngine)
+    internal static int RunPlan(AppState state, long planId, string stopEventName, string launcherLock, FfmpegLocation mediaEngine)
     {
         // The stop event exists for the whole run, so an open window sees it and its Stop works while conditions wait.
         using EventWaitHandle stopEvent = new(false, EventResetMode.ManualReset, stopEventName);
@@ -133,11 +134,11 @@ internal static class PlanHost
         using FfRunner runner = new(mediaEngine);
         RuleSettings rules = database.RuleSettings.Load();
 
-        // The launcher holds the engine mutex from before the conditions until the process exits (subplan 13, step 2).
+        // The launcher holds its engine mutex from before the conditions until the process exits (subplan 13, step 2).
         // NamedMutexLock owns a mutex on a thread of its own, so the engine taking the same mutex again from this
         // process was refused, and no scheduled scan ever ran while the window was closed: the engine's lock is one of
         // this process's own.
-        string engineLock = @"Local\MediaVerifier.Engine.Run." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
+        string engineLock = launcherLock + ".Run." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
         using ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => rules), engineLock);
         using CancellationTokenSource stop = new(TimeSpan.FromMinutes(job.Definition.Conditions.StopAfterMinutes));
         RegisteredWaitHandle stopWait = ThreadPool.RegisterWaitForSingleObject(stopEvent, (_, _) => stop.Cancel(), null, Timeout.Infinite, executeOnlyOnce: true);

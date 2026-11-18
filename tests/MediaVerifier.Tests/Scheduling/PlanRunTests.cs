@@ -22,8 +22,9 @@ public sealed class PlanRunTests
 
     /// <summary>
     /// The launcher holds the engine mutex for the whole run, and the scan still runs: the engine took the same mutex
-    /// again from this process, was refused, and no scheduled scan ever ran while the window was closed. The run row is
-    /// linked to the plan, and the plan record is not written back (that undid edits made during the run).
+    /// again from this process, was refused, and no scheduled scan ever ran while the window was closed. The run is
+    /// handed the launcher's own mutex, so an engine that took it again fails here. The run row is linked to the plan,
+    /// and the plan record is not written back (that undid edits made during the run).
     /// </summary>
     [Fact]
     public async Task A_plan_runs_while_the_launcher_holds_the_engine_mutex()
@@ -49,7 +50,7 @@ public sealed class PlanRunTests
         {
             // The launcher's lock is held here, as in a real run.
             Assert.True(NamedMutexLock.IsHeldElsewhere(engine));
-            return PlanHost.RunPlan(s, id, TestName("StopRun"), new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false));
+            return PlanHost.RunPlan(s, id, TestName("StopRun"), engine, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false));
         });
 
         using Database check = Database.Open(databaseFile);
@@ -141,7 +142,7 @@ public sealed class PlanRunTests
         AppPaths paths = temp.CreateAppPaths();
         using AppState state = AppState.Load(paths, installSharedLog: false);
         TestScheduler.Backend.Tasks["MediaVerifier\\Plan 4242"] = "<old/>";
-        int exit = PlanHost.RunPlan(state, 4242, TestName("StopRun"), new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false));
+        int exit = PlanHost.RunPlan(state, 4242, TestName("StopRun"), TestName("Engine"), new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false));
         Assert.Equal(HeadlessLauncher.ExitFailure, exit);
         Assert.False(TestScheduler.Backend.Tasks.ContainsKey("MediaVerifier\\Plan 4242"));
     }
