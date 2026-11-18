@@ -53,6 +53,11 @@ internal sealed class AddFolderDialog : KitDialog
         _editing = editing;
         _roots = roots;
         CloseToolTip = Strings.Kit.CloseEsc;
+
+        // The labels are painted: screen readers get the fields' names from here.
+        _folder.AccessibleName = Strings.Library.FolderLabel;
+        _name.AccessibleName = Strings.Library.NameLabel;
+        _skip.AccessibleName = Strings.Library.Skip;
         AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
         _ok = AddButton(editing is null ? Strings.Library.AddFolder : Strings.Kit.Save, ButtonKind.Primary, DialogResult.None);
 

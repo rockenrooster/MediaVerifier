@@ -112,6 +112,7 @@ internal sealed class IssuesPage : PageBase
         }
 
         _kindDrop.SelectedIndex = 0;
+        _group.AccessibleName = Strings.Issues.GroupBy;
 
         // The lists start with "All categories" (subplan 09); closed on it, the control shows its name ("Category").
         foreach (string category in new[] { Strings.Issues.AllCategories, Strings.Issues.Damage, Strings.Issues.Integrity, Strings.Issues.Authenticity, Strings.Issues.Quality, Strings.Issues.Structure })

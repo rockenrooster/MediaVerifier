@@ -59,6 +59,14 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _store = store;
         _others = others ?? [];
         CloseToolTip = Strings.Kit.CloseEsc;
+
+        // The labels are painted: screen readers get the fields' names from here.
+        _name.AccessibleName = Strings.Schedule.Name;
+        _folders.AccessibleName = Strings.Schedule.Folders;
+        _depth.AccessibleName = Strings.Schedule.Depth;
+        _repeat.AccessibleName = Strings.Schedule.Repeat;
+        _time.AccessibleName = Strings.Schedule.At;
+        _limit.AccessibleName = Strings.Schedule.TimeLimitLabel;
         _name.Text = name;
         foreach (string folder in new[] { Strings.Schedule.AllFolders }.Concat(roots.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))))
         {
@@ -188,6 +196,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _depth.Bounds = new Rectangle(x, S(93), S(196), S(32));
         _repeat.Bounds = new Rectangle(x, S(173), S(306), S(32));
         int kind = _repeat.SelectedIndex;
+        _number.AccessibleName = kind == 2 ? Strings.Schedule.Day : Strings.Schedule.Days;
         int dx = x;
         foreach (Chip chip in _days)
         {

@@ -34,6 +34,7 @@ internal sealed class FileDetailView : KitControl
     private bool _hasPrimary;
     private readonly HashSet<int> _expanded = [0];
     private readonly List<Rectangle> _findingHeaders = [];
+    private Rectangle _hoverHeader;
     private Rectangle _historyRow;
     private Rectangle _technicalRow;
     private readonly List<(Rectangle Hit, long FindingId, int Mark)> _markHits = [];
@@ -390,9 +391,31 @@ internal sealed class FileDetailView : KitControl
         }
     }
 
+    /// <summary>A card whose header opens or closes it shows Hover while the pointer is on that header.</summary>
+    private VisualState HeaderState(Rectangle header) => header == _hoverHeader ? VisualState.Hover : VisualState.Rest;
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (!_hoverHeader.IsEmpty)
+        {
+            _hoverHeader = Rectangle.Empty;
+            Invalidate();
+        }
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        Rectangle header = _historyRow.Contains(e.Location) ? _historyRow
+            : _technicalRow.Contains(e.Location) ? _technicalRow
+            : _findingHeaders.Find(r => r.Contains(e.Location));
+        if (header != _hoverHeader)
+        {
+            _hoverHeader = header;
+            Invalidate();
+        }
+
         bool overMark = false;
         foreach ((Rectangle hit, _, _) in _markHits)
         {
@@ -609,7 +632,7 @@ internal sealed class FileDetailView : KitControl
                 cardHeight = S(44);
                 if (g is not null)
                 {
-                    Card.Draw(g, new Rectangle(x, top, width, cardHeight), null, VisualState.Rest, false, DeviceDpi);
+                    Card.Draw(g, new Rectangle(x, top, width, cardHeight), null, HeaderState(new Rectangle(x, top, width, S(44))), false, DeviceDpi);
                     int badge = BadgePainter.PaintSeverityBadge(g, x + S(12), top + S(12), f.Severity, DeviceDpi);
                     KitPaint.DrawText(g, f.Title, type.BodyStrong, t.Text, x + S(12) + badge + S(12), top + S(22), width - badge - S(64));
                 }
@@ -630,7 +653,7 @@ internal sealed class FileDetailView : KitControl
                 cardHeight = S(50) + S(12) + blocksHeight + evidenceHeight + S(12) + S(32) + S(14);
                 if (g is not null)
                 {
-                    Card.Draw(g, new Rectangle(x, top, width, cardHeight), null, VisualState.Rest, false, DeviceDpi);
+                    Card.Draw(g, new Rectangle(x, top, width, cardHeight), null, HeaderState(new Rectangle(x, top, width, S(44))), false, DeviceDpi);
                     int badge = BadgePainter.PaintSeverityBadge(g, x + S(12), top + S(12), f.Severity, DeviceDpi);
                     string? pill = SeverityPolicy.PillText(f.Confidence);
                     if (pill is not null)
@@ -673,7 +696,7 @@ internal sealed class FileDetailView : KitControl
         int historyHeight = _historyOpen ? S(44) + (d.History.Count * S(30)) + S(8) : S(44);
         if (g is not null)
         {
-            Card.Draw(g, new Rectangle(x, y, width, historyHeight), null, VisualState.Rest, false, DeviceDpi);
+            Card.Draw(g, new Rectangle(x, y, width, historyHeight), null, HeaderState(_historyRow), false, DeviceDpi);
             KitPaint.DrawText(g, Strings.Drawer.History, type.BodyStrong, t.Text, x + S(24), y + S(22), width - S(64));
             if (_historyOpen)
             {
@@ -689,7 +712,7 @@ internal sealed class FileDetailView : KitControl
         int technicalHeight = _technicalOpen ? S(40) + technicalText + S(8) + S(32) + S(12) : S(44);
         if (g is not null)
         {
-            Card.Draw(g, new Rectangle(x, y, width, technicalHeight), null, VisualState.Rest, false, DeviceDpi);
+            Card.Draw(g, new Rectangle(x, y, width, technicalHeight), null, HeaderState(_technicalRow), false, DeviceDpi);
             KitPaint.DrawText(g, Strings.Drawer.TechnicalDetails, type.BodyStrong, t.Text, x + S(24), y + S(22), width - S(64));
             if (_technicalOpen)
             {
