@@ -663,7 +663,8 @@ public sealed class ShellTests
             command.CommandText = "SELECT status, ended_utc FROM runs ORDER BY id DESC LIMIT 1";
             using SqliteDataReader row = command.ExecuteReader();
             Assert.True(row.Read());
-            Assert.NotEqual((long)RunStatus.Running, row.GetInt64(0));
+            // Closing the app interrupts the run (Continue is offered next time); only the user's Stop cancels it.
+            Assert.Equal((long)RunStatus.Interrupted, row.GetInt64(0));
             Assert.False(row.IsDBNull(1), "The run's end was not written.");
         }
 

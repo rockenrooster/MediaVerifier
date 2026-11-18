@@ -136,7 +136,8 @@ public sealed class ScanEngine : IDisposable
         Run? run = Volatile.Read(ref _current);
         if (run is not null)
         {
-            run.Cancel();
+            // Closing the app is not the user's Stop: the run ends Interrupted, so Continue is offered next time.
+            run.Interrupt();
             try
             {
                 run.Completion.Wait(TimeSpan.FromSeconds(30));
@@ -293,6 +294,7 @@ public sealed class ScanEngine : IDisposable
         private volatile bool _budgetReached;
         private volatile bool _enumerating = true;
         private volatile bool _finishing;
+        private volatile bool _interrupted;
         private volatile bool _writesLost;
         private bool _workersClosed;
         private long _seen;
@@ -389,6 +391,13 @@ public sealed class ScanEngine : IDisposable
             _cancel.Cancel();
         }
 
+        /// <summary>Stops the run as interrupted (the app closes), not as cancelled by the user.</summary>
+        public void Interrupt()
+        {
+            _interrupted = true;
+            Cancel();
+        }
+
         public EngineStatus Snapshot()
         {
             EnginePhase phase = _finishing ? EnginePhase.Finishing
@@ -476,7 +485,7 @@ public sealed class ScanEngine : IDisposable
             }
             catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
             {
-                status = RunStatus.Cancelled;
+                status = _interrupted ? RunStatus.Interrupted : RunStatus.Cancelled;
             }
             catch (Exception ex)
             {

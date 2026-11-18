@@ -19,5 +19,8 @@ internal static class TestEnvironment
     {
         ErrorLog.Configure(ErrorLogDirectory);
         MediaVerifier.Diagnostics.ScreenRenderer.Offscreen = true;
+
+        // A scan that ends in a test window notifies as the app's own scans do: never on the user's desktop.
+        MediaVerifier.App.ToastInterop.AppUserModelId = "MediaVerifier.Tests.NeverRegistered";
     }
 }

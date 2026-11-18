@@ -197,7 +197,10 @@ internal static class ToastInterop
     /// <paramref name="group"/> replaces an older one. <paramref name="silent"/> skips the pop-up (quiet hours).
     /// False when any step fails; the first failure in a process is logged.
     /// </summary>
-    public static bool Show(string xml, string tag, string group, bool silent) => Show(xml, tag, group, silent, ToastRegistration.AppUserModelId);
+    /// <summary>The id notifications go out under; the test run sets one that is never registered, so nothing shows.</summary>
+    internal static string AppUserModelId { get; set; } = ToastRegistration.AppUserModelId;
+
+    public static bool Show(string xml, string tag, string group, bool silent) => Show(xml, tag, group, silent, AppUserModelId);
 
     /// <summary>The same under another app user model id (tests use one that is never registered, so nothing shows).</summary>
     internal static bool Show(string xml, string tag, string group, bool silent, string appUserModelId)

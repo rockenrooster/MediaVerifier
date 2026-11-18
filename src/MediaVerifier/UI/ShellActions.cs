@@ -123,7 +123,9 @@ internal static class ShellActions
 
         try
         {
-            Clipboard.SetText(text);
+            // Two quick tries: Clipboard.SetText retries ten times 100 ms apart, a second's freeze while another program
+            // holds the clipboard.
+            Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), true, 2, 50);
         }
         catch (ExternalException ex)
         {

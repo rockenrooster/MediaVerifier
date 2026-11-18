@@ -52,6 +52,9 @@ internal sealed class MainForm : Form
     private readonly Func<UiServices, PageId, PageBase> _pageFactory;
     private readonly UiServices _services;
     private readonly UI.Kit.Popups.ToastHost _toasts;
+
+    /// <summary>The window's own scans notify when they end, as scheduled ones do (subplan 13).</summary>
+    private readonly IDisposable _manualRuns;
     private readonly Action<UI.Kit.Popups.ToastContent> _shellToast;
     private readonly System.Collections.Concurrent.ConcurrentQueue<IpcMessage> _ipcMessages = new();
     private ShellBinder? _binder;
@@ -82,6 +85,7 @@ internal sealed class MainForm : Form
         services.RefreshAll = RefreshAll;
         _shellToast = content => services.ShowToast?.Invoke(content);
         UI.ShellActions.Toast = _shellToast;
+        _manualRuns = GuiPlanRunner.WatchManualRuns(services, () => !IsDisposed && ActiveForm == this, ShowRunNotification);
         AppState state = services.State;
         _state = state;
         _options = options ?? new LaunchOptions();
@@ -431,6 +435,7 @@ internal sealed class MainForm : Form
             }
 
             _services.RefreshAll = null;
+            _manualRuns.Dispose();
 
             _tray?.Dispose();
             _binder?.Dispose();

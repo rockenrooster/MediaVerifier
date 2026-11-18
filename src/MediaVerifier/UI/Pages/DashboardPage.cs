@@ -107,7 +107,7 @@ internal sealed class DashboardPage : PageBase
                 break;
             case "schedule":
                 // Create schedule creates one: Schedule handles the request (it only switched pages before).
-                Services.Navigate?.Invoke(PageId.Schedule, new NewScheduleRequest());
+                Services.Navigate?.Invoke(PageId.Schedule, new CreateScheduleRequest());
                 break;
             case "read-errors":
                 ShellActions.OpenUrl(ShellActions.HelpUrl("GEN-UNREADABLE"));
@@ -841,8 +841,3 @@ internal sealed record IssuesFilterRequest(Severity? Tier, MediaKind? Kind, long
 /// <summary>Opens Issues with one finding's file in the drawer (a notification's link, subplan 13).</summary>
 internal sealed record IssueFindingRequest(long FindingId);
 
-/// <summary>
-/// The Dashboard's "Create schedule" (subplan 13: it adds the first two templates): a request for Schedule to create a
-/// schedule, where only switching to the page left New schedule to be pressed again.
-/// </summary>
-internal sealed record NewScheduleRequest;

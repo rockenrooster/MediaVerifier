@@ -333,7 +333,7 @@ public sealed class DashboardScansTests
         Assert.Equal(2, navigations.Count);
         Assert.Equal((PageId.Issues, (object?)new IssuesFilterRequest(null, MediaKind.Video)), navigations[0]);
         Assert.Equal(PageId.Schedule, navigations[1].Page);
-        Assert.IsType<NewScheduleRequest>(navigations[1].Request);
+        Assert.IsType<CreateScheduleRequest>(navigations[1].Request);
     }
 
     /// <summary>

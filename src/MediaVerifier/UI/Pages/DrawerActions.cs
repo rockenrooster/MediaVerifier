@@ -130,15 +130,8 @@ internal sealed class DrawerActions
             return;
         }
 
-        try
-        {
-            ShellActions.CopyText(lines);
-            services.ShowToast?.Invoke(new ToastContent(Severity.None, copied, string.Empty));
-        }
-        catch (ExternalException)
-        {
-            services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Strings.Drawer.CopyFailed, string.Empty));
-        }
+        // The shell's copy says what happened in one toast: "copied", or why the clipboard refused.
+        ShellActions.CopyText(lines, copied);
     }
 
     /// <summary>Copy path's confirmation: <c>Path copied</c>, or <c>{n} paths copied</c>.</summary>
