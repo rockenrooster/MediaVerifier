@@ -318,6 +318,47 @@ public sealed class RemediationProtocolTests
         Assert.Equal(OperationStatus.Running, Journal(h, offline).Status);
     }
 
+    [Fact]
+    public async Task Recovery_puts_back_the_file_an_interrupted_undo_had_set_aside()
+    {
+        using EngineHarness h = await ScannedAsync("a.mp3");
+        OperationRunner runner = Runner(h);
+        string path = Path.Combine(h.Library, "a.mp3");
+        OperationOutcome done = await runner.RunAsync(h.File1("a.mp3").Id, new AppendAction(), 1, CancellationToken.None);
+        byte[] repaired = await File.ReadAllBytesAsync(path);
+
+        // A crash after the undo set the repaired file aside, before the original came back.
+        (long undoId, _) = await InterruptedUndoAsync(h, done.OperationId, path);
+
+        Assert.Equal(1, await runner.RecoverAsync());
+        Assert.Equal(repaired, await File.ReadAllBytesAsync(path));
+        Assert.Equal(OperationStatus.Failed, Journal(h, undoId).Status);
+        Assert.Equal(OperationStatus.Done, Journal(h, done.OperationId).Status);
+        Assert.Null(await runner.UndoAsync(done.OperationId, 3, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Recovery_completes_an_undo_whose_original_was_back()
+    {
+        using EngineHarness h = await ScannedAsync("a.mp3");
+        OperationRunner runner = Runner(h);
+        string path = Path.Combine(h.Library, "a.mp3");
+        byte[] original = await File.ReadAllBytesAsync(path);
+        long size = h.File1("a.mp3").Size;
+        OperationOutcome done = await runner.RunAsync(h.File1("a.mp3").Id, new AppendAction(), 1, CancellationToken.None);
+
+        // A crash after the original came back, before the journal said so.
+        (long undoId, string aside) = await InterruptedUndoAsync(h, done.OperationId, path);
+        File.Move(Journal(h, done.OperationId).BackupPath!, path);
+
+        Assert.Equal(1, await runner.RecoverAsync());
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(OperationStatus.Undone, Journal(h, done.OperationId).Status);
+        Assert.Equal(OperationStatus.Done, Journal(h, undoId).Status);
+        Assert.True(File.Exists(aside));
+        Assert.Equal(size, h.File1("a.mp3").Size);
+    }
+
     [Theory]
     [InlineData("undo:12", 12L)]
     [InlineData("undo:7 The kept original is no longer there.", 7L)]
@@ -338,6 +379,19 @@ public sealed class RemediationProtocolTests
         await h.AddRootAsync(h.Library);
         await h.ScanAsync(ScanDepth.Quick);
         return h;
+    }
+
+    /// <summary>An undo of <paramref name="undone"/> that set the current file aside and then stopped (a crash).</summary>
+    private static async Task<(long Id, string Aside)> InterruptedUndoAsync(EngineHarness h, long undone, string path)
+    {
+        FileRecord file = h.File1(Path.GetFileName(path));
+        RootRecord root = h.Database.Roots.Get(file.RootId)!;
+        long id = await h.Database.Journal.AddAsync(new OperationRecord { BatchId = 2, Utc = 1, ActionId = ActionIds.Remux, FileId = file.Id, Status = OperationStatus.Running, SourcePath = path, DetailJson = OperationRunner.UndoMarker + undone.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        string aside = OperationRunner.QuarantinePathFor(root, file, id);
+        await h.Database.Journal.UpdateAsync(id, OperationStatus.Running, backupPath: aside);
+        Directory.CreateDirectory(Path.GetDirectoryName(aside)!);
+        File.Move(path, aside);
+        return (id, aside);
     }
 
     private static OperationRunner Runner(EngineHarness h) => new(h.Database, h.Services.Runner, WindowsFileSystem.Instance, h.Database.Clock);

@@ -407,7 +407,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                     if (File.Exists(undo.SourcePath))
                     {
                         setAside = root is not null && file is not null ? QuarantinePathFor(root, file, undoId) : throw new IOException(CoreStrings.Remediation.CannotUndo);
-                        MoveInto(undo.SourcePath, setAside);
+                        await SetAsideAsync(undoId, undo.SourcePath, setAside, token).ConfigureAwait(false);
                     }
 
                     try
@@ -429,7 +429,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                         setAside = root is not null
                             ? ExtendedPath.For(Path.Combine(root.Path, QuarantineFolder, undoId.ToString(CultureInfo.InvariantCulture), Path.GetFileName(undo.ResultPath)))
                             : throw new IOException(CoreStrings.Remediation.CannotUndo);
-                        MoveInto(undo.ResultPath, setAside);
+                        await SetAsideAsync(undoId, undo.ResultPath, setAside, token).ConfigureAwait(false);
                     }
 
                     break;
@@ -702,9 +702,57 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
     private void Step(string name) => BeforeStep?.Invoke(name);
 
+    /// <summary>Journals where an undo puts a file before moving it, so a crash in between cannot hide it.</summary>
+    private async Task SetAsideAsync(long undoId, string path, string setAside, CancellationToken token)
+    {
+        await database.Journal.UpdateAsync(undoId, OperationStatus.Running, backupPath: setAside, cancellationToken: token).ConfigureAwait(false);
+        MoveInto(path, setAside);
+    }
+
+    /// <summary>
+    /// An undo cut short by a crash: a file it set aside goes back when its place is still empty; when the original is
+    /// back in its place the undo had finished, so it is completed.
+    /// </summary>
+    private async Task<bool> RecoverUndoAsync(OperationRecord operation, long undone, CancellationToken token)
+    {
+        if (operation.BackupPath is string setAside && File.Exists(setAside))
+        {
+            if (!RootReachable(setAside))
+            {
+                return false;
+            }
+
+            if (File.Exists(operation.SourcePath) && Operation(undone) is { Status: OperationStatus.Done, BackupPath: string kept } done && !File.Exists(kept))
+            {
+                if (done.UndoJson is string json && JsonSerializer.Deserialize(json, RemediationJsonContext.Default.UndoData) is UndoData undo
+                    && done.FileId is long fileId && database.Files.Get(fileId) is FileRecord file)
+                {
+                    await RestoreIndexAsync(file, undo, undone, token).ConfigureAwait(false);
+                }
+
+                await database.Journal.UpdateAsync(undone, OperationStatus.Undone, cancellationToken: token).ConfigureAwait(false);
+                await database.Journal.UpdateAsync(operation.Id, OperationStatus.Done, cancellationToken: token).ConfigureAwait(false);
+                return true;
+            }
+
+            if (!File.Exists(operation.SourcePath))
+            {
+                MoveBack(setAside, operation.SourcePath);
+            }
+        }
+
+        await database.Journal.UpdateAsync(operation.Id, OperationStatus.Failed, detailJson: UndoMarker + undone.ToString(CultureInfo.InvariantCulture) + " " + CoreStrings.Remediation.Interrupted, cancellationToken: token).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>One crashed operation; false when its folder is offline and it waits for the next start.</summary>
     private async Task<bool> RecoverOneAsync(OperationRecord operation, CancellationToken token)
     {
+        if (UndoneOperation(operation) is long undone)
+        {
+            return await RecoverUndoAsync(operation, undone, token).ConfigureAwait(false);
+        }
+
         JournalTemp? temp = null;
         try
         {
