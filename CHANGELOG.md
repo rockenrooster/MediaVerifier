@@ -4,7 +4,79 @@ All notable changes to MediaVerifier are documented here.
 
 ## Unreleased
 
-- Add upcoming user-visible changes here before tagging a release.
+### Menus, lists and the keyboard
+
+- Fixed: choices in drop-down lists, menu items and the notification flyout's buttons did nothing (the click went
+  to the window underneath). Long lists such as the Issues Rule list scroll; context menus open above the pointer
+  when there is no room below; a menu item shows that it is pressed.
+- Fixed: a menu or drop-down item chosen with the keyboard opened dialogs that ignored Esc and Enter.
+- Fixed: after a dialog that showed a tooltip closed, every tooltip raised the error window.
+- Fixed: the row ⋯ menu, Details, right-click and the menu key acted on the selected rows instead of the row they
+  belong to; in the Library tree, right-click and the menu key act on that folder.
+- Fixed: selected rows that a refresh removed stayed selected (Ignore could reach resolved problems); focus and the
+  scroll position follow their rows after a sort or reload.
+- Keyboard focus is visible again everywhere, dialogs included. Space acts on release and a held key acts once;
+  right and middle clicks no longer press buttons; Enter and Esc no longer beep in text boxes; Esc clears the
+  selection in every list; option groups are one Tab stop.
+- Disabled buttons explain why in a tooltip; long toast texts can be shown in full; long dialog titles wrap.
+- Screen readers read the dialog fields, Group by, the navigation and the chosen option of segmented controls.
+
+### Scans and schedules
+
+- Fixed: scheduled scans never ran while MediaVerifier was closed.
+- Fixed: a scheduled scan with a time limit did not stop at the limit; Run now ignored the schedule's time limit.
+- Fixed: every-N-days schedules never ran when the app was started daily.
+- Fixed: a schedule whose folder was removed was saved, or run with Run now, as All folders.
+- Fixed: closing MediaVerifier or installing an update during a scan recorded it as stopped by you; it is now
+  interrupted, and Continue finishes it. Continue scans the interrupted run's own folders.
+- Fixed: excluding a folder, a pattern or a file type reported those files as disappeared.
+- Fixed: Scan again did not re-check unchanged files; it now reads the chosen files from scratch.
+- Fixed: the Working on bars on Scans never moved; the run drawer showed alerts as empty green bars.
+- A scan asked for while another runs waits for it; Stop also withdraws it. Scans you start notify you when they end,
+  as scheduled scans do. Skipped scheduled scans are listed in the bell. Stopping a background scan says Finishing.
+- The Dashboard's Create schedule adds the Nightly verification and Weekly check schedules.
+
+### Findings
+
+- Fixed: most MP3 'Decoder errors' were caused by the app's own decode settings; HEVC videos, phone photos with
+  appended pictures, AVI files and files with declared padding were reported damaged or zero-filled; upscaling
+  findings counted one key frame several times.
+- Fixed: a missing file's problems were still counted on the Dashboard and in the badges; they now leave the counts
+  while it is gone and come back with it.
+- Fixed: Ignore and its Undo also changed findings that were not open; Ignore counts only what it changed.
+- Switching off bit rot or 'Metadata changed without a timestamp update' closes their findings, and switching them on
+  reopens them. Settings → Rules no longer lists checks that are not built.
+
+### Repairs, quarantine and undo
+
+- Fixed: Rebuild index removed phone videos' capture date, place and camera; Store as 16-bit turned a WAV into FLAC
+  inside a .wav; long repairs were stopped after 60 seconds.
+- Fixed: a repair closed findings it did not fix, and the next scan raised the repaired problem again.
+- Fixed: an empty file could be 'restored' from another empty file; Rewrite FLAC and Store as 16-bit were offered
+  for audio with damaged frames.
+- Fixed: Delete for good and the 30-day purge left ghost rows that Undo kept failing on.
+- Closing the window during a repair stops it cleanly first; an update waits for the repair. Scans leave a repair's
+  temporary files alone and do not start during a repair. An undo cut short by a crash is settled at the next start.
+- Undo tries every file, pauses a running scan and says how many came back; Ctrl+Z closes the notice whose Undo it
+  ran and says when there is nothing to undo.
+
+### Pages
+
+- Dashboard: values show dashes before the first scan; the engine-missing bar shows; a folder dropped on the window
+  opens Add folder; each severity segment has a tooltip.
+- Issues: Select all and every action reach every selected problem; Fix… lists only fixes that suit every selection;
+  the row menu has Sort by; filters, chips and drop-downs agree; details open at once.
+- Library: folder cards open their own folder; the tree keeps its open folders; rows removed since the list was read
+  are not asked for again; a long path in the breadcrumb is shortened with '…'; the drop area shows focus, press and
+  a folder dragged over it; empty lists say why.
+- Settings: changes are saved without freezing the window; sections scroll; Send test uses the address just typed;
+  the ignored 'Keep originals after a repair in' setting is removed (originals stay in quarantine); a settings file
+  that cannot be opened is kept and the defaults are used.
+- Tools: Quarantine and Operations act on the rows you chose and say why buttons are disabled; Reset also removes
+  the scheduled tasks; database actions say Working….
+- Fixed: MediaVerifier closed without a word when its library could not be opened; a locked library or a full disk
+  no longer makes it move the library aside as damaged.
+- Fixed: the update download and the installer start froze the window.
 
 ## 0.1.0.14 - 2026-11-17
 
