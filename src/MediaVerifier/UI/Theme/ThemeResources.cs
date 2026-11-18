@@ -10,13 +10,8 @@ namespace MediaVerifier.UI.Theme;
 /// </summary>
 internal static class ThemeResources
 {
-    public static TypeRamp Fonts(int dpi) => TypeRamp.For(dpi);
-
+    /// <summary>The same brush as <see cref="GdiCache.Brush"/> (the dialog's scrim still asks here).</summary>
     public static SolidBrush Brush(Color color) => GdiCache.Brush(color);
-
-    public static Pen Pen(Color color, float width) => GdiCache.Pen(color, width);
-
-    public static Pen RoundPen(Color color, float width) => GdiCache.RoundPen(color, width);
 
     /// <summary>Disposes everything keyed by colour; called by <see cref="ThemeService.Set"/>.</summary>
     public static void Reset()

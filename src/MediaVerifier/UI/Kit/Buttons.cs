@@ -26,15 +26,19 @@ internal static class ButtonPainter
     private const int ChevronGap = 4;
 
     /// <summary>Logical width of a button: content plus 12 px each side, at least 64 with a label (32 without).</summary>
-    public static int MeasureWidth(string? text, IconName? icon, bool chevron, ButtonKind kind, int dpi)
+    public static int MeasureWidth(string? text, IconName? icon, bool chevron, ButtonKind kind, int dpi, bool busy = false)
     {
-        float content = ContentWidth(text, icon, chevron, kind, dpi) / (dpi / 96f);
+        float content = ContentWidth(text, icon, chevron, kind, dpi, busy) / (dpi / 96f);
         int width = (int)Math.Round(content + (2 * Padding), MidpointRounding.AwayFromZero);
         return Math.Max(string.IsNullOrEmpty(text) ? 32 : 64, width);
     }
 
-    /// <summary>Paints a whole button into <paramref name="bounds"/> (device pixels).</summary>
-    public static void Paint(Graphics g, Rectangle bounds, ButtonKind kind, VisualState state, string? text, IconName? icon, bool chevron, int dpi)
+    /// <summary>
+    /// Paints a whole button into <paramref name="bounds"/> (device pixels). A busy button (subplan 08, Busy) passes the
+    /// angle of its progress ring in <paramref name="busyAngle"/>: the ring takes the icon's place (or an icon's place
+    /// before the label); NaN means not busy.
+    /// </summary>
+    public static void Paint(Graphics g, Rectangle bounds, ButtonKind kind, VisualState state, string? text, IconName? icon, bool chevron, int dpi, float busyAngle = float.NaN)
     {
         ThemeTokens t = ThemeService.Tokens;
         (Color fill, Color border, Color content, bool outline) = Colors(kind, state, t);
@@ -43,10 +47,10 @@ internal static class ButtonPainter
 
         bool pressed = state.HasFlag(VisualState.Pressed) && !state.HasFlag(VisualState.Disabled);
         int shift = pressed ? Dpi.Scale(1, dpi) : 0;
-        float group = ContentWidth(text, icon, chevron, kind, dpi);
+        float group = ContentWidth(text, icon, chevron, kind, dpi, busy: !float.IsNaN(busyAngle));
         float x = bounds.X + ((bounds.Width - group) / 2f);
         int centreY = bounds.Y + (bounds.Height / 2) + shift;
-        DrawContent(g, x, centreY, text, icon, chevron, kind, content, dpi);
+        DrawContent(g, x, centreY, text, icon, chevron, kind, content, dpi, busyAngle);
 
         if (state.HasFlag(VisualState.Focused))
         {
@@ -126,18 +130,19 @@ internal static class ButtonPainter
         }
     }
 
-    /// <summary>Width of icon, gap, label, gap and chevron in device pixels.</summary>
-    public static float ContentWidth(string? text, IconName? icon, bool chevron, ButtonKind kind, int dpi)
+    /// <summary>Width of icon, gap, label, gap and chevron in device pixels (a busy button's ring counts as an icon).</summary>
+    public static float ContentWidth(string? text, IconName? icon, bool chevron, ButtonKind kind, int dpi, bool busy = false)
     {
         float width = 0;
-        if (icon is not null)
+        bool iconSlot = icon is not null || busy;
+        if (iconSlot)
         {
             width += Dpi.ScaleF(IconSize, dpi);
         }
 
         if (!string.IsNullOrEmpty(text))
         {
-            if (icon is not null)
+            if (iconSlot)
             {
                 width += Dpi.ScaleF(IconGap, dpi);
             }
@@ -156,13 +161,22 @@ internal static class ButtonPainter
     public static Font LabelFont(ButtonKind kind, int dpi) =>
         kind is ButtonKind.Primary or ButtonKind.Danger ? TypeRamp.For(dpi).BodyStrong : TypeRamp.For(dpi).Body;
 
-    /// <summary>Icon, label and chevron as one group starting at <paramref name="x"/>.</summary>
-    public static void DrawContent(Graphics g, float x, int centreY, string? text, IconName? icon, bool chevron, ButtonKind kind, Color color, int dpi)
+    /// <summary>Icon (or a busy button's progress ring), label and chevron as one group starting at <paramref name="x"/>.</summary>
+    public static void DrawContent(Graphics g, float x, int centreY, string? text, IconName? icon, bool chevron, ButtonKind kind, Color color, int dpi, float busyAngle = float.NaN)
     {
         float iconSize = Dpi.ScaleF(IconSize, dpi);
-        if (icon is IconName name)
+        bool busy = !float.IsNaN(busyAngle);
+        if (busy || icon is not null)
         {
-            IconRenderer.Draw(g, name, x, centreY - (iconSize / 2f), IconSize, dpi, color);
+            if (busy)
+            {
+                DataPaint.ProgressRing(g, new PointF(x + (iconSize / 2f), centreY), iconSize / 2f, busyAngle, dpi);
+            }
+            else
+            {
+                IconRenderer.Draw(g, icon!.Value, x, centreY - (iconSize / 2f), IconSize, dpi, color);
+            }
+
             x += iconSize;
             if (!string.IsNullOrEmpty(text))
             {
@@ -193,6 +207,10 @@ internal class KitButton : KitControl
     private IconName? _icon;
     private bool _chevron;
     private bool _compact;
+    private bool _iconOnly;
+    private bool _busy;
+    private long _busyStart;
+    private System.Windows.Forms.Timer? _busyTimer;
 
     public KitButton()
     {
@@ -243,25 +261,92 @@ internal class KitButton : KitControl
         }
     }
 
+    /// <summary>
+    /// Shows only the icon in a square button (the selection bar when its buttons do not fit); the label stays the
+    /// accessible name and the container shows it as the tooltip.
+    /// </summary>
+    public bool IconOnly
+    {
+        get => _iconOnly;
+        set
+        {
+            if (_iconOnly != value)
+            {
+                _iconOnly = value;
+                Relayout();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Busy (subplan 08, Interaction states): the button looks disabled and shows a progress ring in place of its icon
+    /// while the work it started runs; clicks and keys do nothing meanwhile. Set it back to false when the work ends.
+    /// </summary>
+    public bool Busy
+    {
+        get => _busy;
+        set
+        {
+            if (_busy == value)
+            {
+                return;
+            }
+
+            _busy = value;
+            _busyStart = Environment.TickCount64;
+            UpdateBusyTimer();
+            AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
+            Relayout();
+            if (_icon is null)
+            {
+                // The ring takes an icon's place before the label: the container makes room for it.
+                Parent?.PerformLayout();
+            }
+        }
+    }
+
     /// <summary>Fixed logical width instead of the content width (0 = content width).</summary>
     public int FixedWidth { get; set; }
 
     /// <summary>Logical width this button wants.</summary>
-    public int PreferredLogicalWidth => FixedWidth > 0 ? FixedWidth : ButtonPainter.MeasureWidth(Text, _icon, _chevron, _kind, DeviceDpi);
+    public int PreferredLogicalWidth => ShowsIconOnly ? LogicalHeight : LabelledLogicalWidth;
+
+    /// <summary>Logical width with the label shown (the selection bar measures it to decide whether labels fit).</summary>
+    public int LabelledLogicalWidth => FixedWidth > 0 ? FixedWidth : ButtonPainter.MeasureWidth(Text, _icon, _chevron, _kind, DeviceDpi, _busy);
 
     public int LogicalHeight => _compact ? ButtonPainter.CompactHeight : ButtonPainter.Height;
 
+    protected internal override Rectangle FocusRingBounds => ClientRectangle;
+
     protected override bool Interactive => true;
+
+    protected override bool ActsOnEnter => true;
+
+    protected override bool ActsOnSpace => true;
+
+    protected override AccessibleStates ExtraAccessibleStates => _busy ? AccessibleStates.Busy | AccessibleStates.Unavailable : AccessibleStates.None;
+
+    private bool ShowsIconOnly => _iconOnly && _icon is not null;
 
     public void PerformClick()
     {
-        if (Enabled && Visible)
+        if (Enabled && Visible && !_busy)
         {
             OnClick(EventArgs.Empty);
         }
     }
 
     public override Size GetPreferredSize(Size proposedSize) => new(S(PreferredLogicalWidth), S(LogicalHeight));
+
+    protected override void OnClick(EventArgs e)
+    {
+        if (!_busy)
+        {
+            base.OnClick(e);
+        }
+    }
+
+    protected override void OnKeyboardAction() => PerformClick();
 
     protected override void OnTextChanged(EventArgs e)
     {
@@ -275,9 +360,18 @@ internal class KitButton : KitControl
         Relayout();
     }
 
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        UpdateBusyTimer();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
-        ButtonPainter.Paint(e.Graphics, ClientRectangle, _kind, PaintState, Text, _icon, _chevron, DeviceDpi);
+        VisualState state = _busy ? VisualState.Disabled | (PaintState & VisualState.Focused) : PaintState;
+        float busyAngle = !_busy ? float.NaN
+            : SystemInformation.UIEffectsEnabled ? ((Environment.TickCount64 - _busyStart) % 1000 / 1000f * 360f) - 90f : -90f;
+        ButtonPainter.Paint(e.Graphics, ClientRectangle, _kind, state, ShowsIconOnly ? null : Text, _icon, _chevron && !ShowsIconOnly, DeviceDpi, busyAngle);
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
@@ -285,16 +379,15 @@ internal class KitButton : KitControl
         pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
     }
 
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
-
-    protected override void OnKeyDown(KeyEventArgs e)
+    protected override void Dispose(bool disposing)
     {
-        base.OnKeyDown(e);
-        if (e.KeyCode is Keys.Enter or Keys.Space)
+        if (disposing)
         {
-            e.Handled = true;
-            PerformClick();
+            _busyTimer?.Dispose();
+            _busyTimer = null;
         }
+
+        base.Dispose(disposing);
     }
 
     protected virtual void Relayout()
@@ -305,6 +398,22 @@ internal class KitButton : KitControl
         }
 
         Invalidate();
+    }
+
+    /// <summary>The ring turns once a second while the button is busy and shown (still when Windows' animations are off).</summary>
+    private void UpdateBusyTimer()
+    {
+        bool run = _busy && Visible && SystemInformation.UIEffectsEnabled;
+        if (run && _busyTimer is null)
+        {
+            _busyTimer = new System.Windows.Forms.Timer { Interval = 16 };
+            _busyTimer.Tick += (_, _) => Invalidate();
+        }
+
+        if (_busyTimer is not null)
+        {
+            _busyTimer.Enabled = run;
+        }
     }
 }
 
@@ -349,7 +458,13 @@ internal sealed class SplitButton : KitControl
 
     public int PreferredLogicalWidth => LabelPartWidth(DeviceDpi) + ChevronPart;
 
+    protected internal override Rectangle FocusRingBounds => ClientRectangle;
+
     protected override bool Interactive => true;
+
+    protected override bool ActsOnEnter => true;
+
+    protected override bool ActsOnSpace => true;
 
     public override Size GetPreferredSize(Size proposedSize) => new(S(PreferredLogicalWidth), S(ButtonPainter.Height));
 
@@ -388,7 +503,10 @@ internal sealed class SplitButton : KitControl
         VisualState state = PaintState;
         VisualState focus = state & VisualState.Focused;
         VisualState disabled = state & VisualState.Disabled;
-        VisualState left = disabled | focus | (_hoverPart == 0 ? VisualState.Hover : 0) | (_pressedPart == 0 ? VisualState.Pressed : 0);
+
+        // Space held on the focused button presses the main part (no mouse part is pressed then).
+        bool leftPressed = _pressedPart == 0 || (_pressedPart < 0 && IsPressed);
+        VisualState left = disabled | focus | (_hoverPart == 0 ? VisualState.Hover : 0) | (leftPressed ? VisualState.Pressed : 0);
         VisualState right = disabled | (_hoverPart == 1 ? VisualState.Hover : 0) | (_pressedPart == 1 ? VisualState.Pressed : 0);
         Draw(e.Graphics, ClientRectangle, left, right, Text, _icon, DeviceDpi);
     }
@@ -417,7 +535,10 @@ internal sealed class SplitButton : KitControl
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button == MouseButtons.Left && Enabled)
+
+        // The second press of a double-click presses nothing: a double-click starts one scan, not a scan and then a
+        // "Scan could not run" warning.
+        if (e.Button == MouseButtons.Left && e.Clicks == 1 && Enabled)
         {
             _pressedPart = PartAt(e.X);
             Invalidate();
@@ -452,25 +573,15 @@ internal sealed class SplitButton : KitControl
         }
     }
 
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space or (Keys.Alt | Keys.Down) || base.IsInputKey(keyData);
+    protected override bool IsInputKey(Keys keyData) => keyData == (Keys.Alt | Keys.Down) || base.IsInputKey(keyData);
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (!Enabled)
-        {
-            return;
-        }
-
-        if (e.KeyCode == Keys.Down && e.Alt)
+        if (Enabled && e.KeyCode == Keys.Down && e.Alt)
         {
             e.Handled = true;
             DropDownClick?.Invoke(this, EventArgs.Empty);
-        }
-        else if (e.KeyCode is Keys.Enter or Keys.Space)
-        {
-            e.Handled = true;
-            OnClick(EventArgs.Empty);
         }
     }
 
@@ -554,7 +665,13 @@ internal sealed class IconButton : KitControl
 
     public int LogicalSize => _compact ? 28 : 32;
 
+    protected internal override Rectangle FocusRingBounds => ClientRectangle;
+
     protected override bool Interactive => true;
+
+    protected override bool ActsOnEnter => true;
+
+    protected override bool ActsOnSpace => true;
 
     public override Size GetPreferredSize(Size proposedSize) => new(S(LogicalSize), S(LogicalSize));
 
@@ -599,18 +716,6 @@ internal sealed class IconButton : KitControl
     protected override void OnPaint(PaintEventArgs e) => Draw(e.Graphics, ClientRectangle, _icon, PaintState, _badge, DeviceDpi);
 
     protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
-
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        base.OnKeyDown(e);
-        if (Enabled && e.KeyCode is Keys.Enter or Keys.Space)
-        {
-            e.Handled = true;
-            OnClick(EventArgs.Empty);
-        }
-    }
 }
 
 /// <summary>
@@ -629,7 +734,16 @@ internal sealed class KitLink : KitControl
     /// <summary>Logical width of the text plus 2 px for the focus ring on each side.</summary>
     public int PreferredLogicalWidth => (int)Math.Ceiling(KitPaint.MeasureWidth(Text, Type.BodyStrong) * 96f / DeviceDpi) + 4;
 
+    /// <summary>The ring goes around the text: 22 px high, 2 px either side of it.</summary>
+    protected internal override Rectangle FocusRingBounds => new(0, (Height / 2) - S(11), KitPaint.MeasureWidth(Text, Type.BodyStrong) + S(4), S(22));
+
+    protected internal override float FocusRingRadius => SF(2);
+
     protected override bool Interactive => true;
+
+    protected override bool ActsOnEnter => true;
+
+    protected override bool ActsOnSpace => true;
 
     public override Size GetPreferredSize(Size proposedSize) => new(S(PreferredLogicalWidth), S(32));
 
@@ -653,24 +767,12 @@ internal sealed class KitLink : KitControl
         KitPaint.HorizontalLine(g, colour, x, x + width, centreY + SF(8.5f), SF(1));
         if (state.HasFlag(VisualState.Focused))
         {
-            KitPaint.DrawFocusRing(g, new Rectangle(0, centreY - S(11), width + S(4), S(22)), SF(2), DeviceDpi);
+            KitPaint.DrawFocusRing(g, FocusRingBounds, FocusRingRadius, DeviceDpi);
         }
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
     {
         pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-    }
-
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
-
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        base.OnKeyDown(e);
-        if (e.KeyCode is Keys.Enter or Keys.Space && Enabled)
-        {
-            e.Handled = true;
-            OnClick(EventArgs.Empty);
-        }
     }
 }

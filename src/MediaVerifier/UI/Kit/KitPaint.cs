@@ -95,6 +95,41 @@ internal static class KitPaint
         StrokeRoundedRect(g, outer, radius + gap + width, ThemeService.Tokens.Accent, width);
     }
 
+    /// <summary>
+    /// Paints the part of the keyboard focus ring that falls on <paramref name="host"/>, when the focused kit control is
+    /// inside it. A ring lies 1 px outside its control, where the control cannot paint; every kit control calls this
+    /// after painting itself, and other containers (dialogs, panels) call it at the end of their paint.
+    /// </summary>
+    public static void PaintFocusRings(Graphics g, Control host)
+    {
+        if (KitControl.FocusRingOwner is { } owner)
+        {
+            PaintFocusRing(g, host, owner);
+        }
+    }
+
+    /// <summary>Paints <paramref name="owner"/>'s focus ring on <paramref name="host"/> when the host contains it.</summary>
+    internal static void PaintFocusRing(Graphics g, Control host, KitControl owner)
+    {
+        if (!host.Contains(owner) || owner.FocusRingBounds.IsEmpty)
+        {
+            return;
+        }
+
+        Rectangle ring = owner.FocusRingBounds;
+        for (Control child = owner; child != host && child.Parent is Control parent; child = parent)
+        {
+            ring.Offset(child.Left, child.Top);
+        }
+
+        // A clip the host's own painting left behind (lists clip their rows) must not cut the ring. Only the containers of
+        // the focused control get here, so saving the state costs nothing elsewhere.
+        System.Drawing.Drawing2D.GraphicsState saved = g.Save();
+        g.ResetClip();
+        DrawFocusRing(g, ring, owner.FocusRingRadius, owner.DeviceDpi);
+        g.Restore(saved);
+    }
+
     public static void HorizontalLine(Graphics g, Color color, float x1, float x2, float y, float width = 1f) =>
         g.FillRectangle(GdiCache.Brush(color), x1, y, x2 - x1, width);
 

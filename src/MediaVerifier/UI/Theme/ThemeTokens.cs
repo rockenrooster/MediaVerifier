@@ -45,6 +45,12 @@ internal sealed class ThemeTokens
     public required TierColors Low { get; init; }
     public required TierColors Ok { get; init; }
 
+    /// <summary>
+    /// Text on a <see cref="Selected"/> fill (an on chip, the selected segment or option, the current list item): in a
+    /// contrast theme Selected is Highlight, so the text is HighlightText (subplan 08); otherwise <see cref="Text"/>.
+    /// </summary>
+    public Color TextOnSelected => IsHighContrast ? OnAccent : Text;
+
     /// <summary>Colours for a tier; <see cref="Severity.None"/> maps to OK.</summary>
     public TierColors ForSeverity(Severity severity) => severity switch
     {

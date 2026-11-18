@@ -235,213 +235,27 @@ internal static class DataPaint
         3 => Severity.Low,
         _ => Severity.None,
     };
-}
 
-/// <summary>A progress bar control (8 px, or 4 px in rows).</summary>
-internal sealed class KitProgressBar : KitControl
-{
-    private double _value;
-    private bool _indeterminate;
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
-    private long _start;
-
-    public KitProgressBar()
+    /// <summary>
+    /// The severity bar segment under <paramref name="x"/> (0 Critical .. 4 OK), or -1: each segment takes the 2 px gap
+    /// after it, so the pointer is never between two. <paramref name="segments"/> is what <see cref="SeverityBar"/> wrote.
+    /// </summary>
+    public static int SegmentAt(ReadOnlySpan<RectangleF> segments, float x, int dpi)
     {
-        TabStop = false;
-        AccessibleRole = AccessibleRole.ProgressBar;
-        _timer.Tick += (_, _) => Invalidate();
-    }
-
-    /// <summary>0..1.</summary>
-    public double Value
-    {
-        get => _value;
-        set
+        float gap = Dpi.ScaleF(2, dpi);
+        for (int i = 0; i < segments.Length; i++)
         {
-            _value = Math.Clamp(value, 0, 1);
-            AccessibleName = Math.Round(_value * 100).ToString(CultureInfo.CurrentCulture) + " %";
-            Invalidate();
-        }
-    }
-
-    /// <summary>Shows the travelling segment instead of a value (no animation when Windows' effects are off).</summary>
-    public bool Indeterminate
-    {
-        get => _indeterminate;
-        set
-        {
-            _indeterminate = value;
-            _start = Environment.TickCount64;
-            UpdateTimer();
-            Invalidate();
-        }
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        RectangleF bounds = new(0, (Height - Math.Min(Height, S(8))) / 2f, Width, Math.Min(Height, S(8)));
-        if (_indeterminate)
-        {
-            double phase = SystemInformation.UIEffectsEnabled ? (Environment.TickCount64 - _start) % 1500 / 1500.0 : 0.5;
-            DataPaint.IndeterminateBar(e.Graphics, bounds, phase);
-        }
-        else
-        {
-            DataPaint.ProgressBar(e.Graphics, bounds, _value);
-        }
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-
-    protected override void OnVisibleChanged(EventArgs e)
-    {
-        base.OnVisibleChanged(e);
-        UpdateTimer();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _timer.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
-
-    private void UpdateTimer() => _timer.Enabled = _indeterminate && Visible && SystemInformation.UIEffectsEnabled;
-}
-
-/// <summary>A progress ring (radius 8, or 10 beside a Subtitle) rotating clockwise once per second while visible.</summary>
-internal sealed class ProgressRing : KitControl
-{
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
-    private readonly long _start = Environment.TickCount64;
-    private int _logicalRadius = 8;
-
-    public ProgressRing()
-    {
-        TabStop = false;
-        AccessibleRole = AccessibleRole.Animation;
-        _timer.Tick += (_, _) => Invalidate();
-    }
-
-    public int LogicalRadius
-    {
-        get => _logicalRadius;
-        set
-        {
-            _logicalRadius = value;
-            Invalidate();
-        }
-    }
-
-    /// <summary>Colour override (the Busy state of filled buttons draws the ring in their On… colour).</summary>
-    public Color? Color { get; set; }
-
-    public override Size GetPreferredSize(Size proposedSize) => new(S(2 * _logicalRadius), S(2 * _logicalRadius));
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        float angle = SystemInformation.UIEffectsEnabled ? (Environment.TickCount64 - _start) % 1000 / 1000f * 360f : 0;
-        DataPaint.ProgressRing(e.Graphics, new PointF(Width / 2f, Height / 2f), SF(_logicalRadius), angle - 90, DeviceDpi, Color);
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-
-    protected override void OnVisibleChanged(EventArgs e)
-    {
-        base.OnVisibleChanged(e);
-        _timer.Enabled = Visible && SystemInformation.UIEffectsEnabled;
-    }
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        _timer.Enabled = Visible && SystemInformation.UIEffectsEnabled;
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _timer.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
-}
-
-/// <summary>The severity bar: clickable segments with tooltips "<tier>: <count>" (subplan 08).</summary>
-internal sealed class SeverityBar : KitControl
-{
-    private readonly long[] _counts = new long[5];
-    private readonly RectangleF[] _segments = new RectangleF[5];
-    private int _hover = -1;
-
-    public SeverityBar()
-    {
-        TabStop = false;
-        AccessibleRole = AccessibleRole.Chart;
-    }
-
-    /// <summary>Raised when a tier segment is clicked; the value is the tier.</summary>
-    public event EventHandler<Severity>? SegmentClicked;
-
-    public void SetCounts(long critical, long high, long medium, long low, long ok)
-    {
-        _counts[0] = critical;
-        _counts[1] = high;
-        _counts[2] = medium;
-        _counts[3] = low;
-        _counts[4] = ok;
-        AccessibleName = string.Join(", ", Enumerable.Range(0, 5).Where(i => _counts[i] > 0).Select(i => $"{BadgePainter.TierWord(DataPaint.TierSeverity(i))}: {_counts[i].ToString("N0", CultureInfo.CurrentCulture)}"));
-        Invalidate();
-    }
-
-    /// <summary>The tier under a point, or null.</summary>
-    public Severity? TierAt(Point point)
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            RectangleF segment = _segments[i];
-            if (!segment.IsEmpty && point.X >= segment.Left && point.X < segment.Right + SF(2) && point.Y >= 0 && point.Y < Height)
+            RectangleF segment = segments[i];
+            if (!segment.IsEmpty && x >= segment.Left && x < segment.Right + gap)
             {
-                return DataPaint.TierSeverity(i);
+                return i;
             }
         }
 
-        return null;
+        return -1;
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        float height = SF(8);
-        DataPaint.SeverityBar(e.Graphics, new RectangleF(0, (Height - height) / 2f, Width, height), _counts, _segments, DeviceDpi);
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        Severity? tier = TierAt(e.Location);
-        int index = tier is Severity s ? Array.IndexOf([Severity.Critical, Severity.High, Severity.Medium, Severity.Low, Severity.None], s) : -1;
-        if (index != _hover)
-        {
-            _hover = index;
-            Cursor = index >= 0 ? Cursors.Hand : Cursors.Default;
-            KitToolTip.Hide();
-            KitToolTip.Set(this, index >= 0 ? $"{BadgePainter.TierWord(DataPaint.TierSeverity(index))}: {_counts[index].ToString("N0", CultureInfo.CurrentCulture)}" : string.Empty);
-        }
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (e.Button == MouseButtons.Left && TierAt(e.Location) is Severity tier)
-        {
-            SegmentClicked?.Invoke(this, tier);
-        }
-    }
+    /// <summary>A segment's tooltip, "<tier>: <count>" (subplan 08, Severity bar).</summary>
+    public static string SegmentToolTip(int index, long count) =>
+        BadgePainter.TierWord(TierSeverity(index)) + ": " + count.ToString("N0", CultureInfo.CurrentCulture);
 }

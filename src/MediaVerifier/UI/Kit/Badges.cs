@@ -77,13 +77,14 @@ internal static class BadgePainter
 
 /// <summary>
 /// A filter chip (subplan 08): 28 px, radius 14, optional severity shape or icon, label, optional count.
-/// Toggles <see cref="On"/> when clicked or with Space.
+/// Toggles <see cref="On"/> when clicked or with Space (on release); a quick second click toggles again.
 /// </summary>
 internal sealed class Chip : KitControl
 {
     public const int LogicalHeight = 28;
     private bool _on;
     private int? _count;
+    private string? _countText;
     private Severity? _severity;
     private IconName? _icon;
 
@@ -91,6 +92,7 @@ internal sealed class Chip : KitControl
     {
         TabStop = true;
         AccessibleRole = AccessibleRole.CheckButton;
+        SetStyle(ControlStyles.StandardDoubleClick, false);
     }
 
     /// <summary>Raised after <see cref="On"/> changes from a click or key.</summary>
@@ -114,8 +116,12 @@ internal sealed class Chip : KitControl
         get => _count;
         set
         {
-            _count = value;
-            Invalidate();
+            if (_count != value)
+            {
+                _count = value;
+                _countText = FormatCount(value);
+                Invalidate();
+            }
         }
     }
 
@@ -139,13 +145,25 @@ internal sealed class Chip : KitControl
         }
     }
 
-    public int PreferredLogicalWidth => MeasureWidth(Text, _severity, _icon, _count, _on, DeviceDpi);
+    public int PreferredLogicalWidth => MeasureChip(Text, _severity, _icon, _countText, _on, DeviceDpi);
 
     protected override bool Interactive => true;
 
+    protected override bool ActsOnSpace => true;
+
+    protected internal override Rectangle FocusRingBounds => ClientRectangle;
+
+    protected internal override float FocusRingRadius => Height / 2f;
+
     protected override AccessibleStates ExtraAccessibleStates => _on ? AccessibleStates.Checked : AccessibleStates.None;
 
-    public static int MeasureWidth(string text, Severity? severity, IconName? icon, int? count, bool on, int dpi)
+    public static int MeasureWidth(string text, Severity? severity, IconName? icon, int? count, bool on, int dpi) =>
+        MeasureChip(text, severity, icon, FormatCount(count), on, dpi);
+
+    public static void Draw(Graphics g, Rectangle bounds, string text, Severity? severity, IconName? icon, int? count, bool on, VisualState state, int dpi) =>
+        PaintChip(g, bounds, text, severity, icon, FormatCount(count), on, state, dpi);
+
+    private static int MeasureChip(string text, Severity? severity, IconName? icon, string? countText, bool on, int dpi)
     {
         TypeRamp type = TypeRamp.For(dpi);
         float scale = dpi / 96f;
@@ -160,55 +178,59 @@ internal sealed class Chip : KitControl
         }
 
         width += KitPaint.MeasureWidth(text, on ? type.BodyStrong : type.Body) / scale;
-        if (count is int n)
+        if (countText is not null)
         {
-            width += 6 + (KitPaint.MeasureWidth(n.ToString("N0", CultureInfo.CurrentCulture), type.Body) / scale);
+            width += 6 + (KitPaint.MeasureWidth(countText, type.Body) / scale);
         }
 
         return (int)Math.Round(width, MidpointRounding.AwayFromZero);
     }
 
-    public static void Draw(Graphics g, Rectangle bounds, string text, Severity? severity, IconName? icon, int? count, bool on, VisualState state, int dpi)
+    /// <summary>
+    /// Paints a chip. Pressed: Pressed fill, Accent border, content 1 px lower (subplan 08, neutral controls). In a
+    /// contrast theme the content of an on chip is HighlightText on its Highlight fill.
+    /// </summary>
+    private static void PaintChip(Graphics g, Rectangle bounds, string text, Severity? severity, IconName? icon, string? countText, bool on, VisualState state, int dpi)
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(dpi);
         float radius = bounds.Height / 2f;
-        bool hover = state.HasFlag(VisualState.Hover);
-        Color fill = on ? t.Selected : hover ? t.Hover : t.Surface;
-        Color border = on ? t.Accent : hover ? t.StrokeStrong : t.Stroke;
-        if (state.HasFlag(VisualState.Disabled))
-        {
-            fill = t.Bg;
-            border = t.Stroke;
-        }
-
+        bool disabled = state.HasFlag(VisualState.Disabled);
+        bool hover = state.HasFlag(VisualState.Hover) && !disabled;
+        bool pressed = state.HasFlag(VisualState.Pressed) && !disabled;
+        Color fill = disabled ? t.Bg : pressed ? t.Pressed : on ? t.Selected : hover ? t.Hover : t.Surface;
+        Color border = disabled ? t.Stroke : pressed || on ? t.Accent : hover ? t.StrokeStrong : t.Stroke;
+        bool contrastHover = t.IsHighContrast && hover;
         KitPaint.FillRoundedRect(g, bounds, radius, fill);
-        KitPaint.StrokeRoundedRect(g, bounds, radius, t.IsHighContrast && hover ? t.Accent : border, Dpi.ScaleF(t.IsHighContrast && hover ? 2 : 1, dpi));
-        int centreY = bounds.Y + (bounds.Height / 2);
+        KitPaint.StrokeRoundedRect(g, bounds, radius, contrastHover ? t.Accent : border, Dpi.ScaleF(contrastHover ? 2 : 1, dpi));
+
+        // Text on the Selected fill: HighlightText in a contrast theme, where Selected is Highlight.
+        bool onSelected = on && !pressed && !disabled;
+        bool contrastOn = onSelected && t.IsHighContrast;
+        int centreY = bounds.Y + (bounds.Height / 2) + (pressed ? Dpi.Scale(1, dpi) : 0);
         float x = bounds.X + Dpi.ScaleF(12, dpi);
         if (severity is Severity tier)
         {
             float size = Dpi.ScaleF(14, dpi);
-            IconRenderer.DrawSeverity(g, tier, x, centreY - (size / 2f), 14, dpi, t.ForSeverity(tier).Text, fill);
+            IconRenderer.DrawSeverity(g, tier, x, centreY - (size / 2f), 14, dpi, contrastOn ? t.OnAccent : t.ForSeverity(tier).Text, fill);
             x += size + Dpi.ScaleF(6, dpi);
         }
         else if (icon is IconName name)
         {
             float size = Dpi.ScaleF(16, dpi);
-            IconRenderer.Draw(g, name, x - Dpi.ScaleF(1, dpi), centreY - (size / 2f), 16, dpi, state.HasFlag(VisualState.Disabled) ? t.TextDisabled : t.Text2);
+            IconRenderer.Draw(g, name, x - Dpi.ScaleF(1, dpi), centreY - (size / 2f), 16, dpi, disabled ? t.TextDisabled : contrastOn ? t.OnAccent : t.Text2);
             x += size + Dpi.ScaleF(5, dpi);
         }
 
         Font font = on ? type.BodyStrong : type.Body;
-        Color color = state.HasFlag(VisualState.Disabled) ? t.TextDisabled : t.Text;
+        Color color = disabled ? t.TextDisabled : onSelected ? t.TextOnSelected : t.Text;
         int labelWidth = KitPaint.MeasureWidth(text, font);
         KitPaint.DrawText(g, text, font, color, (int)Math.Round(x), centreY, labelWidth + 2);
         x += labelWidth;
-        if (count is int n)
+        if (countText is not null)
         {
             x += Dpi.ScaleF(6, dpi);
-            string digits = n.ToString("N0", CultureInfo.CurrentCulture);
-            KitPaint.DrawText(g, digits, type.Body, state.HasFlag(VisualState.Disabled) ? t.TextDisabled : t.Text3, (int)Math.Round(x), centreY, KitPaint.MeasureWidth(digits, type.Body) + 2);
+            KitPaint.DrawText(g, countText, type.Body, disabled ? t.TextDisabled : contrastOn ? t.OnAccent : t.Text3, (int)Math.Round(x), centreY, KitPaint.MeasureWidth(countText, type.Body) + 2);
         }
 
         if (state.HasFlag(VisualState.Focused))
@@ -220,7 +242,7 @@ internal sealed class Chip : KitControl
     public override Size GetPreferredSize(Size proposedSize) => new(S(PreferredLogicalWidth), S(LogicalHeight));
 
     protected override void OnPaint(PaintEventArgs e) =>
-        Draw(e.Graphics, ClientRectangle, Text, _severity, _icon, _count, _on, PaintState, DeviceDpi);
+        PaintChip(e.Graphics, ClientRectangle, Text, _severity, _icon, _countText, _on, PaintState, DeviceDpi);
 
     protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
 
@@ -230,17 +252,9 @@ internal sealed class Chip : KitControl
         Toggle();
     }
 
-    protected override bool IsInputKey(Keys keyData) => keyData == Keys.Space || base.IsInputKey(keyData);
+    protected override void OnKeyboardAction() => Toggle();
 
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        base.OnKeyDown(e);
-        if (Enabled && e.KeyCode == Keys.Space)
-        {
-            e.Handled = true;
-            Toggle();
-        }
-    }
+    private static string? FormatCount(int? count) => count?.ToString("N0", CultureInfo.CurrentCulture);
 
     private void Toggle()
     {
