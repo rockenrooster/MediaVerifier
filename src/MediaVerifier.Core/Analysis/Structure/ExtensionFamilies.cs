@@ -13,47 +13,6 @@ public static class ExtensionFamilies
 {
     private static readonly FrozenDictionary<string, ExtensionInfo> Extensions = BuildExtensions();
 
-    private enum Family
-    {
-        Jpeg,
-        Png,
-        Gif,
-        Bmp,
-        Tiff,
-        WebP,
-        Heif,
-        Avif,
-        Cr3,
-        JpegXl,
-        Jpeg2000,
-        IsoBmff,
-        Matroska,
-        Avi,
-        Asf,
-        Flv,
-        MpegPs,
-        MpegTs,
-        Ogg,
-        Mp3,
-        Flac,
-        Wav,
-        Aiff,
-        Ape,
-        WavPack,
-        Tta,
-        Musepack,
-        Dsf,
-        Dsdiff,
-        Ac3,
-        Dts,
-        Amr,
-        Caf,
-        Au,
-
-        /// <summary>Formats without a signature here (raw AAC, MXF, RealMedia): only FFmpeg can recognise them.</summary>
-        NoSignature,
-    }
-
     /// <summary>
     /// The verdict for one file. Call it after probing: <paramref name="probeOpened"/> false is read as
     /// "FFmpeg cannot open it", so an unknown signature without a probe is <see cref="ExtensionVerdict.Unrecognized"/>.
@@ -85,7 +44,7 @@ public static class ExtensionFamilies
             return ExtensionVerdict.MismatchMedium;
         }
 
-        if (Contains(info.Family, sniffed, normalisedBrand))
+        if (Contains(info, sniffed, normalisedBrand))
         {
             return ExtensionVerdict.Match;
         }
@@ -200,44 +159,10 @@ public static class ExtensionFamilies
         return probeOpened && probeKind != MediaKind.Unknown ? probeKind.ToMask() : fromSignature;
     }
 
-    private static bool Contains(Family family, ContainerFormat format, string? brand) => family switch
-    {
-        Family.Jpeg => format == ContainerFormat.Jpeg,
-        Family.Png => format == ContainerFormat.Png,
-        Family.Gif => format == ContainerFormat.Gif,
-        Family.Bmp => format == ContainerFormat.Bmp,
-        Family.Tiff => format == ContainerFormat.Tiff,
-        Family.WebP => format == ContainerFormat.WebP,
-        Family.Heif => format == ContainerFormat.IsoBmff && (FormatKinds.IsHeifBrand(brand) || FormatKinds.IsGenericHeifBrand(brand)),
-        Family.Avif => format == ContainerFormat.IsoBmff && (FormatKinds.IsAvifBrand(brand) || FormatKinds.IsGenericHeifBrand(brand)),
-        Family.Cr3 => format == ContainerFormat.IsoBmff && brand == "crx",
-        Family.JpegXl => format == ContainerFormat.JpegXl,
-        Family.Jpeg2000 => format == ContainerFormat.Jpeg2000,
-        Family.IsoBmff => format == ContainerFormat.IsoBmff,
-        Family.Matroska => format == ContainerFormat.Matroska,
-        Family.Avi => format == ContainerFormat.Avi,
-        Family.Asf => format == ContainerFormat.Asf,
-        Family.Flv => format == ContainerFormat.Flv,
-        Family.MpegPs => format == ContainerFormat.MpegPs,
-        Family.MpegTs => format == ContainerFormat.MpegTs,
-        Family.Ogg => format == ContainerFormat.Ogg,
-        Family.Mp3 => format == ContainerFormat.Mp3,
-        Family.Flac => format == ContainerFormat.Flac,
-        Family.Wav => format is ContainerFormat.Wav or ContainerFormat.Rf64,
-        Family.Aiff => format == ContainerFormat.Aiff,
-        Family.Ape => format == ContainerFormat.Ape,
-        Family.WavPack => format == ContainerFormat.WavPack,
-        Family.Tta => format == ContainerFormat.Tta,
-        Family.Musepack => format == ContainerFormat.Musepack,
-        Family.Dsf => format == ContainerFormat.Dsf,
-        Family.Dsdiff => format == ContainerFormat.Dsdiff,
-        Family.Ac3 => format == ContainerFormat.Ac3,
-        Family.Dts => format == ContainerFormat.Dts,
-        Family.Amr => format == ContainerFormat.Amr,
-        Family.Caf => format == ContainerFormat.Caf,
-        Family.Au => format == ContainerFormat.Au,
-        _ => false,
-    };
+    /// <summary>True when the sniffed format is the extension's own (WAV names RF64 too) with a brand it allows.</summary>
+    private static bool Contains(ExtensionInfo info, ContainerFormat format, string? brand) =>
+        (format == info.Format || (info.Format == ContainerFormat.Wav && format == ContainerFormat.Rf64))
+        && (info.Brand is null || info.Brand(brand));
 
     private static string Normalise(string extension) => extension.Trim().TrimStart('.').ToLowerInvariant();
 
@@ -247,61 +172,66 @@ public static class ExtensionFamilies
         const MediaKindMask Audio = MediaKindMask.Audio;
         const MediaKindMask AudioVideo = MediaKindMask.Video | MediaKindMask.Audio;
         Dictionary<string, ExtensionInfo> map = new(StringComparer.Ordinal);
-        void Add(Family family, MediaKindMask kinds, params string[] names)
+        void Add(ContainerFormat format, MediaKindMask kinds, params string[] names)
         {
             foreach (string name in names)
             {
-                map[name] = new ExtensionInfo(family, kinds);
+                map[name] = new ExtensionInfo(format, kinds);
             }
         }
 
-        // Photos (subplan 05, Media classification). TIFF-based RAW shares the TIFF family.
-        Add(Family.Jpeg, Photo, "jpg", "jpeg", "jpe", "jfif");
-        Add(Family.Png, Photo, "png", "apng");
-        Add(Family.Gif, Photo, "gif");
-        Add(Family.Bmp, Photo, "bmp", "dib");
-        Add(Family.Tiff, Photo, "tif", "tiff", "dng", "cr2", "nef", "arw", "orf", "rw2", "raf", "pef", "srw");
-        Add(Family.WebP, Photo, "webp");
-        Add(Family.Heif, Photo, "heic", "heif");
-        Add(Family.Avif, Photo, "avif");
-        Add(Family.Cr3, Photo, "cr3");
-        Add(Family.JpegXl, Photo, "jxl");
-        Add(Family.Jpeg2000, Photo, "jp2", "j2k", "j2c", "jpf", "jpx");
+        // Photos (subplan 05, Media classification). TIFF-based RAW is TIFF; HEIF, AVIF and Canon RAW are ISO-BMFF
+        // told apart by brand.
+        Add(ContainerFormat.Jpeg, Photo, "jpg", "jpeg", "jpe", "jfif");
+        Add(ContainerFormat.Png, Photo, "png", "apng");
+        Add(ContainerFormat.Gif, Photo, "gif");
+        Add(ContainerFormat.Bmp, Photo, "bmp", "dib");
+        Add(ContainerFormat.Tiff, Photo, "tif", "tiff", "dng", "cr2", "nef", "arw", "orf", "rw2", "raf", "pef", "srw");
+        Add(ContainerFormat.WebP, Photo, "webp");
+        ExtensionInfo heif = new(ContainerFormat.IsoBmff, Photo, b => FormatKinds.IsHeifBrand(b) || FormatKinds.IsGenericHeifBrand(b));
+        map["heic"] = heif;
+        map["heif"] = heif;
+        map["avif"] = new(ContainerFormat.IsoBmff, Photo, b => FormatKinds.IsAvifBrand(b) || FormatKinds.IsGenericHeifBrand(b));
+        map["cr3"] = new(ContainerFormat.IsoBmff, Photo, b => b == "crx");
+        Add(ContainerFormat.JpegXl, Photo, "jxl");
+        Add(ContainerFormat.Jpeg2000, Photo, "jp2", "j2k", "j2c", "jpf", "jpx");
 
-        // Video containers hold video, or audio alone ("audio-only MP4 named .mp4 is fine").
-        Add(Family.IsoBmff, AudioVideo, "mp4", "m4v", "mov", "qt", "3gp", "3g2", "f4v");
-        Add(Family.Matroska, AudioVideo, "mkv", "mk3d", "webm");
-        Add(Family.Avi, AudioVideo, "avi", "divx");
-        Add(Family.Asf, AudioVideo, "wmv", "asf");
-        Add(Family.Flv, AudioVideo, "flv");
-        Add(Family.MpegPs, AudioVideo, "mpg", "mpeg", "mpe", "m2v", "vob");
-        Add(Family.MpegTs, AudioVideo, "ts", "m2ts", "mts", "m2t");
-        Add(Family.Ogg, AudioVideo, "ogv", "ogg");
-        Add(Family.NoSignature, AudioVideo, "mxf", "rm", "rmvb");
+        // Video containers hold video, or audio alone ("audio-only MP4 named .mp4 is fine"). Unknown: formats
+        // without a signature here (MXF, RealMedia, raw AAC), which only FFmpeg can recognise.
+        Add(ContainerFormat.IsoBmff, AudioVideo, "mp4", "m4v", "mov", "qt", "3gp", "3g2", "f4v");
+        Add(ContainerFormat.Matroska, AudioVideo, "mkv", "mk3d", "webm");
+        Add(ContainerFormat.Avi, AudioVideo, "avi", "divx");
+        Add(ContainerFormat.Asf, AudioVideo, "wmv", "asf");
+        Add(ContainerFormat.Flv, AudioVideo, "flv");
+        Add(ContainerFormat.MpegPs, AudioVideo, "mpg", "mpeg", "mpe", "m2v", "vob");
+        Add(ContainerFormat.MpegTs, AudioVideo, "ts", "m2ts", "mts", "m2t");
+        Add(ContainerFormat.Ogg, AudioVideo, "ogv", "ogg");
+        Add(ContainerFormat.Unknown, AudioVideo, "mxf", "rm", "rmvb");
 
         // Audio.
-        Add(Family.Mp3, Audio, "mp3", "mp2", "mpa", "mp1");
-        Add(Family.Flac, Audio, "flac");
-        Add(Family.Wav, Audio, "wav", "wave", "bwf", "rf64");
-        Add(Family.IsoBmff, Audio, "m4a", "m4b", "m4p", "m4r");
-        Add(Family.Ogg, Audio, "oga", "opus", "spx");
-        Add(Family.Asf, Audio, "wma");
-        Add(Family.Matroska, Audio, "mka");
-        Add(Family.Aiff, Audio, "aiff", "aif", "aifc");
-        Add(Family.Ape, Audio, "ape");
-        Add(Family.WavPack, Audio, "wv");
-        Add(Family.Tta, Audio, "tta");
-        Add(Family.Musepack, Audio, "mpc", "mp+", "mpp");
-        Add(Family.Dsf, Audio, "dsf");
-        Add(Family.Dsdiff, Audio, "dff");
-        Add(Family.Ac3, Audio, "ac3", "eac3", "ec3");
-        Add(Family.Dts, Audio, "dts");
-        Add(Family.Amr, Audio, "amr");
-        Add(Family.Caf, Audio, "caf");
-        Add(Family.Au, Audio, "au", "snd");
-        Add(Family.NoSignature, Audio, "aac");
+        Add(ContainerFormat.Mp3, Audio, "mp3", "mp2", "mpa", "mp1");
+        Add(ContainerFormat.Flac, Audio, "flac");
+        Add(ContainerFormat.Wav, Audio, "wav", "wave", "bwf", "rf64");
+        Add(ContainerFormat.IsoBmff, Audio, "m4a", "m4b", "m4p", "m4r");
+        Add(ContainerFormat.Ogg, Audio, "oga", "opus", "spx");
+        Add(ContainerFormat.Asf, Audio, "wma");
+        Add(ContainerFormat.Matroska, Audio, "mka");
+        Add(ContainerFormat.Aiff, Audio, "aiff", "aif", "aifc");
+        Add(ContainerFormat.Ape, Audio, "ape");
+        Add(ContainerFormat.WavPack, Audio, "wv");
+        Add(ContainerFormat.Tta, Audio, "tta");
+        Add(ContainerFormat.Musepack, Audio, "mpc", "mp+", "mpp");
+        Add(ContainerFormat.Dsf, Audio, "dsf");
+        Add(ContainerFormat.Dsdiff, Audio, "dff");
+        Add(ContainerFormat.Ac3, Audio, "ac3", "eac3", "ec3");
+        Add(ContainerFormat.Dts, Audio, "dts");
+        Add(ContainerFormat.Amr, Audio, "amr");
+        Add(ContainerFormat.Caf, Audio, "caf");
+        Add(ContainerFormat.Au, Audio, "au", "snd");
+        Add(ContainerFormat.Unknown, Audio, "aac");
         return map.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    private readonly record struct ExtensionInfo(Family Family, MediaKindMask Kinds);
+    /// <summary>An extension's container (Unknown: none with a signature), the kinds it may hold, and the brands it allows.</summary>
+    private readonly record struct ExtensionInfo(ContainerFormat Format, MediaKindMask Kinds, Func<string?, bool>? Brand = null);
 }
