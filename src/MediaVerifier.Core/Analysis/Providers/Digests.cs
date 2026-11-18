@@ -147,10 +147,21 @@ public static class ErrorSpots
 public sealed class SpotList
 {
     private readonly List<double> _spots = [];
+    private readonly Lock _gate = new();
     private double _last;
+    private int _count;
 
     /// <summary>Spots so far, including those past the first <see cref="ErrorSpots.Max"/>.</summary>
-    public int Count { get; private set; }
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _count;
+            }
+        }
+    }
 
     public void Add(double seconds)
     {
@@ -160,20 +171,29 @@ public sealed class SpotList
         }
 
         double spot = Math.Round(Math.Max(0, seconds), 1);
-        if (Count > 0 && spot - _last < 2)
+        lock (_gate)
         {
-            return;
-        }
+            if (_count > 0 && spot - _last < 2)
+            {
+                return;
+            }
 
-        Count++;
-        _last = spot;
-        if (_spots.Count < ErrorSpots.Max)
-        {
-            _spots.Add(spot);
+            _count++;
+            _last = spot;
+            if (_spots.Count < ErrorSpots.Max)
+            {
+                _spots.Add(spot);
+            }
         }
     }
 
-    public double[] ToArray() => [.. _spots];
+    public double[] ToArray()
+    {
+        lock (_gate)
+        {
+            return [.. _spots];
+        }
+    }
 }
 
 /// <summary>
