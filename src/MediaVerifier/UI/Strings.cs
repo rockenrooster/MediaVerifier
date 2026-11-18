@@ -420,6 +420,7 @@ internal static class Strings
         public const string Reaching = "Trying to reach this folder…";
         public const string ErrorWatched = "This folder is already being watched";
         public const string ErrorInside = "This folder is inside {0}, which is already being watched";
+        public const string ErrorContains = "This folder contains {0}, which is already being watched";
         public const string AddedToast = "{0} added";
         public const string WaitingToast = "{0} files are waiting to be scanned";
         public const string ScanNow = "Scan now";

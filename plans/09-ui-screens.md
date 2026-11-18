@@ -199,15 +199,15 @@ from `y0 + 48`, 160 px high, 12 px apart.
 
 | Field | Control | Text and rules |
 |-------|---------|----------------|
-| `Folder` | Path box with `Browse…` | Must exist. Errors shown under the field in `CritText`: `This folder does not exist`, `This folder is already being watched`, `This folder is inside {name}, which is already being watched` |
+| `Folder` | Path box with `Browse…` | Must exist (Edit: a folder whose path is left unchanged may be disconnected; it is not checked). Errors shown under the field in `CritText`: `This folder does not exist`, `This folder is already being watched`, `This folder is inside {name}, which is already being watched`, `This folder contains {name}, which is already being watched`. A drive's root is stored with its separator (`E:\`) |
 | `Name` | Text box | Defaults to the folder's own name |
 | `Use as` | Option rows | `Library` — `Scan everything here and report problems`; `Backup` — `Only record fingerprints, so damaged files can be restored from here` |
 | `Contains` | Check boxes | `Photos`, `Videos`, `Music`; at least one |
 | `Skip` | Text box | Helper `Folder or file patterns, separated by semicolons` |
-| Count | Low info bar | While counting: `Counting files…`; then `{n} media files found · {size}`; none: `No media files found here` (Medium) |
+| Count | Low info bar | While counting: `Counting files…`; then `{n} media files found · {size}`; none: `No media files found here` (Medium). Counts the kinds ticked under `Contains` and leaves out the `Skip` patterns; counted again when either changes |
 | Buttons | | `Add folder` or `Save` (primary), `Cancel` |
 
-After adding a Library folder, a toast offers the scan: `{name} added` / `{n} files are waiting to be scanned` / button `Scan now`.
+After adding a Library folder, a toast offers the scan: `{name} added` / `{n} files are waiting to be scanned` / button `Scan now`. When `Add folder` was pressed before the count finished, the toast has no second line.
 
 **Browse.** Breadcrumb from `x0 + 180`; state chips right-aligned: `All {n}`, `OK {n}`,
 `Problems {n}` (exclusive). Tree card 280 px wide from `y0 + 48`; table card to its right, 12 px gap.
