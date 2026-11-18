@@ -1501,10 +1501,15 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
-        await Services.Database.Findings.SetStatusAsync(ids, FindingStatus.Ignored).ConfigureAwait(true);
+        // Only findings that were open change; the toast counts them and its Undo reopens only them (a resolved one
+        // in the selection must not come back as open).
+        IReadOnlyList<long> changed = await Services.Database.Findings.SetStatusAsync(ids, FindingStatus.Ignored).ConfigureAwait(true);
         _list.ClearSelection();
         ReloadAll();
-        DrawerActions.ShowIgnored(Services, ids, ReloadAll);
+        if (changed.Count > 0)
+        {
+            DrawerActions.ShowIgnored(Services, changed, ReloadAll);
+        }
     }
 
     /// <summary>

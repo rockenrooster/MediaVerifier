@@ -231,7 +231,9 @@ internal sealed class UiServices : IDisposable
         // The media engine's hashes (27 MB) are checked while the database opens, instead of after it on the UI
         // thread before the window can show.
         Task<BundleCheck> bundle = Task.Run(() => CheckBundle(location, state.Log));
-        Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+        // A scheduled scan running in the background owns its Running row: the window must not mark it Interrupted.
+        bool backgroundRun = engineMutexName is null && PlanHost.BackgroundRunActive();
+        Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath), markInterrupted: !backgroundRun);
         Task<RuleSettings> rules = Task.Run(() => LoadRules(database, state.Log));
         FfRunner runner = new(location);
         UiServices services = null!;

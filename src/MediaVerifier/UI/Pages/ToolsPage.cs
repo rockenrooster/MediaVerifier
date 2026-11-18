@@ -835,8 +835,19 @@ internal sealed class ToolsPage : PageBase
                     });
                     AddAction(Strings.Tools.ResetEllipsis, Strings.Tools.ResetText, ButtonKind.Danger, Strings.Tools.Reset, ConfirmReset, async () =>
                     {
-                        await _page.Services.Database.Maintenance.ResetAsync().ConfigureAwait(true);
-                        return null;
+                        Database database = _page.Services.Database;
+                        await database.Maintenance.ResetAsync().ConfigureAwait(true);
+                        try
+                        {
+                            // The schedules are gone: so are their Windows tasks, or they would keep starting scans.
+                            await Task.Run(() => PlanHost.ReconcileAsync(database)).ConfigureAwait(true);
+                        }
+                        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or IOException)
+                        {
+                            _page.State.Log.Warning("The scheduled tasks could not be removed after the reset", ex);
+                        }
+
+                        return new ToastContent(Severity.None, Strings.Tools.ResetDone, string.Empty);
                     });
                 }
             }

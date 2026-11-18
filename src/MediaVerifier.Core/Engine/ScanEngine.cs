@@ -801,7 +801,7 @@ public sealed class ScanEngine : IDisposable
                     bool returned = row.State == FileState.Missing;
                     if (returned)
                     {
-                        await PostAsync(c => FileEventStore.Add(c, id, RunId, FileEventKind.Returned), ChangeFlags.Events, token).ConfigureAwait(false);
+                        await PostAsync(c => Returned(c, id), ChangeFlags.Events | ChangeFlags.Findings | ChangeFlags.Files, token).ConfigureAwait(false);
                     }
 
                     await PostAsync(c => FileIndex.MarkSeen(c, [id], RunId), returned ? ChangeFlags.Files : ChangeFlags.None, token).ConfigureAwait(false);
@@ -820,6 +820,13 @@ public sealed class ScanEngine : IDisposable
                     await EnqueueAsync(MakeWork(root, volume, decision, id) with { Force = true }, token).ConfigureAwait(false);
                 }
             }
+        }
+
+        /// <summary>A file that was missing is back: the event, and the problems its going resolved are open again.</summary>
+        private void Returned(WriteContext context, long fileId)
+        {
+            FileEventStore.Add(context, fileId, RunId, FileEventKind.Returned);
+            FindingStore.Reopen(context, fileId, FindingStore.FileMissing);
         }
 
         private async Task HandleDirectoryAsync(RootRecord root, VolumeInfo volume, List<ReconcileDecision> decisions, List<EnumeratedFile>? holdNew, CancellationToken token)
@@ -848,7 +855,7 @@ public sealed class ScanEngine : IDisposable
                     if (decision.Returned)
                     {
                         long returnedId = row.Id;
-                        await PostAsync(c => FileEventStore.Add(c, returnedId, RunId, FileEventKind.Returned), ChangeFlags.Events, token).ConfigureAwait(false);
+                        await PostAsync(c => Returned(c, returnedId), ChangeFlags.Events | ChangeFlags.Findings | ChangeFlags.Files, token).ConfigureAwait(false);
                     }
 
                     if (decision.HasWork)
@@ -1570,7 +1577,7 @@ public sealed class ScanEngine : IDisposable
 
                         return ids;
                     },
-                    ChangeFlags.Files | ChangeFlags.Events,
+                    ChangeFlags.Files | ChangeFlags.Events | ChangeFlags.Findings,
                     token).ConfigureAwait(false);
 
                 double share = _rules.Value("RUN-MASS-MISSING", "percent") / 100.0;

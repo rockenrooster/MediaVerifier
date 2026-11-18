@@ -305,6 +305,8 @@ public sealed class FileIndex(Database database)
             mark.Add("$id", id);
             if (mark.ExecuteNonQuery() > 0)
             {
+                // A file that is gone has no open problems to count (Dashboard, badges and Issues agree with Library).
+                FindingStore.ResolveAll(context, id, FindingStore.FileMissing);
                 missing.Add(id);
             }
         }

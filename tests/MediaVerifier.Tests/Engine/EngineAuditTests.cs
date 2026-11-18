@@ -199,6 +199,34 @@ public sealed class EngineAuditTests
         Assert.Contains(h.Database.Events.ForFile(back.Id), e => e.Kind == FileEventKind.Returned);
     }
 
+    /// <summary>
+    /// A missing file's problems leave the open counts (the Dashboard tiles and the Issues badge counted files Library
+    /// called missing) and come back with the file.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_files_problems_leave_the_counts_and_come_back_with_it()
+    {
+        using EngineHarness h = new([new CountingProvider()]);
+        h.Write("keep.jpg", EngineHarness.Bytes(100, 1));
+        byte[] content = EngineHarness.Bytes(100, 2);
+        string path = h.Write("away.jpg", content);
+        await h.AddRootAsync(h.Library);
+        await h.ScanAsync();
+        long id = h.File1("away.jpg").Id;
+        await h.Database.Findings.ReplaceForFileAsync(id, 1, ["COR-DECODE"], [new Finding("COR-DECODE", Severity.High, 1f, "errors", Finding.NoEvidence)], false);
+        await h.Database.Writer.FlushAsync();
+
+        File.Delete(path);
+        await h.ScanAsync();
+        Assert.Equal(FindingStatus.Resolved, Assert.Single(h.Database.Findings.ForFile(id)).Status);
+        Assert.Equal(0, h.File1("away.jpg").OpenFindings);
+
+        h.Write("away.jpg", content);
+        await h.ScanAsync();
+        Assert.Equal(FindingStatus.Open, Assert.Single(h.Database.Findings.ForFile(id)).Status);
+        Assert.Equal(FileState.Issues, h.File1("away.jpg").State);
+    }
+
     [Fact]
     public async Task Scan_again_on_chosen_files_analyses_them_from_scratch_without_listing_the_folder()
     {

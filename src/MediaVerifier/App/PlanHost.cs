@@ -60,9 +60,12 @@ internal static class PlanHost
     public static bool InQuietHours(Core.Settings.ScanSettings settings) =>
         NotificationPolicy.InQuietHours(settings.QuietHours, settings.QuietFrom, settings.QuietTo, TimeOnly.FromDateTime(DateTime.Now));
 
-    /// <summary>Makes the scheduled tasks match the plans with this executable's path (app start, plan changes).</summary>
+    /// <summary>
+    /// Makes the scheduled tasks match the plans (app start, plan changes). Tasks start the registration executable (the
+    /// installed copy when there is one, subplan 13), not whichever copy happens to be running.
+    /// </summary>
     public static Task ReconcileAsync(Database database) =>
-        PlanReconciler.ReconcileAsync(database, Scheduler(), Environment.ProcessPath ?? Application.ExecutablePath, DateOnly.FromDateTime(DateTime.Now));
+        PlanReconciler.ReconcileAsync(database, Scheduler(), RegistrationTarget.ExePath(), DateOnly.FromDateTime(DateTime.Now));
 
     /// <summary><c>--cleanup</c>: removes every MediaVerifier task and the folder they lived in.</summary>
     internal static void RemoveScheduledTasks()
@@ -100,7 +103,19 @@ internal static class PlanHost
     {
         // The stop event exists for the whole run, so an open window sees it and its Stop works while conditions wait.
         using EventWaitHandle stopEvent = new(false, EventResetMode.ManualReset, stopEventName);
-        using Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+        Database database;
+        try
+        {
+            database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+        }
+        catch (Exception ex) when (ex is StorageException or Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException)
+        {
+            // An unreadable library ends the run with a log line, not through Windows Error Reporting.
+            state.Log.Error($"Plan {planId}: the library could not be opened", ex);
+            return HeadlessScan.ExitFailure;
+        }
+
+        using Database owned = database;
         PlanRecord? record = database.Plans.Get(planId);
         if (PlanJob.Load(database, planId) is not PlanJob job)
         {
@@ -177,7 +192,8 @@ internal static class PlanHost
     {
         try
         {
-            using Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+            // Another process holds the engine and may be scanning: its Running row is not this process's to settle.
+            using Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath), markInterrupted: false);
             RecordSkipped(database, reason);
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)

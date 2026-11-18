@@ -684,6 +684,7 @@ internal static class Strings
         public const string ResetText = "Forget everything and start again";
         public const string ResetTitle = "Reset the library?";
         public const string ResetBody = "Folders, fingerprints, findings and history are deleted. Your files are not touched. This cannot be undone.";
+        public const string ResetDone = "The library was reset";
         public const string Reset = "Reset";
         public const string QuarantineEmpty = "Quarantine is empty";
         public const string QuarantineEmptyText = "Originals appear here after a repair.";

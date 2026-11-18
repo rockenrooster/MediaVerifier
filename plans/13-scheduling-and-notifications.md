@@ -83,7 +83,7 @@ Daily uses `<ScheduleByDay><DaysInterval>n</DaysInterval></ScheduleByDay>`; mont
 `<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth><Months>` with all twelve months `</Months> </ScheduleByMonth>`. Escape the description and paths as XML text.
 
 Reconciliation at app start and whenever plans change: for every plan make the task exist with the
-current XML and the **current executable path** (the path changes if a portable exe is moved); delete
+current XML and the **registration executable** (see Registration below; the path changes if a portable exe is moved); delete
 tasks whose plan no longer exists. `MediaVerifier.exe --cleanup` removes all tasks and per-user
 registrations; the uninstaller calls it (subplan 14).
 

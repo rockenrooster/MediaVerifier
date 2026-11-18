@@ -36,6 +36,9 @@ public sealed class FindingStore(Database database)
     /// <summary>Resolved because the user switched the rule off (verification rules); switching it on reopens them.</summary>
     public const string RuleOff = "rule off";
 
+    /// <summary>Resolved because the file went missing (its problems leave the counts); they reopen when it returns.</summary>
+    public const string FileMissing = "missing";
+
     private const string Columns =
         "id, file_id, rule_id, category, severity, confidence, summary, evidence_json, status, first_run, last_run, first_utc, last_utc, resolved_utc, resolution";
 

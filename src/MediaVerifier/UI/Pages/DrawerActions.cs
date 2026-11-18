@@ -68,7 +68,7 @@ internal sealed class DrawerActions
         // Music and one in Music\Album listed the album twice).
         ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, CommonFolder(g.Select(f => f.RelDir ?? string.Empty)), [.. g.Select(f => f.Id)]))];
         ScanDepth depth = (ScanDepth)Math.Max((int)ScanDepth.Standard, files.Max(f => (int)f.ScannedDepth));
-        string scope = string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(files.Count));
+        string scope = UiFormat.Plural(files.Count, Strings.Repair.OneFile, Strings.Scans.FilesScope);
         _ = await services.StartScanAsync(scopes, depth, scope, new ScanOptions { VerifyEverything = true }).ConfigureAwait(true);
     }
 
@@ -187,9 +187,12 @@ internal sealed class DrawerActions
             return;
         }
 
-        await _services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
+        IReadOnlyList<long> changed = await _services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
         _findingIgnored(shown.FileId);
-        ShowIgnored(_services, [findingId], () => _findingIgnored(shown.FileId));
+        if (changed.Count > 0)
+        {
+            ShowIgnored(_services, changed, () => _findingIgnored(shown.FileId));
+        }
     }
 
     /// <summary>

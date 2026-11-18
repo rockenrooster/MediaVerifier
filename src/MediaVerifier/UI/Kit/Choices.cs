@@ -39,7 +39,8 @@ internal sealed class DropDown : KitControl
         get => _selected;
         set
         {
-            int clamped = _items.Count == 0 ? -1 : Math.Clamp(value, 0, _items.Count - 1);
+            // -1 shows nothing chosen (a schedule whose folder is no longer watched must be given one).
+            int clamped = _items.Count == 0 || value < 0 ? -1 : Math.Min(value, _items.Count - 1);
             if (clamped != _selected)
             {
                 _selected = clamped;

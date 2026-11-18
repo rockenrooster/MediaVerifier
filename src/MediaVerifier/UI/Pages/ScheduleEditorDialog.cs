@@ -65,8 +65,13 @@ internal sealed class ScheduleEditorDialog : KitDialog
             _folders.Items.Add(folder);
         }
 
-        int rootIndex = plan.Roots is { Length: 1 } one ? roots.ToList().FindIndex(r => r.Id == one[0]) : -1;
-        _folders.SelectedIndex = rootIndex + 1;
+        // A plan whose folders are no longer watched opens with no folder chosen, so saving cannot widen it to all.
+        _folders.SelectedIndex = plan.Roots switch
+        {
+            null => 0,
+            { Length: 1 } one when roots.ToList().FindIndex(r => r.Id == one[0]) is int index and >= 0 => index + 1,
+            _ => -1,
+        };
         foreach (string segment in new[] { Strings.Schedule.Quick, Strings.Schedule.Standard, Strings.Schedule.Deep })
         {
             _depth.Segments.Add(segment);
@@ -280,7 +285,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         };
         return Result with
         {
-            Roots = _folders.SelectedIndex > 0 ? [_roots[_folders.SelectedIndex - 1].Id] : null,
+            Roots = _folders.SelectedIndex switch { 0 => null, > 0 => [_roots[_folders.SelectedIndex - 1].Id], _ => [] },
             Depth = _depth.SelectedIndex switch { 0 => ScanDepth.Quick, 2 => ScanDepth.Deep, _ => ScanDepth.Standard },
             Trigger = trigger,
             BudgetMinutes = Limits[Math.Clamp(_limit.SelectedIndex, 0, Limits.Length - 1)],
