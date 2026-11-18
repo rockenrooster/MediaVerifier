@@ -91,7 +91,9 @@ switch (mode)
             start.ArgumentList.Add("sleep");
             start.ArgumentList.Add(args[2]);
             using Process child = Process.Start(start)!;
-            File.WriteAllText(args[1], child.Id.ToString(CultureInfo.InvariantCulture));
+            // Written under another name and renamed, so a test waiting for the file never opens it half written.
+            File.WriteAllText(args[1] + ".tmp", child.Id.ToString(CultureInfo.InvariantCulture));
+            File.Move(args[1] + ".tmp", args[1]);
             Thread.Sleep((int)Arg(2));
             return 0;
         }
