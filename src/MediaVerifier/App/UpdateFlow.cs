@@ -85,6 +85,12 @@ internal static class UpdateStatusText
             return Strings.Settings.NotChecked;
         }
 
+        if (result.Failure is string failure)
+        {
+            // A download or install that failed after the check: say so until the next check.
+            return failure;
+        }
+
         if (result.CanDownload)
         {
             return string.Format(culture, Strings.Settings.Available, result.LatestVersionText.TrimStart('v', 'V'));
@@ -108,8 +114,9 @@ internal static class UpdateStatusText
 }
 
 /// <summary>
-/// Download and install, or Install MediaVerifier on a portable copy (subplan 14; tasks U-08, U-09): confirm, stop a
-/// running scan cleanly after saying so, download and verify, start the installer silently and close.
+/// Download and install, or Install MediaVerifier on a portable copy (subplan 14; tasks U-08, U-09): one question
+/// (subplan 09 words it differently while a scan runs), download and verify, stop a running scan, start the installer
+/// silently and close. The download, the hashing and the installer start run off the UI thread.
 /// </summary>
 internal static class UpdateInstaller
 {
@@ -126,37 +133,37 @@ internal static class UpdateInstaller
         }
 
         // Every step is logged and every failure shown: a failure that is only swallowed looks like a dead button.
+        bool scanStopped = false;
         try
         {
-            string title = string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText.TrimStart('v', 'V'));
-            if (!MessageDialog.Confirm(owner, title, Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
-            {
-                return;
-            }
-
             bool ownScan = services.Scans.Status.IsActive;
             bool backgroundScan = !ownScan && services.BackgroundRunActive();
-            if ((ownScan || backgroundScan)
-                && !MessageDialog.Confirm(owner, Strings.Settings.ScanRunningTitle, Strings.Settings.ScanRunningUpdate, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false))
+            bool confirmed = ownScan || backgroundScan
+                ? MessageDialog.Confirm(owner, Strings.Dialogs.InstallTitle, Strings.Dialogs.InstallText, Strings.Dialogs.NotNow, Strings.Dialogs.Install, destructive: false)
+                : MessageDialog.Confirm(owner, string.Format(CultureInfo.CurrentCulture, Strings.Settings.UpdateAvailableTitle, result.LatestVersionText.TrimStart('v', 'V')), Strings.Settings.UpdateInstallText, Strings.Kit.Cancel, Strings.Dialogs.Install, destructive: false);
+            if (!confirmed)
             {
                 return;
             }
 
             services.State.Log.Info($"Update to {result.LatestVersionText}: downloading");
-            string setup = portable ? await updates.DownloadInstallerAsync().ConfigureAwait(true) : await updates.DownloadLatestAsync().ConfigureAwait(true);
+            string setup = await Task.Run(() => portable ? updates.DownloadInstallerAsync() : updates.DownloadLatestAsync()).ConfigureAwait(true);
             services.State.Log.Info($"Update to {result.LatestVersionText}: downloaded and verified");
             if (ownScan)
             {
-                // Cancel cleanly: the run is checkpointed and left resumable before the installer closes the app.
+                // Cancel cleanly: the run is checkpointed before the installer closes the app.
                 services.Scans.Cancel();
                 await WaitIdleAsync(services, TimeSpan.FromSeconds(30)).ConfigureAwait(true);
+                scanStopped = true;
             }
             else if (backgroundScan)
             {
                 _ = PlanHost.StopBackgroundRun();
+                scanStopped = true;
             }
 
-            updates.InstallDownloadedUpdate(setup);
+            // Re-hashes the whole installer and starts it (antivirus scans it on open and on start).
+            await Task.Run(() => updates.InstallDownloadedUpdate(setup)).ConfigureAwait(true);
             services.State.Log.Info($"Installer for {result.LatestVersionText} started; closing");
             if (owner is MainForm main)
             {
@@ -170,11 +177,27 @@ internal static class UpdateInstaller
         catch (Exception ex)
         {
             services.State.Log.Warning("The update could not be installed", ex);
-            string message = ex is InvalidOperationException or System.Security.Cryptography.CryptographicException
-                ? Strings.Settings.NotVerified
-                : string.Format(CultureInfo.CurrentCulture, Strings.Settings.CheckFailed, ex.Message);
+            string message = FailureText(ex, scanStopped);
+            updates.RecordFailure(message);
             services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.High, Strings.Settings.Updates, message));
         }
+    }
+
+    /// <summary>
+    /// What went wrong, in the words of the step that failed (the check itself had succeeded): verification, the
+    /// download, or starting the installer, which includes saying no to Windows' permission prompt.
+    /// </summary>
+    internal static string FailureText(Exception error, bool scanStopped)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        string text = error switch
+        {
+            System.ComponentModel.Win32Exception { NativeErrorCode: 1223 } => Strings.Settings.InstallCancelled,
+            System.ComponentModel.Win32Exception start => string.Format(CultureInfo.CurrentCulture, Strings.Settings.InstallFailed, start.Message),
+            InvalidOperationException or System.Security.Cryptography.CryptographicException => Strings.Settings.NotVerified,
+            _ => string.Format(CultureInfo.CurrentCulture, Strings.Settings.DownloadFailed, error.Message),
+        };
+        return scanStopped ? text + " " + Strings.Settings.ScanStopped : text;
     }
 
     private static async Task WaitIdleAsync(UiServices services, TimeSpan limit)
