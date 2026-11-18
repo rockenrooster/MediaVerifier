@@ -4,8 +4,11 @@ using System.Text.Json.Serialization;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Ffmpeg;
 using MediaVerifier.Core.Integrity;
+using MediaVerifier.Core.Logging;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
 using MediaVerifier.Core.Storage;
+using Microsoft.Data.Sqlite;
 
 namespace MediaVerifier.Core.Remediation;
 
@@ -90,8 +93,11 @@ public sealed record UndoData(
 [JsonSerializable(typeof(JournalTemp))]
 internal sealed partial class RemediationJsonContext : JsonSerializerContext;
 
-/// <summary>The journal's record of a temporary file, written before it exists, so a crash can be cleaned up.</summary>
-internal sealed record JournalTemp(string? TempPath, string? BackupPath);
+/// <summary>
+/// The journal's record of a running operation, written before any file exists, so a crash can be cleaned up: the
+/// temporary output, where the original goes, and the undo data that applies once the swap is done.
+/// </summary>
+internal sealed record JournalTemp(string? TempPath, string? BackupPath, UndoData? Undo = null);
 
 /// <summary>
 /// The safe-operation protocol of subplan 12 (task R-02): preconditions, journal, output to a temporary file
@@ -101,6 +107,10 @@ internal sealed record JournalTemp(string? TempPath, string? BackupPath);
 public sealed class OperationRunner(Database database, FfRunner runner, IMediaFileSystem fileSystem, IClock clock)
 {
     public const string QuarantineFolder = ".mediaverifier-quarantine";
+
+    /// <summary>The detail of an undo record starts with this and the id of the operation it undid.</summary>
+    public const string UndoMarker = "undo:";
+
     private const long MinFreeBytes = 100L * 1024 * 1024;
 
     /// <summary>Test hook: called with each step's name ("produce", "verify", "backup", "rename", "index"); may throw.</summary>
@@ -118,13 +128,26 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         return ExtendedPath.For(Path.Combine(root.Path, QuarantineFolder, operationId.ToString(CultureInfo.InvariantCulture), file.RelDir ?? string.Empty, file.Name));
     }
 
+    /// <summary>The operation an undo record undid, or null for every other journal row (the Tools page labels them by it).</summary>
+    public static long? UndoneOperation(OperationRecord operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        if (operation.DetailJson is not string detail || !detail.StartsWith(UndoMarker, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<char> rest = detail.AsSpan(UndoMarker.Length);
+        int end = rest.IndexOf(' ');
+        return long.TryParse(end < 0 ? rest : rest[..end], NumberStyles.None, CultureInfo.InvariantCulture, out long id) ? id : null;
+    }
+
     /// <summary>Preconditions of step 1; null when the action can run, else the reason.</summary>
     public string? CheckPreconditions(FileRecord file, RootRecord root, IRemediationAction action, long estimatedBytes)
     {
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(action);
-        string path = HealthyCopyFinder.FullPath(root, file);
         if (root.Role == RootRole.Backup && action.Class != ActionClass.Meta)
         {
             return CoreStrings.Remediation.BackupRoot;
@@ -140,6 +163,13 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
             return CoreStrings.Remediation.NoRecycleBin;
         }
 
+        if (!fileSystem.DirectoryExists(root.Path))
+        {
+            return CoreStrings.Remediation.RootOffline;
+        }
+
+        // Every look at the file goes through the \\?\ form where needed: a folder named "Demo." is otherwise not found.
+        string path = ExtendedPath.For(HealthyCopyFinder.FullPath(root, file));
         FileStat? stat = fileSystem.Stat(path);
         if (stat is null)
         {
@@ -151,16 +181,27 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
             return CoreStrings.Remediation.ChangedSinceScan;
         }
 
-        if ((File.GetAttributes(path) & FileAttributes.ReadOnly) != 0)
+        if ((stat.Value.Attributes & FileAttributes.ReadOnly) != 0)
         {
             return CoreStrings.Remediation.ReadOnly;
+        }
+
+        // A repair takes a new fingerprint: content that changed on its own would become the new truth.
+        if (action.Class == ActionClass.Lossless && action.Id != ActionIds.RestoreCopy
+            && database.Findings.ForFile(file.Id).Any(f => f.RuleId == "INT-ROT" && f.Status == FindingStatus.Open))
+        {
+            return CoreStrings.Remediation.RotFirst;
         }
 
         try
         {
             using FileStream exclusive = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (UnauthorizedAccessException)
+        {
+            return CoreStrings.Remediation.NotAllowed;
+        }
+        catch (IOException)
         {
             return CoreStrings.Remediation.InUse;
         }
@@ -190,7 +231,17 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         }
 
         string source = ExtendedPath.For(HealthyCopyFinder.FullPath(root, file));
-        string? precondition = CheckPreconditions(file, root, action, file.Size);
+        string? precondition;
+        try
+        {
+            precondition = CheckPreconditions(file, root, action, file.Size);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            // One file's odd path or permissions fails that file, never the rest of the batch.
+            precondition = ex.Message;
+        }
+
         long operationId = await database.Journal.AddAsync(
             new OperationRecord { BatchId = batchId, Utc = clock.UtcNow.UtcTicks, ActionId = action.Id, FileId = file.Id, Status = precondition is null ? OperationStatus.Running : OperationStatus.Failed, SourcePath = source, DetailJson = precondition },
             token).ConfigureAwait(false);
@@ -201,9 +252,15 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
         string temp = TempPathFor(source, operationId);
         string backup = QuarantinePathFor(root, file, operationId);
-        await database.Journal.UpdateAsync(operationId, OperationStatus.Running, detailJson: JsonSerializer.Serialize(new JournalTemp(temp, backup), RemediationJsonContext.Default.JournalTemp), cancellationToken: token).ConfigureAwait(false);
-        OperationContext context = new() { File = file, Root = root, SourcePath = source, TempPath = temp, OperationId = operationId, Runner = runner, Database = database };
         UndoData undo = new(action.Class.ToString(), source, null, null, file.Size, file.MtimeUtc, file.Hash is null ? null : Convert.ToHexStringLower(file.Hash), file.HashSize, file.HashMtimeUtc, file.HashUtc, file.RelDir, file.Name);
+
+        // Journaled before anything moves: after a crash the start-up recovery finds the temporary file, the kept
+        // original and, when the swap had finished, the undo data.
+        UndoData? keptUndo = action.Class is ActionClass.Lossless ? undo with { ResultPath = source, BackupPath = backup }
+            : action.Class == ActionClass.Move ? undo with { BackupPath = backup }
+            : null;
+        await database.Journal.UpdateAsync(operationId, OperationStatus.Running, detailJson: JsonSerializer.Serialize(new JournalTemp(temp, backup, keptUndo), RemediationJsonContext.Default.JournalTemp), cancellationToken: token).ConfigureAwait(false);
+        OperationContext context = new() { File = file, Root = root, SourcePath = source, TempPath = temp, OperationId = operationId, Runner = runner, Database = database };
         Action? rollback = null;
         try
         {
@@ -216,6 +273,12 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                 DeleteQuietly(temp);
                 await FinishAsync(operationId, OperationStatus.Failed, null, null, null, failure, context).ConfigureAwait(false);
                 return new OperationOutcome(operationId, file.Id, OperationStatus.Failed, failure, null);
+            }
+
+            // Producing and verifying can take many minutes: an edit saved meanwhile must not be replaced.
+            if (action.Class is ActionClass.Lossless or ActionClass.Move && ChangedSince(file, source))
+            {
+                throw new IOException(CoreStrings.Remediation.ChangedSinceScan);
             }
 
             string? result;
@@ -234,6 +297,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                         File.Delete(source);
                         File.Move(backup, source);
                     };
+                    KeepModifiedTime(source, file);
                     result = source;
                     break;
                 case ActionClass.Copy:
@@ -298,11 +362,18 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
     /// <summary>
     /// Undoes a done operation whose original was kept (subplan 12, Undo): the current file goes to quarantine as
-    /// a new operation, the original comes back, the index row and baseline are restored and the findings reopen.
+    /// a new operation (listed in Tools and purged like any kept file), the original comes back, the index row and
+    /// baseline are restored and the findings reopen. On a file an undo set aside, puts that file back when its name
+    /// is free.
     /// </summary>
     public async Task<string?> UndoAsync(long operationId, long batchId, CancellationToken token)
     {
-        OperationRecord? operation = await Task.Run(() => database.Journal.List(int.MaxValue).FirstOrDefault(o => o.Id == operationId), token).ConfigureAwait(false);
+        OperationRecord? operation = await Task.Run(() => Operation(operationId), token).ConfigureAwait(false);
+        if (operation is { Status: OperationStatus.Done, UndoJson: null, BackupPath: string setAsideBefore } && UndoneOperation(operation) is not null)
+        {
+            return await PutBackAsync(operation, setAsideBefore, token).ConfigureAwait(false);
+        }
+
         if (operation is not { Status: OperationStatus.Done, UndoJson: string json } || JsonSerializer.Deserialize(json, RemediationJsonContext.Default.UndoData) is not UndoData undo)
         {
             return CoreStrings.Remediation.CannotUndo;
@@ -316,9 +387,13 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
         FileRecord? file = operation.FileId is long id ? await Task.Run(() => database.Files.Get(id), token).ConfigureAwait(false) : null;
         RootRecord? root = file is null ? null : await Task.Run(() => database.Roots.Get(file.RootId), token).ConfigureAwait(false);
+
+        // The undo record names the file it moves aside: the current file, or for a copy the copy.
+        string movedAside = undo.ActionClass == nameof(ActionClass.Copy) ? undo.ResultPath ?? undo.SourcePath : undo.SourcePath;
         long undoId = await database.Journal.AddAsync(
-            new OperationRecord { BatchId = batchId, Utc = clock.UtcNow.UtcTicks, ActionId = operation.ActionId, FileId = operation.FileId, Status = OperationStatus.Running, SourcePath = undo.SourcePath, DetailJson = "undo:" + operationId.ToString(CultureInfo.InvariantCulture) },
+            new OperationRecord { BatchId = batchId, Utc = clock.UtcNow.UtcTicks, ActionId = operation.ActionId, FileId = operation.FileId, Status = OperationStatus.Running, SourcePath = movedAside, DetailJson = UndoMarker + operationId.ToString(CultureInfo.InvariantCulture) },
             token).ConfigureAwait(false);
+        string? setAside = null;
         try
         {
             switch (undo.ActionClass)
@@ -329,29 +404,49 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                         throw new IOException(CoreStrings.Remediation.OriginalGone);
                     }
 
-                    if (root is not null && file is not null && File.Exists(undo.SourcePath))
+                    if (File.Exists(undo.SourcePath))
                     {
-                        MoveInto(undo.SourcePath, QuarantinePathFor(root, file, undoId));
+                        setAside = root is not null && file is not null ? QuarantinePathFor(root, file, undoId) : throw new IOException(CoreStrings.Remediation.CannotUndo);
+                        MoveInto(undo.SourcePath, setAside);
                     }
 
-                    File.Move(undo.BackupPath, undo.SourcePath);
+                    try
+                    {
+                        MoveBack(undo.BackupPath, undo.SourcePath);
+                    }
+                    catch (Exception ex) when (setAside is not null && ex is IOException or UnauthorizedAccessException)
+                    {
+                        // The library keeps a file at that name: the one it had.
+                        File.Move(setAside, undo.SourcePath);
+                        setAside = null;
+                        throw;
+                    }
+
                     break;
                 case nameof(ActionClass.Copy):
-                    if (undo.ResultPath is not null && File.Exists(undo.ResultPath) && root is not null && file is not null)
+                    if (undo.ResultPath is not null && File.Exists(undo.ResultPath))
                     {
-                        MoveInto(undo.ResultPath, Path.Combine(root.Path, QuarantineFolder, undoId.ToString(CultureInfo.InvariantCulture), Path.GetFileName(undo.ResultPath)));
+                        setAside = root is not null
+                            ? ExtendedPath.For(Path.Combine(root.Path, QuarantineFolder, undoId.ToString(CultureInfo.InvariantCulture), Path.GetFileName(undo.ResultPath)))
+                            : throw new IOException(CoreStrings.Remediation.CannotUndo);
+                        MoveInto(undo.ResultPath, setAside);
                     }
 
                     break;
                 case nameof(ActionClass.Move):
                     if (undo.BackupPath is not null)
                     {
-                        if (!File.Exists(undo.BackupPath) || File.Exists(undo.SourcePath))
+                        if (!File.Exists(undo.BackupPath))
                         {
                             throw new IOException(CoreStrings.Remediation.OriginalGone);
                         }
 
-                        File.Move(undo.BackupPath, undo.SourcePath);
+                        if (File.Exists(undo.SourcePath))
+                        {
+                            throw new IOException(CoreStrings.Remediation.NameTaken);
+                        }
+
+                        MoveBack(undo.BackupPath, undo.SourcePath);
                     }
                     else if (undo.ResultPath is not null)
                     {
@@ -372,66 +467,68 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
             }
 
             await database.Journal.UpdateAsync(operationId, OperationStatus.Undone, operation.ResultPath, operation.BackupPath, operation.UndoJson, operation.DetailJson, token).ConfigureAwait(false);
-            await database.Journal.UpdateAsync(undoId, OperationStatus.Done, cancellationToken: token).ConfigureAwait(false);
+            await database.Journal.UpdateAsync(undoId, OperationStatus.Done, backupPath: setAside, cancellationToken: token).ConfigureAwait(false);
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            await database.Journal.UpdateAsync(undoId, OperationStatus.Failed, detailJson: ex.Message, cancellationToken: token).ConfigureAwait(false);
+            // A file already set aside stays recorded, so it is listed and purged like any kept file.
+            await database.Journal.UpdateAsync(undoId, OperationStatus.Failed, backupPath: setAside, detailJson: UndoMarker + operationId.ToString(CultureInfo.InvariantCulture) + " " + ex.Message, cancellationToken: token).ConfigureAwait(false);
             return ex.Message;
         }
     }
 
     /// <summary>
     /// Start-up cleanup (subplan 12): operations left Running by a crash get their journaled temporary file removed
-    /// and an original stranded in quarantine moved back. Files are only touched when the journal names them.
+    /// and an original stranded in quarantine moved back, or, when the swap had finished, are completed with their
+    /// undo data. Files are only touched when the journal names them; a folder that is offline is left for the next
+    /// start, and one operation that cannot be cleaned up does not stop the others. Returns how many were settled.
     /// </summary>
     public async Task<int> RecoverAsync(CancellationToken token = default)
     {
         List<OperationRecord> running = await Task.Run(() => database.Journal.List(int.MaxValue, status: OperationStatus.Running), token).ConfigureAwait(false);
+        int settled = 0;
         foreach (OperationRecord operation in running)
         {
-            JournalTemp? temp = null;
             try
             {
-                temp = operation.DetailJson is string json && json.StartsWith('{') ? JsonSerializer.Deserialize(json, RemediationJsonContext.Default.JournalTemp) : null;
+                if (await RecoverOneAsync(operation, token).ConfigureAwait(false))
+                {
+                    settled++;
+                }
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                AppLog.Shared?.Warning(string.Create(CultureInfo.InvariantCulture, $"Interrupted operation {operation.Id} could not be cleaned up; it is tried again at the next start"), ex);
             }
-
-            if (temp?.TempPath is string tempPath && tempPath.Contains(".mvtmp-" + operation.Id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
-            {
-                DeleteQuietly(tempPath);
-            }
-
-            if (temp?.BackupPath is string backup && File.Exists(backup) && !File.Exists(operation.SourcePath))
-            {
-                File.Move(backup, operation.SourcePath);
-            }
-
-            await database.Journal.UpdateAsync(operation.Id, OperationStatus.Failed, detailJson: CoreStrings.Remediation.Interrupted, cancellationToken: token).ConfigureAwait(false);
         }
 
-        return running.Count;
+        return settled;
     }
 
     /// <summary>Permanently deletes the original one operation kept in quarantine (the caller confirms first); returns the bytes freed.</summary>
     public async Task<long> PurgeOneAsync(long operationId, CancellationToken token = default)
     {
-        OperationRecord? operation = await Task.Run(() => database.Journal.List(int.MaxValue).FirstOrDefault(o => o.Id == operationId), token).ConfigureAwait(false);
+        OperationRecord? operation = await Task.Run(() => Operation(operationId), token).ConfigureAwait(false);
         if (operation?.BackupPath is not string backup || !backup.Contains(QuarantineFolder, StringComparison.OrdinalIgnoreCase))
         {
             return 0;
         }
 
-        long bytes = File.Exists(backup) ? new FileInfo(backup).Length : 0;
-        File.Delete(backup);
-        await database.Journal.UpdateAsync(operation.Id, operation.Status, operation.ResultPath, null, null, operation.DetailJson, token).ConfigureAwait(false);
-        return bytes;
+        long bytes = await Task.Run(() => DeleteKept(backup), token).ConfigureAwait(false);
+        if (bytes >= 0)
+        {
+            await ForgetKeptAsync(operation.Id, token).ConfigureAwait(false);
+        }
+
+        return Math.Max(0, bytes);
     }
 
-    /// <summary>Permanently deletes quarantined originals older than <paramref name="days"/> (the only permanent deletion; the caller confirms).</summary>
+    /// <summary>
+    /// Permanently deletes quarantined originals older than <paramref name="days"/> (the only permanent deletion; the
+    /// caller confirms). Each one's journal row stops naming the file and can no longer be undone; a row whose file is
+    /// already gone is settled the same way. A file that cannot be deleted is left for the next time.
+    /// </summary>
     public async Task<(int Files, long Bytes)> PurgeAsync(int days, CancellationToken token = default)
     {
         long cutoff = clock.UtcNow.AddDays(-days).UtcTicks;
@@ -440,14 +537,27 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         long bytes = 0;
         foreach (OperationRecord operation in kept.Where(o => o.Utc <= cutoff && o.BackupPath is not null && o.BackupPath.Contains(QuarantineFolder, StringComparison.OrdinalIgnoreCase)))
         {
-            if (File.Exists(operation.BackupPath))
+            try
             {
-                bytes += new FileInfo(operation.BackupPath!).Length;
-                File.Delete(operation.BackupPath!);
-                files++;
-            }
+                bool existed = File.Exists(operation.BackupPath);
+                long freed = DeleteKept(operation.BackupPath!);
+                if (freed < 0)
+                {
+                    continue;
+                }
 
-            await database.Journal.UpdateAsync(operation.Id, OperationStatus.Done, operation.ResultPath, null, null, operation.DetailJson, token).ConfigureAwait(false);
+                if (existed)
+                {
+                    files++;
+                    bytes += freed;
+                }
+
+                await ForgetKeptAsync(operation.Id, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Shared?.Warning(string.Create(CultureInfo.InvariantCulture, $"A quarantined file of operation {operation.Id} could not be deleted; it is tried again next time"), ex);
+            }
         }
 
         return (files, bytes);
@@ -484,6 +594,17 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         File.Move(source, target);
     }
 
+    /// <summary>Moves a kept file back to its place, making its folder again if it was removed meanwhile.</summary>
+    private static void MoveBack(string kept, string target)
+    {
+        if (Path.GetDirectoryName(target) is { Length: > 0 } folder)
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        File.Move(kept, target);
+    }
+
     /// <summary>A free name: <c>name.ext</c>, else <c>name (2).ext</c>, <c>name (3).ext</c>, …</summary>
     internal static string UniquePath(string path)
     {
@@ -516,7 +637,137 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
         }
     }
 
+    /// <summary>
+    /// A repaired file keeps the original's modified time when its size changed, so date-sorted libraries keep their
+    /// order while sync tools that compare size and time still see the change. A same-size result keeps the new time,
+    /// or those tools would skip it.
+    /// </summary>
+    private static void KeepModifiedTime(string path, FileRecord original)
+    {
+        try
+        {
+            FileInfo info = new(path);
+            if (info.Length != original.Size)
+            {
+                info.LastWriteTimeUtc = new DateTime(original.MtimeUtc, DateTimeKind.Utc);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentOutOfRangeException)
+        {
+            // Only the date is lost; the repair stands.
+        }
+    }
+
+    /// <summary>
+    /// Deletes a kept file and the quarantine folders it leaves empty. Returns the bytes freed (0 when the file was
+    /// already gone), or -1 when its folder cannot be reached, so the journal keeps naming it for a later try.
+    /// </summary>
+    private static long DeleteKept(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return RootReachable(path) ? 0 : -1;
+        }
+
+        long bytes = new FileInfo(path).Length;
+        File.Delete(path);
+        string? folder = Path.GetDirectoryName(path);
+        while (folder is not null && folder.Contains(QuarantineFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                Directory.Delete(folder);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                break;
+            }
+
+            folder = Path.GetDirectoryName(folder);
+        }
+
+        return bytes;
+    }
+
+    /// <summary>Whether the root that holds a quarantine path is reachable now (an offline share says nothing about its files).</summary>
+    private static bool RootReachable(string quarantinePath)
+    {
+        int at = quarantinePath.IndexOf(Path.DirectorySeparatorChar + QuarantineFolder, StringComparison.OrdinalIgnoreCase);
+        string root = at > 0 ? quarantinePath[..at] : Path.GetDirectoryName(quarantinePath) ?? quarantinePath;
+        return Directory.Exists(root.EndsWith(':') ? root + Path.DirectorySeparatorChar : root);
+    }
+
+    private bool ChangedSince(FileRecord file, string path) =>
+        fileSystem.Stat(path) is not FileStat now || now.Size != file.Size || now.LastWriteUtcTicks != file.MtimeUtc;
+
     private void Step(string name) => BeforeStep?.Invoke(name);
+
+    /// <summary>One crashed operation; false when its folder is offline and it waits for the next start.</summary>
+    private async Task<bool> RecoverOneAsync(OperationRecord operation, CancellationToken token)
+    {
+        JournalTemp? temp = null;
+        try
+        {
+            temp = operation.DetailJson is string json && json.StartsWith('{') ? JsonSerializer.Deserialize(json, RemediationJsonContext.Default.JournalTemp) : null;
+        }
+        catch (JsonException)
+        {
+        }
+
+        if (temp?.BackupPath is string keptPath && !RootReachable(keptPath))
+        {
+            return false;
+        }
+
+        if (temp?.TempPath is string tempPath && tempPath.Contains(".mvtmp-" + operation.Id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
+        {
+            DeleteQuietly(tempPath);
+        }
+
+        if (temp?.BackupPath is string backup && File.Exists(backup))
+        {
+            if (!File.Exists(operation.SourcePath))
+            {
+                MoveBack(backup, operation.SourcePath);
+            }
+            else if (temp.Undo is UndoData undo)
+            {
+                // The swap had finished: the repaired file is in place and the original is kept. The next scan sees
+                // the new size and time and takes the new fingerprint.
+                await database.Journal.UpdateAsync(operation.Id, OperationStatus.Done, undo.ResultPath, backup, JsonSerializer.Serialize(undo, RemediationJsonContext.Default.UndoData), EvidenceJson.Serialize(null), token).ConfigureAwait(false);
+                return true;
+            }
+        }
+
+        await database.Journal.UpdateAsync(operation.Id, OperationStatus.Failed, detailJson: CoreStrings.Remediation.Interrupted, cancellationToken: token).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Puts back a file an undo set aside, when nothing has taken its name.</summary>
+    private async Task<string?> PutBackAsync(OperationRecord operation, string setAside, CancellationToken token)
+    {
+        try
+        {
+            if (!File.Exists(setAside))
+            {
+                return CoreStrings.Remediation.OriginalGone;
+            }
+
+            if (File.Exists(operation.SourcePath))
+            {
+                return CoreStrings.Remediation.NameTaken;
+            }
+
+            MoveBack(setAside, operation.SourcePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ex.Message;
+        }
+
+        await database.Journal.UpdateAsync(operation.Id, OperationStatus.Undone, cancellationToken: token).ConfigureAwait(false);
+        return null;
+    }
 
     private async Task UpdateIndexAsync(IRemediationAction action, OperationContext context, string? result, string? kept, CancellationToken token)
     {
@@ -537,11 +788,12 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                             Baseline = read.Hash is byte[] hash && stat is FileStat s ? new Baseline(hash, s.Size, s.LastWriteUtcTicks, now) : null,
                             ScannedDepth = ScanDepth.Quick,
                         });
-                        FileEventStore.Add(c, file.Id, null, action.Id == Rules.ActionIds.RestoreCopy ? FileEventKind.Restored : FileEventKind.Repaired, EvidenceJson.Serialize(new Dictionary<string, object> { ["action"] = action.Id }));
-                        FindingStore.ResolveAll(c, file.Id, Resolution(context.OperationId));
+                        ForgetAnalysis(c, file.Id);
+                        FileEventStore.Add(c, file.Id, null, action.Id == ActionIds.RestoreCopy ? FileEventKind.Restored : FileEventKind.Repaired, EvidenceJson.Serialize(new Dictionary<string, object> { ["action"] = action.Id }));
+                        ResolveAddressed(c, file.Id, action.Id, Resolution(context.OperationId));
                         return 0;
                     },
-                    ChangeFlags.Files | ChangeFlags.Findings,
+                    ChangeFlags.Files | ChangeFlags.Findings | ChangeFlags.Artifacts,
                     token).ConfigureAwait(false);
                 break;
             case ActionClass.Recycle:
@@ -561,7 +813,10 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                 await database.Writer.ExecuteAsync(
                     c =>
                     {
-                        FileIndex.Move(c, file.Id, file.RootId, file.RelDir ?? string.Empty, Path.GetFileName(result));
+                        string name = Path.GetFileName(result);
+                        FileIndex.Move(c, file.Id, file.RootId, file.RelDir ?? string.Empty, name);
+                        SetExtension(c, file.Id, name);
+                        ResolveAddressed(c, file.Id, action.Id, Resolution(context.OperationId));
                         return 0;
                     },
                     ChangeFlags.Files | ChangeFlags.Findings,
@@ -573,14 +828,63 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
     /// <summary>The resolution recorded on findings settled by an operation: <c>op:{id}</c>.</summary>
     public static string Resolution(long operationId) => "op:" + operationId.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>The rules an action addresses: those that list it (subplan 12, Rule → actions).</summary>
+    internal static IEnumerable<string> RulesAddressedBy(string actionId) =>
+        RuleCatalog.All.Where(r => r.ActionIds.Contains(actionId, StringComparer.Ordinal)).Select(r => r.Id);
+
+    /// <summary>
+    /// Resolves the open findings of the rules the action addresses. A repair settles what it repairs: a rebuilt index
+    /// says nothing about decode errors, which stay listed (and ignored findings stay ignored).
+    /// </summary>
+    private static void ResolveAddressed(WriteContext context, long fileId, string actionId, string resolution)
+    {
+        foreach (string rule in RulesAddressedBy(actionId))
+        {
+            SqliteCommand command = context.Command(
+                "UPDATE findings SET status = $resolved, resolved_utc = $now, resolution = $resolution WHERE file_id = $file AND rule_id = $rule AND status = $open");
+            command.Add("$resolved", (int)FindingStatus.Resolved);
+            command.Add("$open", (int)FindingStatus.Open);
+            command.Add("$now", context.NowTicks);
+            command.Add("$resolution", resolution);
+            command.Add("$file", fileId);
+            command.Add("$rule", rule);
+            command.ExecuteNonQuery();
+        }
+
+        FindingStore.RecomputeFileSummary(context, fileId);
+    }
+
+    /// <summary>
+    /// Drops what the index knew about the old content (stored analysis and stream hash), so the next Standard scan
+    /// analyses the file as it is now instead of re-raising what a repair fixed from the old analysis.
+    /// </summary>
+    private static void ForgetAnalysis(WriteContext context, long fileId)
+    {
+        ArtifactStore.DeleteAll(context, fileId);
+        SqliteCommand command = context.Command("UPDATE files SET stream_hash = NULL WHERE id = $id");
+        command.Add("$id", fileId);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>The stored extension follows a rename (filters and the action catalogue read it).</summary>
+    private static void SetExtension(WriteContext context, long fileId, string name)
+    {
+        SqliteCommand command = context.Command("UPDATE files SET ext = $ext WHERE id = $id");
+        command.Add("$ext", MediaClassifier.Extension(name));
+        command.Add("$id", fileId);
+        command.ExecuteNonQuery();
+    }
+
     private async Task RestoreIndexAsync(FileRecord file, UndoData undo, long operationId, CancellationToken token)
     {
+        bool contentBack = undo.ActionClass == nameof(ActionClass.Lossless);
         await database.Writer.ExecuteAsync(
             c =>
             {
                 if (undo.ActionClass == nameof(ActionClass.Move) && undo.OldName is not null && undo.ResultPath is not null)
                 {
                     FileIndex.Move(c, file.Id, file.RootId, undo.OldRelDir ?? string.Empty, undo.OldName);
+                    SetExtension(c, file.Id, undo.OldName);
                 }
 
                 FileIndex.ApplyUpdate(c, new FileUpdate(file.Id)
@@ -588,7 +892,13 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                     Size = undo.Size,
                     MtimeUtc = undo.MtimeUtc,
                     Baseline = undo.HashHex is string hex ? new Baseline(Convert.FromHexString(hex), undo.HashSize ?? undo.Size, undo.HashMtimeUtc ?? undo.MtimeUtc, undo.HashUtc ?? 0) : null,
+                    ScannedDepth = contentBack ? ScanDepth.Quick : null,
                 });
+                if (contentBack)
+                {
+                    ForgetAnalysis(c, file.Id);
+                }
+
                 FindingStore.Reopen(c, file.Id, Resolution(operationId));
                 if (undo.ActionClass == nameof(ActionClass.Move) && undo.BackupPath is not null)
                 {
@@ -598,9 +908,46 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
 
                 return 0;
             },
-            ChangeFlags.Files | ChangeFlags.Findings,
+            ChangeFlags.Files | ChangeFlags.Findings | ChangeFlags.Artifacts,
             token).ConfigureAwait(false);
     }
+
+    /// <summary>The journal can no longer bring the kept file back: it stops naming it and the operation stops being undoable.</summary>
+    private Task ForgetKeptAsync(long operationId, CancellationToken token) =>
+        database.Writer.ExecuteAsync(
+            c =>
+            {
+                SqliteCommand command = c.Command("UPDATE operations SET backup_path = NULL, undo_json = NULL WHERE id = $id");
+                command.Add("$id", operationId);
+                return command.ExecuteNonQuery();
+            },
+            ChangeFlags.Operations,
+            token);
+
+    /// <summary>One journal row by id.</summary>
+    private OperationRecord? Operation(long id) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT id, batch_id, utc, action_id, file_id, status, source_path, result_path, backup_path, undo_json, detail_json FROM operations WHERE id = $id";
+        command.Add("$id", id);
+        using SqliteDataReader r = command.ExecuteReader();
+        return r.Read()
+            ? new OperationRecord
+            {
+                Id = r.GetInt64(0),
+                BatchId = r.GetInt64(1),
+                Utc = r.GetInt64(2),
+                ActionId = r.GetString(3),
+                FileId = r.GetInt64OrNull(4),
+                Status = (OperationStatus)r.GetInt32(5),
+                SourcePath = r.GetString(6),
+                ResultPath = r.GetStringOrNull(7),
+                BackupPath = r.GetStringOrNull(8),
+                UndoJson = r.GetStringOrNull(9),
+                DetailJson = r.GetStringOrNull(10),
+            }
+            : null;
+    });
 
     private async Task FinishAsync(long operationId, OperationStatus status, string? result, string? backup, UndoData? undo, string? reason, OperationContext context)
     {

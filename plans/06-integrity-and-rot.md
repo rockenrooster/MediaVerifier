@@ -41,6 +41,8 @@ Map `IOException.HResult & 0xFFFF`:
 | 32 `ERROR_SHARING_VIOLATION`, 33 `ERROR_LOCK_VIOLATION` | In use | Skipped: `Locked` |
 | 5 `ERROR_ACCESS_DENIED` | Permissions | Skipped: `AccessDenied` |
 | 21 `ERROR_NOT_READY`, 53, 59, 64, 1167 `ERROR_DEVICE_NOT_CONNECTED` | Device or share went away | Abort this root for the run (`RUN-ROOT-OFFLINE`); do not flag files |
+| 51, 52, 54 `ERROR_NETWORK_BUSY`, 55, 58, 65, 67, 121 `ERROR_SEM_TIMEOUT`, 1231, 1236 | The share stopped answering | As above: abort this root for the run; do not flag files |
+| Any other code (out of resources, cloud provider errors, timeouts) | Says nothing about the medium | Skipped: `Locked` (tried again at the end of the run); the code is logged. Never `GEN-UNREADABLE` |
 
 Never retry a CRC or device error in a tight loop; one retry after 500 ms, then record it.
 

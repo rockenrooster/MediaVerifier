@@ -114,24 +114,20 @@ public sealed class DeclipCopyAction : IRemediationAction
     {
         ArgumentNullException.ThrowIfNull(context);
         double? peak = null;
-        FfResult result = await context.Runner.RunAsync(
-            new FfRequest
+        FfResult result = await Ff.RunAsync(
+            context,
+            ["-f", "flac", "-i", context.TempPath, "-af", "volumedetect", "-f", "null", "-"],
+            token,
+            "info",
+            line =>
             {
-                Tool = FfTool.Ffmpeg,
-                Arguments = ["-f", "flac", "-i", context.TempPath, "-af", "volumedetect", "-f", "null", "-"],
-                LogLevel = "info",
-                Priority = System.Diagnostics.ProcessPriorityClass.Normal,
-                OnLogLine = line =>
+                int at = line.Raw.IndexOf("max_volume:", StringComparison.Ordinal);
+                if (at >= 0)
                 {
-                    int at = line.Raw.IndexOf("max_volume:", StringComparison.Ordinal);
-                    if (at >= 0)
-                    {
-                        string number = line.Raw[(at + 11)..].Replace("dB", string.Empty, StringComparison.Ordinal).Trim();
-                        peak = double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) ? db : peak;
-                    }
-                },
-            },
-            token).ConfigureAwait(false);
+                    string number = line.Raw[(at + 11)..].Replace("dB", string.Empty, StringComparison.Ordinal).Trim();
+                    peak = double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) ? db : peak;
+                }
+            }).ConfigureAwait(false);
         return result.Completed && peak is double p && p <= 0 ? null : CoreStrings.Remediation.OutputUnreadable;
     }
 }

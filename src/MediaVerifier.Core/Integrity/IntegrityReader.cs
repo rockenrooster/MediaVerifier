@@ -1,7 +1,9 @@
 using System.Buffers;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Hashing;
 using MediaVerifier.Core.Engine;
+using MediaVerifier.Core.Logging;
 
 namespace MediaVerifier.Core.Integrity;
 
@@ -100,16 +102,30 @@ public static class IntegrityReader
         return result with { Elapsed = watch.Elapsed, FileId = stat.FileId };
     }
 
-    /// <summary>Maps a Win32 error code from a failed read (subplan 06, table).</summary>
+    /// <summary>
+    /// Maps a Win32 error code from a failed read (subplan 06, table). Only the storage's own media errors mean damage;
+    /// a share that stops answering is gone for this run, and any other code (out of resources, a cloud provider, a
+    /// timeout) says nothing about the medium: the file is skipped and tried again at the end of the run.
+    /// </summary>
     public static IntegrityOutcome MapError(int win32) => win32 switch
     {
         23 or 27 or 30 or 1117 or 1127 or 1392 or 1393 => IntegrityOutcome.Unreadable,
         32 or 33 => IntegrityOutcome.Locked,
         5 => IntegrityOutcome.AccessDenied,
         21 or 53 or 59 or 64 or 1167 => IntegrityOutcome.DeviceGone,
+
+        // 51 remote not listening, 52 duplicate name, 54 network busy, 55 network resource gone, 58 bad server
+        // response, 65 network access denied, 67 network name not found, 121 semaphore timeout (a share that stops
+        // answering), 1231 network unreachable, 1236 connection aborted.
+        51 or 52 or 54 or 55 or 58 or 65 or 67 or 121 or 1231 or 1236 => IntegrityOutcome.DeviceGone,
         2 or 3 => IntegrityOutcome.NotFound,
-        _ => IntegrityOutcome.Unreadable,
+        _ => IntegrityOutcome.Locked,
     };
+
+    /// <summary>True for the media errors of subplan 06's table; every other code is logged when it skips a file.</summary>
+    public static bool IsKnownError(int win32) =>
+        win32 is 23 or 27 or 30 or 1117 or 1127 or 1392 or 1393 or 32 or 33 or 5 or 21 or 53 or 59 or 64 or 1167 or 2 or 3
+            or 51 or 52 or 54 or 55 or 58 or 65 or 67 or 121 or 1231 or 1236;
 
     private static async Task<IntegrityResult> ReadOnceAsync(string path, FileStat stat, IMediaFileSystem fileSystem, CancellationToken cancellationToken)
     {
@@ -139,7 +155,7 @@ public static class IntegrityReader
             catch (IOException ex)
             {
                 int code = ex.HResult & 0xFFFF;
-                return Failed(MapError(code), stat.Size, stat.LastWriteUtcTicks, code, 0, TimeSpan.Zero);
+                return Failed(Map(code, path), stat.Size, stat.LastWriteUtcTicks, code, 0, TimeSpan.Zero);
             }
 
             await using (stream.ConfigureAwait(false))
@@ -165,7 +181,7 @@ public static class IntegrityReader
                     catch (IOException ex)
                     {
                         int code = ex.HResult & 0xFFFF;
-                        return Failed(MapError(code), stat.Size, stat.LastWriteUtcTicks, code, offset + filled, TimeSpan.Zero);
+                        return Failed(Map(code, path), stat.Size, stat.LastWriteUtcTicks, code, offset + filled, TimeSpan.Zero);
                     }
                     catch (UnauthorizedAccessException)
                     {
@@ -200,6 +216,16 @@ public static class IntegrityReader
 
     private static IntegrityResult Failed(IntegrityOutcome outcome, long size, long mtime, int? code, long? offset, TimeSpan elapsed) =>
         new(outcome, null, size, mtime, 0, ZeroMap.None, code, offset, elapsed);
+
+    private static IntegrityOutcome Map(int code, string path)
+    {
+        if (!IsKnownError(code))
+        {
+            AppLog.Shared?.Info(string.Create(CultureInfo.InvariantCulture, $"Read error {code} on {path}: not a media error, the file is skipped and tried again"));
+        }
+
+        return MapError(code);
+    }
 
     /// <summary>Counts all-zero 4 KiB blocks and tracks runs across chunk boundaries.</summary>
     private sealed class ZeroScanner
