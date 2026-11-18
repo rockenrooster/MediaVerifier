@@ -68,6 +68,7 @@ public sealed class PopupTipAndFlyoutTests
         Control? overButton = null;
         Control? besideButton = null;
         Control? afterLeave = null;
+        Control? afterPress = null;
         Control? button = null;
         Sta.Run(() =>
         {
@@ -85,12 +86,16 @@ public sealed class PopupTipAndFlyoutTests
             parent.PointerAt(new Point(20, 10));
             parent.PointerLeft();
             afterLeave = KitToolTip.Pending;
+            parent.PointerAt(new Point(20, 10));
+            parent.PressAt(new Point(20, 10));
+            afterPress = KitToolTip.Pending;
             KitToolTip.Hide();
         });
 
         Assert.Same(button, overButton);
         Assert.Null(besideButton);
         Assert.Null(afterLeave);
+        Assert.Null(afterPress);
     }
 
     /// <summary>Track serves tips that depend on the spot under the pointer (cut text, bar segments).</summary>
@@ -290,5 +295,7 @@ public sealed class PopupTipAndFlyoutTests
         public void PointerAt(Point location) => OnMouseMove(new MouseEventArgs(MouseButtons.None, 0, location.X, location.Y, 0));
 
         public void PointerLeft() => OnMouseLeave(EventArgs.Empty);
+
+        public void PressAt(Point location) => OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, location.X, location.Y, 0));
     }
 }

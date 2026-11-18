@@ -181,7 +181,8 @@ internal static class KitToolTip
 
         HookedParents.Add(parent, Hooked);
         parent.MouseMove += OnParentMouseMove;
-        parent.MouseLeave += OnParentMouseLeave;
+        parent.MouseLeave += OnParentLeaveOrPress;
+        parent.MouseDown += OnParentLeaveOrPress;
     }
 
     private static void OnParentMouseMove(object? sender, MouseEventArgs e)
@@ -205,7 +206,7 @@ internal static class KitToolTip
         }
     }
 
-    private static void OnParentMouseLeave(object? sender, EventArgs e)
+    private static void OnParentLeaveOrPress(object? sender, EventArgs e)
     {
         if (sender is Control parent && s_pending is { Enabled: false } pending && pending.Parent == parent)
         {

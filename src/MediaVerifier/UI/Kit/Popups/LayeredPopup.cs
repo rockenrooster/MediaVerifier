@@ -498,7 +498,7 @@ internal abstract class TransientPopup : LayeredPopup, IMessageFilter
                     }
 
                     CloseWith(null);
-                    if (m.Msg is WmLButtonDown or WmLButtonDblClk && ToggleArea.Contains(point))
+                    if ((m.Msg is WmLButtonDown or WmLButtonDblClk) && ToggleArea.Contains(point))
                     {
                         ReleaseSwallower.Arm();
                         return true;
