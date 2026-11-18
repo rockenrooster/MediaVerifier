@@ -32,18 +32,16 @@ public sealed class AppStateTests
     }
 
     [Fact]
-    public void SettingsSaveRaisesChanged()
+    public async Task SettingsSaveWritesTheFile()
     {
         using TempDirectory temp = new("state");
         AppPaths paths = temp.CreateAppPaths();
         using AppState state = AppState.Load(paths, installSharedLog: false);
-        int raised = 0;
-        state.SettingsChanged += (_, _) => raised++;
         state.Settings.MinimizeToTray = true;
 
-        Assert.True(state.SaveSettings());
-        Assert.Equal(1, raised);
+        Assert.True(await state.SaveSettings());
         Assert.True(File.Exists(paths.SettingsFile));
+        Assert.True(new Core.Settings.SettingsStore(paths.SettingsFile).Load().MinimizeToTray);
     }
 
     [Fact]

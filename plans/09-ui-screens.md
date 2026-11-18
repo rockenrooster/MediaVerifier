@@ -330,7 +330,7 @@ control right-aligned), separated by 1 px `Stroke` lines, inside one card.
 | `General` | `How MediaVerifier looks and starts.` | `Theme` — segmented `System`, `Light`, `Dark` — System. `Start with Windows` — switch — off — `Starts hidden in the notification area`. `Keep running in the notification area when closed` — switch — off. `Default scan depth` — segmented — Standard. `Ask before large scans` — switch — on — `Shows the estimated time first` |
 | `Scanning` | `How much of the computer scans may use, and what they look at.` | `Speed` — segmented `Low`, `Balanced`, `High` — Balanced — `Share of processor cores: 25 %, 50 %, 100 %`. `Readers per hard drive` — number — 1. `Readers per SSD` — number — 4. `Readers per network folder` — number — 2. `File types` — button `Edit…` opening a dialog with three text boxes (`Photos`, `Videos`, `Music`) and `Restore defaults`. `Always skip` — button `Edit…` (folder-name patterns). `Scan online-only cloud files` — switch — off — `Downloads them first. Can use a lot of data`. `Skip files larger than` — drop-down `No limit`, `10 GB`, `50 GB`, `100 GB` — No limit. `Stop a file that makes no progress for` — number + `seconds` — 60. `Check photos for upscaling` — switch — on. `Strict decoding in Deep scans` — switch — off — `Reports files that break the format rules even if they play` |
 | `Rules` | `Turn checks on or off, cap how serious they can be, and tune their limits. Changes apply at once, with no rescan.` | See below |
-| `Integrity` | `How often files are re-read to catch silent changes.` | `Re-read every file at least every` — number + `days` — 90. `Time for this in each scheduled scan` — number + `minutes` — 120. `Also verify whenever a file is analysed` — switch — on. `Keep originals after a repair in` — drop-down `Quarantine folder`, `Recycle Bin`, `Another folder…` — Quarantine folder. `Empty quarantine after` — number + `days` — 30 |
+| `Integrity` | `How often files are re-read to catch silent changes.` | `Re-read every file at least every` — number + `days` — 90. `Time for this in each scheduled scan` — number + `minutes` — 120. `Also verify whenever a file is analysed` — switch — on. `Empty quarantine after` — number + `days` — 30. (Originals always go to the quarantine folder; the `Keep originals after a repair in` drop-down is backlog, see subplan 12, *Where originals go*.) |
 | `Notifications` | `When MediaVerifier tells you something outside its window.` | `Show Windows notifications` — switch — on. `Notify about` — drop-down `Critical only`, `High and above`, `Medium and above`, `Everything` — Medium and above. `Quiet hours` — switch — off; when on, two time boxes `From`, `To`. Button `Send a test notification` |
 | `Updates` | `MediaVerifier updates itself from signed releases on GitHub.` | The update card (subplan 14): `Version {v}`; status line; buttons `Check now`, `Download and install`; link `Release notes`. `Check for updates when MediaVerifier starts` — switch — on |
 | `Advanced` | `For troubleshooting.` | `Database location` — path, button `Open folder` (shows the file in Explorer; `Change…` returns with Tools → Database `Move…` in phase 16). `Logs` — button `Open logs folder`. `Diagnostics` — buttons `Run self-check`, `Copy system report` |
@@ -346,6 +346,23 @@ column is as wide as the rule's longest label (at least 120 px), as far as the b
 `Reset` leave room; the filter box narrows (down to 160 px) so the chips stay in view. After any
 change a Low info bar reports the effect: `{n} findings changed tier with this value.`, `{n} findings appeared.`, `{n} findings no longer apply.`, or `No findings changed.` A rule whose switch is off
 shows its title in `Text2`.
+
+Rules marked backlog in subplan 02 (no detector yet) are not listed. Changes wait 400 ms for the next
+key or click and apply together; while the stored analysis is judged again the bar reads
+`Checking findings…`, and judging runs one rule at a time. A closed rule shows the bar under its 64 px
+header (8 px above, 16 below); closing a rule or leaving the page removes it. The chevron's tooltip is
+`Show limits` or `Hide limits`. Up, Down, Page Up, Page Down, Home and End on a rule's switch move to
+another rule. A change that cannot be saved is undone and reported in a Critical toast titled with the
+rule, `The change was not saved. {reason}`; when judging fails, a Medium toast
+`Findings could not be checked again. {reason}`.
+
+A section taller than the content area scrolls with the page. A settings file that cannot be written
+is reported once, until a save works again, in a Critical toast `Settings` /
+`Settings could not be saved. The log has the details.` with `Open logs folder`. `Run self-check` and
+`Send test` are disabled while they run, with the tooltips `The self-check is running.` and
+`A test is being sent.`; `Copy system report` confirms with `The system report was copied.` or fails
+with `Copy system report failed` and the reason. `Always skip` lists only the user's patterns: the
+quarantine folder, `$RECYCLE.BIN` and `System Volume Information` are always skipped.
 
 Status lines for the update card: `Update status has not been checked.`, `Checking…`,
 `MediaVerifier is up to date.`, `Version {v} is available.`, `Downloading {pct}%`, `Update found, but it could not be verified. Nothing was installed.`, `Could not check for updates. {reason}`.

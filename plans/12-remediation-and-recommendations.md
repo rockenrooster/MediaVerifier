@@ -123,13 +123,15 @@ the next start (the journal identifies them; never delete by pattern alone).
 
 ### Where originals go
 
-Setting *Keep originals in*: **Quarantine folder** (default), Recycle Bin, or a custom folder.
+Originals always go to the quarantine folder. A setting *Keep originals in* (Recycle Bin, or a custom
+folder) is backlog: either destination changes the undo guarantees below and needs its own task (a
+Recycle Bin mode cannot offer in-app undo and must say so in the preview; a custom folder needs a folder
+picker and a same-volume check). Until then Settings shows no such choice.
 
 - Quarantine lives inside each root: `<root>\.mediaverifier-quarantine\<operation id>\<relative path>`, hidden attribute set, excluded from scans. Same volume, so moves are instant, undo is exact,
   and it works on network shares that have no Recycle Bin.
 - Items are purged after `QuarantineDays` (default 30) by the next run, or manually from the Tools
   page. Purging is the only permanent deletion in the product and always shows count and size first.
-- Recycle Bin mode cannot offer in-app undo; say so in the preview.
 
 ### Undo
 

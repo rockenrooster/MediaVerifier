@@ -713,7 +713,6 @@ internal static class Strings
         public const string StartWithWindows = "Start with Windows";
         public const string StartWithWindowsHelper = "Starts hidden in the notification area";
         public const string KeepRunning = "Keep running in the notification area when closed";
-        public const string CheckNowLabel = "Check for a new version";
         public const string UpdateAvailableTitle = "Install version {0}?";
         public const string UpdateInstallText = "The verified installer is downloaded and started. MediaVerifier closes while it installs and opens again afterwards.";
         public const string DefaultDepth = "Default scan depth";
@@ -751,10 +750,6 @@ internal static class Strings
         public const string ReReadEvery = "Re-read every file at least every";
         public const string TimeEachRun = "Time for this in each scheduled scan";
         public const string VerifyOnAnalysis = "Also verify whenever a file is analysed";
-        public const string KeepOriginals = "Keep originals after a repair in";
-        public const string QuarantineFolder = "Quarantine folder";
-        public const string RecycleBin = "Recycle Bin";
-        public const string AnotherFolder = "Another folder…";
         public const string EmptyQuarantine = "Empty quarantine after";
         public const string Notifications = "Notifications";
         public const string NotificationsIntro = "When MediaVerifier tells you something outside its window.";
@@ -797,7 +792,6 @@ internal static class Strings
         public const string Advanced = "Advanced";
         public const string AdvancedIntro = "For troubleshooting.";
         public const string DatabaseLocation = "Database location";
-        public const string Change = "Change…";
         public const string Logs = "Logs";
         public const string OpenLogs = "Open logs folder";
         public const string Diagnostics = "Diagnostics";
@@ -807,7 +801,7 @@ internal static class Strings
         public const string InstallApp = "Install MediaVerifier";
         public const string ScanRunningTitle = "Interrupt the scan?";
         public const string ScanRunningUpdate = "A scan is running. It will be interrupted and can be resumed after the update.";
-        public const string FileTypesHelper = "Extensions, separated by commas.";
+        public const string FileTypesHelper = "Extensions, separated by commas or spaces.";
         public const string AlwaysSkipHelper = "Folder names, separated by commas. * matches any characters.";
         public const string FolderNames = "Folder names";
         public const string CopyReport = "Copy system report";
@@ -834,6 +828,15 @@ internal static class Strings
         public const string Appeared = "{0} findings appeared.";
         public const string NoLongerApply = "{0} findings no longer apply.";
         public const string NoFindingsChanged = "No findings changed.";
+        public const string SaveFailed = "Settings could not be saved. The log has the details.";
+        public const string SelfCheckRunning = "The self-check is running.";
+        public const string WebhookSending = "A test is being sent.";
+        public const string ShowLimits = "Show limits";
+        public const string HideLimits = "Hide limits";
+        public const string CheckingFindings = "Checking findings…";
+        public const string RuleNotSaved = "The change was not saved. {0}";
+        public const string RecheckFailed = "Findings could not be checked again. {0}";
+        public const string ReportCopied = "The system report was copied.";
     }
 
     public static class Dialogs

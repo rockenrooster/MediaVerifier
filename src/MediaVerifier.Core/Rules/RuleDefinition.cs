@@ -27,14 +27,5 @@ public sealed record RuleDefinition(
     /// <summary>Rules evaluated when a fingerprint is verified, at any depth (INT-ROT, INT-META-DRIFT).</summary>
     public bool OnVerification { get; init; }
 
-    /// <summary>Settings → Rules kind label: Damage covers integrity and corruption.</summary>
-    public string KindLabel => Category switch
-    {
-        FindingCategory.Integrity or FindingCategory.Corruption => "Damage",
-        FindingCategory.Authenticity => "Authenticity",
-        FindingCategory.Quality => "Quality",
-        _ => "Structure",
-    };
-
     public bool CanReach(Severity severity) => severity >= MinSeverity && severity <= MaxSeverity;
 }
