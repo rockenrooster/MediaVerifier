@@ -327,24 +327,3 @@ internal sealed class FfprobeDisposition
 [JsonSourceGenerationOptions(NumberHandling = JsonNumberHandling.AllowReadingFromString)]
 [JsonSerializable(typeof(FfprobeOutput))]
 internal sealed partial class FfprobeJsonContext : JsonSerializerContext;
-
-/// <summary>Runs ffprobe for one file (task FF-05).</summary>
-public sealed class ProbeProvider(FfRunner runner)
-{
-    public async Task<ProbeResult> ProbeAsync(string path, MediaKind kind, string? sniffedImageFormat, CancellationToken cancellationToken = default)
-    {
-        List<string> args = ["-show_format", "-show_streams", "-show_error", "-of", "json"];
-        args.AddRange(FfmpegArgs.Input(path, kind, sniffedImageFormat));
-        FfResult result = await runner.RunAsync(
-            new FfRequest
-            {
-                Tool = FfTool.Ffprobe,
-                Arguments = args,
-                Stdout = StdoutMode.Text,
-                IdleTimeout = TimeSpan.FromSeconds(60),
-                HardTimeout = TimeSpan.FromSeconds(120),
-            },
-            cancellationToken).ConfigureAwait(false);
-        return result.Completed ? ProbeParser.Parse(result.StdoutText, result.Log) : ProbeResult.NotOpened(result.Log);
-    }
-}

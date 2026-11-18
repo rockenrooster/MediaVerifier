@@ -38,12 +38,6 @@ public sealed class DbWriter : IDisposable
         _loop = Task.Factory.StartNew(RunAsync, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
     }
 
-    /// <summary>Total operations committed (diagnostics and tests).</summary>
-    public long CommittedOperations { get; private set; }
-
-    /// <summary>Total transactions committed.</summary>
-    public long CommittedBatches { get; private set; }
-
     /// <summary>Queues an operation and completes when its batch has committed, with its result.</summary>
     public async Task<T> ExecuteAsync<T>(Func<WriteContext, T> operation, ChangeFlags changes, CancellationToken cancellationToken = default)
     {
@@ -65,9 +59,10 @@ public sealed class DbWriter : IDisposable
 
     /// <summary>
     /// Queues an operation without waiting for its commit; waits only while the queue is full
-    /// (back-pressure). Failures are logged.
+    /// (back-pressure). Failures are logged, and reported to <paramref name="failed"/> (on the writer thread) so a
+    /// caller can tell that work it posted was lost.
     /// </summary>
-    public async ValueTask PostAsync(Action<WriteContext> operation, ChangeFlags changes, CancellationToken cancellationToken = default)
+    public async ValueTask PostAsync(Action<WriteContext> operation, ChangeFlags changes, CancellationToken cancellationToken = default, Action<Exception>? failed = null)
     {
         ArgumentNullException.ThrowIfNull(operation);
         WriteOp<bool> op = new(
@@ -77,7 +72,8 @@ public sealed class DbWriter : IDisposable
                 return true;
             },
             changes,
-            observeFailure: true);
+            observeFailure: true,
+            failed);
         await _channel.Writer.WriteAsync(op, cancellationToken).ConfigureAwait(false);
     }
 
@@ -160,8 +156,6 @@ public sealed class DbWriter : IDisposable
                 }
 
                 transaction.Commit();
-                CommittedOperations += batch.Count;
-                CommittedBatches++;
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -250,7 +244,7 @@ public sealed class DbWriter : IDisposable
         public abstract void Abort(Exception exception);
     }
 
-    private sealed class WriteOp<T>(Func<WriteContext, T> operation, ChangeFlags changes, bool observeFailure = false) : WriteOp(changes)
+    private sealed class WriteOp<T>(Func<WriteContext, T> operation, ChangeFlags changes, bool observeFailure = false, Action<Exception>? failed = null) : WriteOp(changes)
     {
         private T? _result;
         private Exception? _failure;
@@ -296,6 +290,7 @@ public sealed class DbWriter : IDisposable
             if (_failure is not null)
             {
                 Completion.TrySetException(_failure);
+                Report(_failure);
             }
             else
             {
@@ -311,9 +306,22 @@ public sealed class DbWriter : IDisposable
         public override void Abort(Exception exception)
         {
             Completion.TrySetException(exception);
+            Report(exception);
             if (observeFailure)
             {
                 _ = Completion.Task.Exception;
+            }
+        }
+
+        private void Report(Exception exception)
+        {
+            try
+            {
+                failed?.Invoke(exception);
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Database writer failure callback", ex);
             }
         }
     }

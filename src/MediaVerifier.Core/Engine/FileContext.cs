@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using MediaVerifier.Core.Analysis;
+using MediaVerifier.Core.Analysis.Providers;
 using MediaVerifier.Core.Ffmpeg;
 using MediaVerifier.Core.Logging;
 using MediaVerifier.Core.Model;
@@ -459,4 +460,21 @@ public static class Evaluator
     }
 
     public static bool IsIntegrityRule(string ruleId) => ruleId is "GEN-UNREADABLE" or "GEN-EMPTY" or "GEN-ZEROFILL" or "INT-ROT" or "INT-META-DRIFT";
+
+    /// <summary>
+    /// Whether an artifact comes from an FFmpeg or ffprobe run that never started (the executable missing, quarantined or
+    /// blocked). Detectors judge nothing from it, so a file analysed with one must not count as analysed: its findings
+    /// would resolve as not reproduced and the file would not be analysed again once the media engine works.
+    /// </summary>
+    public static bool FailedToStart(IArtifact artifact) => artifact switch
+    {
+        ProbeArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        AudioDecodeArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        ImageDecodeArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        VideoDecodeArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        FrameSamplesArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        InterlaceArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        StreamHashArtifact a => a.Outcome == RunOutcome.FailedToStart,
+        _ => false,
+    };
 }

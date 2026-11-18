@@ -277,12 +277,19 @@ public sealed class StoreTests
         await d.Plans.RemoveAsync(plan);
         Assert.Empty(d.Plans.List());
 
-        long batch = await d.Journal.NextBatchIdAsync();
+        const long batch = 638_000_000_000_000_000;
         long op = await d.Journal.AddAsync(new OperationRecord { BatchId = batch, ActionId = ActionIds.Remux, SourcePath = @"D:\v.mkv", Status = OperationStatus.Planned });
-        await d.Journal.UpdateAsync(op, OperationStatus.Done, resultPath: @"D:\v.mkv", backupPath: @"D:\q\v.mkv");
+        await d.Journal.UpdateAsync(op, OperationStatus.Done, resultPath: @"D:\v.mkv", backupPath: @"D:\q\v.mkv", undoJson: "{}");
         OperationRecord done = Assert.Single(d.Journal.List(batchId: batch));
         Assert.Equal(OperationStatus.Done, done.Status);
         Assert.Equal(@"D:\q\v.mkv", done.BackupPath);
+
+        // Deleting the kept original for good forgets it: nothing to restore or undo any more.
+        await d.Journal.ClearBackupAsync(op);
+        OperationRecord purged = Assert.Single(d.Journal.List(batchId: batch));
+        Assert.Null(purged.BackupPath);
+        Assert.Null(purged.UndoJson);
+        Assert.Equal(@"D:\v.mkv", purged.ResultPath);
 
         await d.Notifications.AddAsync(new NotificationRecord { Title = "Scan finished", Level = Severity.Medium });
         Assert.Equal(1, d.Notifications.UnreadCount());
@@ -304,7 +311,7 @@ public sealed class StoreTests
     }
 
     [Fact]
-    public async Task MissingFilesAreMarkedExceptInUnlistedDirectories()
+    public async Task MissingFilesAreMarkedOnlyWhenUnseenAndASeenRowComesBack()
     {
         using TestDatabase db = new();
         long root = await db.Database.Roots.AddAsync(new RootRecord { Path = @"D:\P" });
@@ -312,16 +319,20 @@ public sealed class StoreTests
         [
             new(root, "a", "1.jpg", "jpg", MediaKind.Photo, 1, 1, null, 1),
             new(root, "a", "2.jpg", "jpg", MediaKind.Photo, 1, 1, null, 1),
-            new(root, "locked", "3.jpg", "jpg", MediaKind.Photo, 1, 1, null, 1),
         ]);
         await db.Database.Files.UpsertAsync([new(root, "a", "1.jpg", "jpg", MediaKind.Photo, 1, 1, null, 2)]);
-        long lockedDir = db.Database.Files.Get(files[2].FileId)!.DirId;
 
-        List<long> missing = await db.Database.Writer.ExecuteAsync(c => FileIndex.MarkMissing(c, root, 2, [lockedDir]), ChangeFlags.Files);
-
+        // Run 2 saw 1.jpg: of the two candidates only 2.jpg goes missing, and only once.
+        List<long> missing = await db.Database.Writer.ExecuteAsync(c => FileIndex.MarkMissing(c, [files[0].FileId, files[1].FileId], 2), ChangeFlags.Files);
         Assert.Equal([files[1].FileId], missing);
         Assert.Equal(FileState.Missing, db.Database.Files.Get(files[1].FileId)!.State);
-        Assert.NotEqual(FileState.Missing, db.Database.Files.Get(files[2].FileId)!.State);
+        Assert.Equal([files[1].FileId], [.. db.Database.Files.NotSeen(root, 2, includeMissing: true).Select(f => f.Id)]);
+        Assert.Empty(db.Database.Files.NotSeen(root, 2));
+        Assert.Empty(await db.Database.Writer.ExecuteAsync(c => FileIndex.MarkMissing(c, [files[1].FileId], 2), ChangeFlags.Files));
+
+        // Seen again in run 3: back from Missing, Pending because it was never analysed.
+        await db.Database.Writer.ExecuteAsync(c => FileIndex.MarkSeen(c, [files[1].FileId], 3), ChangeFlags.Files);
+        Assert.Equal(FileState.Pending, db.Database.Files.Get(files[1].FileId)!.State);
     }
 
     [Fact]

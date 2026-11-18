@@ -112,7 +112,7 @@ Strict mode (Deep depth, optional setting) appends `+careful+compliant` to `-err
 
 ## Probe model
 
-`ProbeProvider` runs:
+`ProbeArtifactProvider` (the probe as an artifact provider) runs:
 
 ```
 ffprobe <standard args> -show_format -show_streams -show_error -of json -i <file>
@@ -246,7 +246,7 @@ rare; treat their effective depth as "24 or more".
 | FF-02 | `BundleIntegrity` with the OK, Changed and Missing outcomes and their UI hooks | Tests with a fake bundle: a changed DLL gives Changed and scans continue; a deleted DLL gives Missing and scans are refused with the exact message |
 | FF-03 | `FfProcess` with Job Object, concurrent pipe reading, timeouts, cancellation, bounded log collection | Tests use a helper console program in the test project that sleeps, prints a set number of lines, or writes binary data (the bundle has no test-signal inputs). Cancel mid-run leaves no child process; 5 million lines keep memory flat; the idle timeout fires on the sleeping helper |
 | FF-04 | Startup check that the bundle reports version `9.0.2` and its protocols are only `file` and `pipe` | Self-check fails when run against a full FFmpeg build through the override |
-| FF-05 | `ProbeProvider` and JSON model | Golden-file tests over captured ffprobe JSON (healthy audio, video, photo; cover art; missing fields; `N/A` values; unopenable file) |
+| FF-05 | `ProbeArtifactProvider` (the probe) and JSON model | Golden-file tests over captured ffprobe JSON (healthy audio, video, photo; cover art; missing fields; `N/A` values; unopenable file) |
 | FF-06 | `LogClassifier` and `LogSummary` | Every corpus line in `tests/Data/logs/` maps to the expected kind; unknown error lines are counted and logged |
 | FF-07 | Progress parser | Parses a captured progress stream; tolerates a stream cut mid-block |
 | FF-08 | `WavPipeReader` | Tests: plain float header, header with `LIST` chunk, extensible header (6 channels), truncated stream, non-float format rejected |

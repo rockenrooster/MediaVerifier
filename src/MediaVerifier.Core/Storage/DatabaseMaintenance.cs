@@ -59,7 +59,9 @@ public sealed class DatabaseMaintenance(Database database)
 
     /// <summary>
     /// Forgets the library: folders, fingerprints, findings, history, plans, the journal and notifications.
-    /// Media files are not touched. Rule settings are preferences and stay.
+    /// Media files are not touched. Rule settings are preferences and stay. Journal entries that still keep an original
+    /// in a quarantine folder stay too, and so does an operation left running by a crash: they are the only record of
+    /// those files, which Restore, the automatic purge and start-up recovery work from.
     /// </summary>
     public Task ResetAsync(CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(
@@ -68,7 +70,11 @@ public sealed class DatabaseMaintenance(Database database)
                 context.Exec("DELETE FROM roots");
                 context.Exec("DELETE FROM runs");
                 context.Exec("DELETE FROM plans");
-                context.Exec("DELETE FROM operations");
+                SqliteCommand operations = context.Command(
+                    "DELETE FROM operations WHERE status <> $running AND NOT (status = $done AND backup_path IS NOT NULL)");
+                operations.Parameters.AddWithValue("$running", (int)OperationStatus.Running);
+                operations.Parameters.AddWithValue("$done", (int)OperationStatus.Done);
+                operations.ExecuteNonQuery();
                 context.Exec("DELETE FROM notifications");
                 context.Caches.Clear();
             },
@@ -97,36 +103,5 @@ public sealed class DatabaseMaintenance(Database database)
         string pattern = Path.GetFileNameWithoutExtension(database.FilePath) + ".backup-*.db";
         FileInfo? newest = new DirectoryInfo(directory).EnumerateFiles(pattern).OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
         return newest is null ? null : new DateTimeOffset(newest.LastWriteTimeUtc, TimeSpan.Zero);
-    }
-
-    /// <summary>Moves a closed database (and its WAL and shared-memory files) to another folder.</summary>
-    public static string MoveClosedDatabase(string currentFile, string targetDirectory)
-    {
-        Directory.CreateDirectory(targetDirectory);
-        string target = Path.Combine(targetDirectory, Path.GetFileName(currentFile));
-        if (File.Exists(target))
-        {
-            throw new IOException($"A library database already exists at {target}.");
-        }
-
-        File.Copy(currentFile, target);
-        foreach (string suffix in new[] { "-wal", "-shm" })
-        {
-            if (File.Exists(currentFile + suffix))
-            {
-                File.Copy(currentFile + suffix, target + suffix);
-            }
-        }
-
-        File.Delete(currentFile);
-        foreach (string suffix in new[] { "-wal", "-shm" })
-        {
-            if (File.Exists(currentFile + suffix))
-            {
-                File.Delete(currentFile + suffix);
-            }
-        }
-
-        return target;
     }
 }

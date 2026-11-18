@@ -68,8 +68,9 @@ For each enumerated file, compare with its index row.
 | New | No row | Insert; baseline fingerprint; analysis at run depth |
 | Unchanged | Same size and modified time | Analysis only if `scanned_depth < run depth`; rule re-evaluation only if `detector_set` is behind (no I/O, see below); verification only if due under the scrub policy |
 | Modified | Size or modified time differs | `Modified` event; new baseline; full re-analysis; findings re-evaluated from scratch |
-| Returned | Row was `Missing` | `Returned` event; then as Unchanged or Modified |
+| Returned | Row was `Missing` | `Returned` event; the row leaves `Missing` (its state follows its findings again, `Pending` if never analysed); then as Unchanged or Modified |
 | Missing | Row not seen in this run, root online, directory listed successfully | `state = Missing`, `Missing` event. Rows are kept for history |
+| Out of scope | Row not seen in this run, and the current rules leave it out (a skipped folder name, the folder's exclude or include patterns, a file type no longer in the lists, a kind the folder no longer contains) | The row is deleted with its findings, artifacts and history; it is not missing and does not count toward `RUN-MASS-MISSING` |
 | Moved | A new path whose NTFS file ID, size and modified time match a row that would otherwise go missing in the same root | Update the row's directory and name; `Moved` event; no re-analysis. Fallback after hashing: fingerprint equals a row that went missing in this run |
 
 Reconciliation runs in batches (one lookup query per directory).
@@ -107,8 +108,9 @@ access sequential:
 3. Depth upgrades and provider-version upgrades.
 
 With a time budget (scheduled runs), the engine stops taking new work when the budget is reached, lets
-in-flight files finish, and ends the run as `BudgetReached`. The next run continues naturally because
-work is derived from state.
+in-flight files finish, and ends the run as `BudgetReached`. Work still queued is dropped and the
+listing stops; a root whose listing did not finish has no missing-file detection in that run. The next
+run continues naturally because work is derived from state.
 
 ### Concurrency
 
@@ -204,7 +206,10 @@ Control:
   logged reason (scheduled).
 
 Partial scopes (rescan a folder or selected files) are first-class: missing-file detection applies
-only inside the directories actually enumerated.
+only inside the directories actually enumerated. Selected files ("Scan again") are not reconciled:
+each one still present is read and analysed from scratch at the run's depth, stored artifacts are
+not reused, only those files count as seen, and missing-file detection does not run. When a write
+the run posted without waiting (a seen mark) fails, the run marks nothing missing; the next run does.
 
 ## Progress and estimates
 

@@ -33,7 +33,7 @@ fingerprint results.
 | Artifact | Provider | Depth | Content |
 |----------|----------|-------|---------|
 | `StructureArtifact` | `StructureProvider` (native, no FFmpeg) | Quick | Sniffed format, declared end offset, structural issues, padding regions, format-specific header data |
-| `ProbeResult` | `ProbeProvider` (subplan 04) | Quick | Streams, durations, bitrates |
+| `ProbeResult` | `ProbeArtifactProvider` (subplan 04) | Quick | Streams, durations, bitrates |
 | `AudioDecodeArtifact` | `AudioDecodeProvider` | Standard | Outcome, log summary, decoded sample count, FLAC MD5 verdict; in M2 also PCM statistics (subplan 10) |
 | `ImageDecodeArtifact` | `ImageDecodeProvider` | Standard | Outcome, log summary, frames read, dimensions |
 | `VideoDecodeArtifact` | `VideoDecodeProvider` | Standard / Deep | Outcome, log summary split per stream, decoded duration and frame count, stream hash, pass kind |

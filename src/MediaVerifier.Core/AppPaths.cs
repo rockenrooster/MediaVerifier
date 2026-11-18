@@ -57,26 +57,18 @@ public sealed class AppPaths
 
     /// <summary>Scratch folder for one child-process job; created on demand, deleted after the job.</summary>
     public string JobTempDirectory(long runId, long jobId) => Path.Combine(
-        TempDirectory,
-        runId.ToString(CultureInfo.InvariantCulture),
+        RunTempDirectory(runId),
         jobId.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>Creates every writable folder. The FFmpeg folder is not created: it ships with the app.</summary>
-    public void EnsureCreated()
-    {
-        Directory.CreateDirectory(RoamingDirectory);
-        Directory.CreateDirectory(LocalDirectory);
-        Directory.CreateDirectory(LogsDirectory);
-        Directory.CreateDirectory(CacheDirectory);
-        Directory.CreateDirectory(UpdatesDirectory);
-        Directory.CreateDirectory(TempDirectory);
-    }
+    /// <summary>The scratch folder of one scan run; its jobs' folders are below it.</summary>
+    public string RunTempDirectory(long runId) => Path.Combine(TempDirectory, runId.ToString(CultureInfo.InvariantCulture));
 
     /// <summary>
-    /// Deletes leftover scratch folders from earlier runs (called at startup by the process that
-    /// owns the engine). Folders still in use are skipped.
+    /// Deletes the scratch folders of scan runs (the numbered folders under temp) except <paramref name="keepRunId"/>'s:
+    /// at the start of a run for what crashed or killed runs left behind, and at its end for its own. Called only by
+    /// the process that holds the engine mutex, so no other run is using one. Folders still in use are skipped.
     /// </summary>
-    public int CleanTemp()
+    public int CleanRunTemp(long? keepRunId = null)
     {
         if (!Directory.Exists(TempDirectory))
         {
@@ -84,19 +76,16 @@ public sealed class AppPaths
         }
 
         int removed = 0;
-        foreach (string entry in Directory.EnumerateFileSystemEntries(TempDirectory))
+        foreach (string folder in Directory.EnumerateDirectories(TempDirectory))
         {
+            if (!long.TryParse(Path.GetFileName(folder), NumberStyles.None, CultureInfo.InvariantCulture, out long runId) || runId == keepRunId)
+            {
+                continue;
+            }
+
             try
             {
-                if (Directory.Exists(entry))
-                {
-                    Directory.Delete(entry, recursive: true);
-                }
-                else
-                {
-                    File.Delete(entry);
-                }
-
+                Directory.Delete(folder, recursive: true);
                 removed++;
             }
             catch (IOException)
@@ -108,5 +97,16 @@ public sealed class AppPaths
         }
 
         return removed;
+    }
+
+    /// <summary>Creates every writable folder. The FFmpeg folder is not created: it ships with the app.</summary>
+    public void EnsureCreated()
+    {
+        Directory.CreateDirectory(RoamingDirectory);
+        Directory.CreateDirectory(LocalDirectory);
+        Directory.CreateDirectory(LogsDirectory);
+        Directory.CreateDirectory(CacheDirectory);
+        Directory.CreateDirectory(UpdatesDirectory);
+        Directory.CreateDirectory(TempDirectory);
     }
 }

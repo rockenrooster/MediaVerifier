@@ -256,48 +256,22 @@ public sealed class FileIndex(Database database)
     }
 
     /// <summary>
-    /// Marks rows of an online root that this run did not see as Missing, except in directories that
-    /// failed to list. Returns the ids that went missing.
+    /// Records that the run saw these rows (missing-file detection relies on it). A row that was Missing is back
+    /// (subplan 05, Returned): it takes the state its findings give it again, Pending when it was never analysed.
     /// </summary>
-    public static List<long> MarkMissing(WriteContext context, long rootId, long runId, IReadOnlyCollection<long> unlistedDirIds)
-    {
-        List<long> missing = [];
-        SqliteCommand select = context.Command(
-            "SELECT id, dir_id FROM files WHERE root_id = $root AND last_seen_run <> $run AND state <> $missing");
-        select.Add("$root", rootId);
-        select.Add("$run", runId);
-        select.Add("$missing", (int)FileState.Missing);
-        using (SqliteDataReader reader = select.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                if (!unlistedDirIds.Contains(reader.GetInt64(1)))
-                {
-                    missing.Add(reader.GetInt64(0));
-                }
-            }
-        }
-
-        SqliteCommand mark = context.Command("UPDATE files SET state = $missing WHERE id = $id");
-        foreach (long id in missing)
-        {
-            mark.Parameters.Clear();
-            mark.Add("$missing", (int)FileState.Missing);
-            mark.Add("$id", id);
-            mark.ExecuteNonQuery();
-        }
-
-        return missing;
-    }
-
-    /// <summary>Records that the run saw these rows (missing-file detection relies on it).</summary>
     public static void MarkSeen(WriteContext context, IReadOnlyList<long> fileIds, long runId)
     {
-        SqliteCommand command = context.Command("UPDATE files SET last_seen_run = $run WHERE id = $id");
+        SqliteCommand command = context.Command(
+            "UPDATE files SET last_seen_run = $run, state = CASE WHEN state = $missing THEN " +
+            "(CASE WHEN scanned_depth = 0 THEN $pending WHEN open_findings > 0 THEN $issues ELSE $ok END) ELSE state END WHERE id = $id");
         foreach (long id in fileIds)
         {
             command.Parameters.Clear();
             command.Add("$run", runId);
+            command.Add("$missing", (int)FileState.Missing);
+            command.Add("$pending", (int)FileState.Pending);
+            command.Add("$issues", (int)FileState.Issues);
+            command.Add("$ok", (int)FileState.Ok);
             command.Add("$id", id);
             command.ExecuteNonQuery();
         }
@@ -315,38 +289,24 @@ public sealed class FileIndex(Database database)
     }
 
     /// <summary>
-    /// Marks rows inside the scope that this run did not see as Missing (subplan 05): only within
-    /// <paramref name="scopeRelDir"/> (the whole root when empty), never inside a directory that failed to
-    /// list. Directories that vanished entirely count as seen and empty. Returns the ids that went missing.
+    /// Marks these rows Missing (subplan 05), unless the run saw them after all or they already are. The caller chose
+    /// them: rows of a fully listed scope that the run did not see, outside directories that failed to list and inside
+    /// what the current rules cover. Returns the ids that went missing.
     /// </summary>
-    public static List<long> MarkMissingInScope(WriteContext context, long rootId, long runId, string scopeRelDir, IReadOnlyCollection<string> unlistedRelDirs)
+    public static List<long> MarkMissing(WriteContext context, IReadOnlyCollection<long> fileIds, long runId)
     {
-        scopeRelDir = NormalizeRelDir(scopeRelDir);
-        SqliteCommand select = context.Command(
-            "SELECT f.id, d.rel_path FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.last_seen_run <> $run AND f.state <> $missing");
-        select.Add("$root", rootId);
-        select.Add("$run", runId);
-        select.Add("$missing", (int)FileState.Missing);
         List<long> missing = [];
-        using (SqliteDataReader reader = select.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                string rel = reader.GetString(1);
-                if (Within(rel, scopeRelDir) && !unlistedRelDirs.Any(u => Within(rel, NormalizeRelDir(u))))
-                {
-                    missing.Add(reader.GetInt64(0));
-                }
-            }
-        }
-
-        SqliteCommand mark = context.Command("UPDATE files SET state = $missing WHERE id = $id");
-        foreach (long id in missing)
+        SqliteCommand mark = context.Command("UPDATE files SET state = $missing WHERE id = $id AND last_seen_run <> $run AND state <> $missing");
+        foreach (long id in fileIds)
         {
             mark.Parameters.Clear();
             mark.Add("$missing", (int)FileState.Missing);
+            mark.Add("$run", runId);
             mark.Add("$id", id);
-            mark.ExecuteNonQuery();
+            if (mark.ExecuteNonQuery() > 0)
+            {
+                missing.Add(id);
+            }
         }
 
         return missing;
@@ -356,14 +316,18 @@ public sealed class FileIndex(Database database)
     public static bool Within(string relDir, string scope) =>
         scope.Length == 0 || string.Equals(relDir, scope, StringComparison.Ordinal) || relDir.StartsWith(scope + "\\", StringComparison.Ordinal);
 
-    /// <summary>Rows of a root not seen by a run, with what move detection needs.</summary>
-    public List<FileRecord> NotSeen(long rootId, long runId) => database.Read(connection =>
+    /// <summary>
+    /// Rows of a root not seen by a run, with what move detection needs. Rows already Missing are left out unless
+    /// <paramref name="includeMissing"/> (a folder or file type the user excluded since takes them out of the index).
+    /// </summary>
+    public List<FileRecord> NotSeen(long rootId, long runId, bool includeMissing = false) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT " + FileColumns + " FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.last_seen_run <> $run AND f.state <> $missing";
+        command.CommandText = "SELECT " + FileColumns + " FROM files f JOIN dirs d ON d.id = f.dir_id WHERE f.root_id = $root AND f.last_seen_run <> $run AND ($all OR f.state <> $missing)";
         command.Add("$root", rootId);
         command.Add("$run", runId);
         command.Add("$missing", (int)FileState.Missing);
+        command.Add("$all", includeMissing ? 1 : 0);
         using SqliteDataReader reader = command.ExecuteReader();
         List<FileRecord> rows = [];
         while (reader.Read())
@@ -402,7 +366,10 @@ public sealed class FileIndex(Database database)
         return (long)command.ExecuteScalar()!;
     });
 
-    /// <summary>Deletes a row (the duplicate left by a fingerprint-detected move).</summary>
+    /// <summary>
+    /// Deletes a row with its findings, artifacts and history (the duplicate left by a fingerprint-detected move, or a
+    /// file the current rules no longer cover).
+    /// </summary>
     public static void Delete(WriteContext context, long fileId)
     {
         SqliteCommand command = context.Command("DELETE FROM files WHERE id = $id");

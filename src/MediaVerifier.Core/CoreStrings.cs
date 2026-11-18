@@ -68,4 +68,14 @@ public static class CoreStrings
         public const string FormatChanged = "The new file is in a different format from the original.";
         public const string WrongFormat = "This action does not apply to this file's format.";
     }
+
+    /// <summary>What the engine is doing with a file, as the Scans page's WORKING ON list shows it (subplan 09, Scans).</summary>
+    public static class ScanStage
+    {
+        public const string Reading = "Reading";
+        public const string Decoding = "Decoding";
+        public const string Analysing = "Decoding and analysing";
+        public const string Sampling = "Sampling frames";
+        public const string EveryFrame = "Decoding every frame";
+    }
 }

@@ -98,9 +98,15 @@ public sealed class Database : IDisposable
     /// <summary>Raised (debounced, at most twice a second, on a pool thread) after commits.</summary>
     public event EventHandler<LibraryChangedEventArgs>? LibraryChanged;
 
-    public static Database Open(string filePath, IClock? clock = null) => Open(filePath, clock ?? SystemClock.Instance, MigrationRunner.Default);
+    /// <summary>Opens (or creates) the library database.</summary>
+    /// <param name="markInterrupted">
+    /// Whether runs still marked Running are marked Interrupted. Only a process that may own the engine passes true: a
+    /// window opened while a scheduled scan runs in the background must leave that live run alone.
+    /// </param>
+    public static Database Open(string filePath, IClock? clock = null, bool markInterrupted = true) =>
+        Open(filePath, clock ?? SystemClock.Instance, MigrationRunner.Default, markInterrupted);
 
-    internal static Database Open(string filePath, IClock clock, IReadOnlyList<Migration> migrations)
+    internal static Database Open(string filePath, IClock clock, IReadOnlyList<Migration> migrations, bool markInterrupted = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         InitializeProvider();
@@ -122,7 +128,7 @@ public sealed class Database : IDisposable
             CheckVersion(version);
             ApplyPragmas(connection, cacheKib: 32768, writer: true);
             int previous = MigrationRunner.Run(connection, filePath, migrations, clock.UtcNow);
-            int interrupted = MarkInterruptedRuns(connection, clock);
+            int interrupted = markInterrupted ? MarkInterruptedRuns(connection) : 0;
             if (damagedCopy is not null)
             {
                 AddRecoveryNotification(connection, clock, damagedCopy);
@@ -139,6 +145,13 @@ public sealed class Database : IDisposable
         catch
         {
             connection.Dispose();
+            if (damagedCopy is not null)
+            {
+                // The fresh start failed too (a full disk, say): put the library back so a later start can try again
+                // instead of finding an empty file in its place and the history in a copy nothing points to.
+                RestoreDamaged(filePath, damagedCopy);
+            }
+
             throw;
         }
     }
@@ -262,6 +275,11 @@ public sealed class Database : IDisposable
         }
     }
 
+    /// <summary>
+    /// True when <c>quick_check</c> says the file is sound. Only real damage returns false (a failed check, or SQLite
+    /// calling the file corrupt or not a database); anything else (a lock, an I/O error, a full disk) throws and leaves
+    /// the file where it is, because moving a sound library aside would lose it from the app (subplan 03).
+    /// </summary>
     private static bool QuickCheckPasses(string file, out string problem)
     {
         problem = "";
@@ -278,12 +296,19 @@ public sealed class Database : IDisposable
             problem = result;
             return false;
         }
-        catch (SqliteException ex)
+        catch (SqliteException ex) when (IsDamage(ex))
         {
             problem = ex.Message;
             return false;
         }
+        catch (SqliteException ex)
+        {
+            throw new StorageException("The library database could not be opened: " + ex.Message, ex);
+        }
     }
+
+    /// <summary>SQLITE_CORRUPT (11) and SQLITE_NOTADB (26), whether or not the code is an extended one.</summary>
+    internal static bool IsDamage(SqliteException exception) => (exception.SqliteErrorCode & 0xFF) is 11 or 26;
 
     private static string MoveDamagedAside(string file, IClock clock)
     {
@@ -304,13 +329,39 @@ public sealed class Database : IDisposable
         return target;
     }
 
-    private static int MarkInterruptedRuns(SqliteConnection connection, IClock clock)
+    /// <summary>Undoes <see cref="MoveDamagedAside"/> after the fresh database could not be created.</summary>
+    private static void RestoreDamaged(string file, string damagedCopy)
+    {
+        try
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (string suffix in new[] { "", "-wal", "-shm" })
+            {
+                File.Delete(file + suffix);
+                if (File.Exists(damagedCopy + suffix))
+                {
+                    File.Move(damagedCopy + suffix, file + suffix);
+                }
+            }
+
+            AppLog.Shared?.Warning($"A fresh library database could not be created; the damaged one is back at {file}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Shared?.Error($"The damaged library database stays at {damagedCopy}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Runs left Running by a process that ended without finishing them become Interrupted. They keep the time of their
+    /// last checkpoint as their end (the run row's heartbeat), not the time of this start.
+    /// </summary>
+    private static int MarkInterruptedRuns(SqliteConnection connection)
     {
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "UPDATE runs SET status = $interrupted, ended_utc = COALESCE(ended_utc, MAX($now, started_utc)) WHERE status = $running";
+        command.CommandText = "UPDATE runs SET status = $interrupted, ended_utc = COALESCE(ended_utc, started_utc) WHERE status = $running";
         command.Parameters.AddWithValue("$interrupted", (int)RunStatus.Interrupted);
         command.Parameters.AddWithValue("$running", (int)RunStatus.Running);
-        command.Parameters.AddWithValue("$now", clock.UtcNow.UtcTicks);
         return command.ExecuteNonQuery();
     }
 

@@ -24,11 +24,15 @@ public sealed class AppLog : IDisposable
 
     private static volatile AppLog? s_shared;
 
+    private static readonly TimeSpan RollRetry = TimeSpan.FromMinutes(1);
+
     private readonly Channel<Entry> _channel;
     private readonly Task _writerTask;
     private readonly long _maxBytes;
     private readonly IClock _clock;
     private long _dropped;
+    private long _unwritten;
+    private long _rollBlockedUntil;
     private int _disposed;
 
     public AppLog(string directory, string fileName = "app.log", long maxBytes = DefaultMaxBytes, IClock? clock = null)
@@ -112,12 +116,18 @@ public sealed class AppLog : IDisposable
         }
     }
 
+    /// <summary>
+    /// Writes entries until the channel completes. Logging is best effort: a write that fails (a full or read-only disk,
+    /// the file locked by another program) loses that entry only, counted and reported once writing works again; the
+    /// writer itself keeps going for the rest of the session.
+    /// </summary>
     private async Task WriteLoopAsync()
     {
         ChannelReader<Entry> reader = _channel.Reader;
         StringBuilder builder = new(256);
         FileStream? stream = null;
         long reportedDropped = 0;
+        long reportedUnwritten = 0;
         try
         {
             while (await reader.WaitToReadAsync().ConfigureAwait(false))
@@ -129,39 +139,83 @@ public sealed class AppLog : IDisposable
                     if (dropped != reportedDropped)
                     {
                         Format(builder, new Entry(entry.Time, LogLevel.Warning, $"{(dropped - reportedDropped).ToString(CultureInfo.InvariantCulture)} log messages were dropped because the queue was full", null));
-                        reportedDropped = dropped;
+                    }
+
+                    long unwritten = Interlocked.Read(ref _unwritten);
+                    if (unwritten != reportedUnwritten)
+                    {
+                        Format(builder, new Entry(entry.Time, LogLevel.Warning, $"{(unwritten - reportedUnwritten).ToString(CultureInfo.InvariantCulture)} log messages could not be written", null));
                     }
 
                     Format(builder, entry);
-                    stream = WriteText(stream, builder);
+                    try
+                    {
+                        WriteText(ref stream, builder);
+                        reportedDropped = dropped;
+                        reportedUnwritten = unwritten;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Close(ref stream);
+                        Interlocked.Increment(ref _unwritten);
+                    }
                 }
 
-                stream?.Flush();
+                try
+                {
+                    stream?.Flush();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Close(ref stream);
+                }
             }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Logging is best effort: a full or read-only disk must not take the app down.
         }
         finally
         {
-            stream?.Dispose();
+            Close(ref stream);
         }
     }
 
-    private FileStream? WriteText(FileStream? stream, StringBuilder text)
+    /// <summary>
+    /// Closes the file, losing what is still buffered when that cannot be written either: a failed close (it flushes,
+    /// so a full disk fails it again) must not end the writer.
+    /// </summary>
+    private static void Close(ref FileStream? stream)
+    {
+        try
+        {
+            stream?.Dispose();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        stream = null;
+    }
+
+    /// <summary>Appends the text, rolling first at the cap. <paramref name="stream"/> always holds what is open, even on failure.</summary>
+    private void WriteText(ref FileStream? stream, StringBuilder text)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(text.ToString());
         stream ??= Open();
-        if (stream.Length > 0 && stream.Length + bytes.Length > _maxBytes)
+        if (stream.Length > 0 && stream.Length + bytes.Length > _maxBytes && Environment.TickCount64 >= _rollBlockedUntil)
         {
-            stream.Dispose();
-            Roll();
+            Close(ref stream);
+            try
+            {
+                Roll();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Another program holds app.log without delete sharing: keep appending past the cap, try again later.
+                _rollBlockedUntil = Environment.TickCount64 + (long)RollRetry.TotalMilliseconds;
+            }
+
             stream = Open();
         }
 
         stream.Write(bytes);
-        return stream;
     }
 
     private FileStream Open()

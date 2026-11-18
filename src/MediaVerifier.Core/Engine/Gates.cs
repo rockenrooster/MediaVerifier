@@ -151,11 +151,13 @@ public sealed class WindowsVolumeResolver : IVolumeResolver
     private static extern bool DeviceIoControl(SafeFileHandle device, uint code, ref StoragePropertyQuery input, int inputSize, out DeviceSeekPenaltyDescriptor output, int outputSize, out int returned, IntPtr overlapped);
 }
 
-/// <summary>One gate per physical volume: how many readers may touch it at once.</summary>
+/// <summary>
+/// One gate per physical volume: how many readers may touch it at once. Each is a <see cref="CpuGate"/> taken with
+/// weight 1, so <see cref="Refresh"/> can apply a changed Readers setting to a scan that is running.
+/// </summary>
 public sealed class IoGates : IDisposable
 {
-    private readonly Dictionary<string, SemaphoreSlim> _gates = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, int> _limits = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (CpuGate Gate, StorageClass Class)> _gates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _gate = new();
     private readonly Func<StorageClass, int> _readersFor;
 
@@ -174,28 +176,31 @@ public sealed class IoGates : IDisposable
         _ => 2,
     };
 
-    public SemaphoreSlim For(VolumeInfo volume)
+    public CpuGate For(VolumeInfo volume)
     {
         lock (_gate)
         {
-            if (!_gates.TryGetValue(volume.Key, out SemaphoreSlim? semaphore))
+            if (!_gates.TryGetValue(volume.Key, out (CpuGate Gate, StorageClass Class) entry))
             {
-                int limit = Math.Max(1, _readersFor(volume.Class));
-                semaphore = new SemaphoreSlim(limit, limit);
-                _gates[volume.Key] = semaphore;
-                _limits[volume.Key] = limit;
+                entry = (new CpuGate(Math.Max(1, _readersFor(volume.Class))), volume.Class);
+                _gates[volume.Key] = entry;
             }
 
-            return semaphore;
+            return entry.Gate;
         }
     }
 
-    public int LimitFor(VolumeInfo volume)
+    public int LimitFor(VolumeInfo volume) => For(volume).Capacity;
+
+    /// <summary>Reads the readers per storage class again and applies them to every volume's gate.</summary>
+    public void Refresh()
     {
-        For(volume);
         lock (_gate)
         {
-            return _limits[volume.Key];
+            foreach ((CpuGate gate, StorageClass storage) in _gates.Values)
+            {
+                gate.SetCapacity(Math.Max(1, _readersFor(storage)));
+            }
         }
     }
 
@@ -203,11 +208,6 @@ public sealed class IoGates : IDisposable
     {
         lock (_gate)
         {
-            foreach (SemaphoreSlim semaphore in _gates.Values)
-            {
-                semaphore.Dispose();
-            }
-
             _gates.Clear();
         }
     }
@@ -216,21 +216,32 @@ public sealed class IoGates : IDisposable
 /// <summary>
 /// The global CPU gate (task E-06): a weighted semaphore with capacity = logical cores × performance level
 /// (Low 25 %, Balanced 50 %, High 100 %; minimum 1). Waiters are served in order so heavy jobs cannot
-/// starve. A weight above the capacity is clamped to it.
+/// starve. A weight above the capacity is clamped to it. The capacity can change while leases are held (the Speed
+/// setting changed during a scan): a lower one takes effect as leases come back.
 /// </summary>
 public sealed class CpuGate
 {
     private readonly Lock _gate = new();
     private readonly LinkedList<Waiter> _waiters = new();
     private int _available;
+    private int _capacity;
 
     public CpuGate(int capacity)
     {
-        Capacity = Math.Max(1, capacity);
-        _available = Capacity;
+        _capacity = Math.Max(1, capacity);
+        _available = _capacity;
     }
 
-    public int Capacity { get; }
+    public int Capacity
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _capacity;
+            }
+        }
+    }
 
     public int InUse
     {
@@ -238,8 +249,33 @@ public sealed class CpuGate
         {
             lock (_gate)
             {
-                return Capacity - _available;
+                return _capacity - _available;
             }
+        }
+    }
+
+    /// <summary>
+    /// Changes the capacity. Leases already granted keep their weight; waiting requests heavier than the new capacity
+    /// are clamped to it, as new ones are.
+    /// </summary>
+    public void SetCapacity(int capacity)
+    {
+        capacity = Math.Max(1, capacity);
+        lock (_gate)
+        {
+            if (capacity == _capacity)
+            {
+                return;
+            }
+
+            _available += capacity - _capacity;
+            _capacity = capacity;
+            foreach (Waiter waiter in _waiters)
+            {
+                waiter.Weight = Math.Min(waiter.Weight, capacity);
+            }
+
+            Grant();
         }
     }
 
@@ -250,14 +286,12 @@ public sealed class CpuGate
         _ => 0.5,
     }));
 
-    public int Clamp(int weight) => Math.Clamp(weight, 1, Capacity);
-
     public async Task<Lease> AcquireAsync(int weight, CancellationToken cancellationToken)
     {
-        weight = Clamp(weight);
         Waiter? waiter = null;
         lock (_gate)
         {
+            weight = Math.Clamp(weight, 1, _capacity);
             if (_waiters.Count == 0 && _available >= weight)
             {
                 _available -= weight;
@@ -273,7 +307,8 @@ public sealed class CpuGate
             await waiter.Completion.Task.ConfigureAwait(false);
         }
 
-        return new Lease(this, weight);
+        // The weight granted, which a lower capacity may have clamped while the request waited.
+        return new Lease(this, waiter.Weight);
     }
 
     private void Cancel(Waiter waiter)
@@ -329,7 +364,8 @@ public sealed class CpuGate
 
     private sealed class Waiter(int weight)
     {
-        public int Weight { get; } = weight;
+        /// <summary>Changed only under the gate's lock, before the waiter is granted.</summary>
+        public int Weight { get; set; } = weight;
 
         public LinkedListNode<Waiter>? Node { get; set; }
 

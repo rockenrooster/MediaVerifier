@@ -134,7 +134,6 @@ public sealed class DatabaseTests
         RunRecord after = db.Database.Runs.Get(run)!;
         Assert.Equal(RunStatus.Interrupted, after.Status);
         Assert.NotNull(after.EndedUtc);
-        Assert.Equal(run, db.Database.Runs.LatestInterrupted()!.Id);
     }
 
     [Fact]

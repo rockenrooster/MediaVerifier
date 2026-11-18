@@ -43,11 +43,4 @@ internal static class SqlHelpers
             command.Parameters.AddWithValue("$p" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), value);
         }
     }
-
-    /// <summary>
-    /// Range bounds that select a directory and everything below it on the (root_id, rel_path) index:
-    /// rel_path = p, or p + '\' ≤ rel_path &lt; p + ']' (']' follows '\' in code-point order). Case-exact.
-    /// </summary>
-    public static (string Exact, string Low, string High) SubtreeBounds(string relPath) =>
-        relPath.Length == 0 ? ("", "", "￿") : (relPath, relPath + "\\", relPath + "]");
 }
