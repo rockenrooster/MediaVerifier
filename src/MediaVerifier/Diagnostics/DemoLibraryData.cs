@@ -33,17 +33,17 @@ internal sealed partial class DemoUiData
 
     public BrowseData LoadBrowse(BrowseQuery query)
     {
-        BrowseFolder overpass = new(1, 14, "Overpass", Severity.High, []);
-        BrowseFolder music = new(1, 10, "Music", Severity.Critical,
+        BrowseFolder overpass = Folder(1, 14, "Overpass", @"Night Drive\Overpass", Severity.High, []);
+        BrowseFolder music = Folder(1, 10, "Music", string.Empty, Severity.Critical,
         [
-            new BrowseFolder(1, 11, "Glasshouse", Severity.Medium, []),
-            new BrowseFolder(1, 12, "Harbor Lights", Severity.Critical, []),
-            new BrowseFolder(1, 13, "Night Drive", Severity.High, [overpass, new BrowseFolder(1, 15, "Singles", Severity.None, [])]),
-            new BrowseFolder(1, 16, "Static Bloom", Severity.Medium, []),
-            new BrowseFolder(1, 17, "Sunday Session", Severity.High, []),
+            Folder(1, 11, "Glasshouse", "Glasshouse", Severity.Medium, []),
+            Folder(1, 12, "Harbor Lights", "Harbor Lights", Severity.Critical, []),
+            Folder(1, 13, "Night Drive", "Night Drive", Severity.High, [overpass, Folder(1, 15, "Singles", @"Night Drive\Singles", Severity.None, [])]),
+            Folder(1, 16, "Static Bloom", "Static Bloom", Severity.Medium, []),
+            Folder(1, 17, "Sunday Session", "Sunday Session", Severity.High, []),
         ]);
-        BrowseFolder photos = new(2, 20, "Photos", Severity.Critical, [new BrowseFolder(2, 21, "2019", Severity.Critical, [])]);
-        BrowseFolder videos = new(3, 30, "Videos", Severity.High, [new BrowseFolder(3, 31, "Family", Severity.Critical, [])]);
+        BrowseFolder photos = Folder(2, 20, "Photos", string.Empty, Severity.Critical, [Folder(2, 21, "2019", "2019", Severity.Critical, [])]);
+        BrowseFolder videos = Folder(3, 30, "Videos", string.Empty, Severity.High, [Folder(3, 31, "Family", "Family", Severity.Critical, [])]);
         IEnumerable<FileRow> files = query.DirId is null or 14 ? OverpassFiles : [];
         files = query.State switch
         {
@@ -61,10 +61,15 @@ internal sealed partial class DemoUiData
             files = files.Reverse();
         }
 
-        return new BrowseData(query with { RootId = 1, DirId = 14 }, [music, photos, videos], ["Music", "Night Drive", "Overpass"], [.. files.Select(f => f.Id)], new FolderStateCounts(10, 6, 2));
+        Dictionary<long, string> paths = new() { [1] = @"D:\Music", [2] = @"D:\Photos", [3] = @"\\nas\media\Videos" };
+        return new BrowseData(query with { RootId = 1, DirId = 14 }, [music, photos, videos], ["Music", "Night Drive", "Overpass"], [.. files.Select(f => f.Id)], new FolderStateCounts(10, 6, 2), paths);
     }
 
-    public IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids) => [.. ids.Select(id => OverpassFiles.First(f => f.Id == id))];
+    public IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids) => [.. ids.Select(id => OverpassFiles.FirstOrDefault(f => f.Id == id)).OfType<FileRow>()];
+
+    /// <summary>A demo tree folder: ten files of 330 MB in each leaf, summed up the tree (only the large-scan question reads them).</summary>
+    private static BrowseFolder Folder(long root, long id, string name, string relPath, Severity worst, IReadOnlyList<BrowseFolder> children) =>
+        new(root, id, name, relPath, worst, children.Count == 0 ? 10 : children.Sum(c => c.Files), children.Count == 0 ? 330L * 1024 * 1024 : children.Sum(c => c.Bytes), children);
 
     private static FileRow File(long id, string name, double megabytes, FileState state, Severity worst, int? verifiedDaysAgo, SkipReason skip = SkipReason.None, string? rule = null)
     {

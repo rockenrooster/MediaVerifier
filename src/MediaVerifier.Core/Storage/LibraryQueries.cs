@@ -74,13 +74,17 @@ public sealed record FileFilter
     /// <summary>Only files whose worst open finding is at most this tier.</summary>
     public Severity? MaxSeverity { get; init; }
 
+    /// <summary>Case-insensitive (ASCII) substring of the file name (the header's search: subplan 09, "Searches file names").</summary>
     public string? Text { get; init; }
 }
 
-/// <summary>A watched folder's totals for its Library card (files present, open findings per tier).</summary>
-public sealed record RootSummary(long RootId, long Files, long Bytes, long? LastScannedUtc, long? FingerprintsUtc, SeverityCounts Open);
+/// <summary>
+/// A watched folder's totals for its Library card: files present, their size, open findings per tier, and the scanned
+/// files without any open finding (the bar's OK segment, counted as the dashboard's media rows count it).
+/// </summary>
+public sealed record RootSummary(long RootId, long Files, long Bytes, long? LastScannedUtc, long? FingerprintsUtc, SeverityCounts Open, long HealthyFiles = 0);
 
-/// <summary>The Browse state chips of one folder: every file, the OK ones (nothing above Low) and the problems.</summary>
+/// <summary>The Browse state chips: every file, the OK ones (nothing above Low) and the problems.</summary>
 public sealed record FolderStateCounts(int All, int Ok, int Problems);
 
 /// <summary>One Issues list row: the finding plus what the row shows about its file.</summary>
@@ -151,7 +155,10 @@ public sealed record SeverityCounts(int Critical, int High, int Medium, int Low)
     };
 }
 
-/// <summary>Per media kind: files, bytes and open findings, plus open findings per tier for the bar.</summary>
+/// <summary>
+/// Per media kind: files, bytes and open findings, plus open findings per tier for the bar and the scanned files
+/// without any open finding (the bar's OK segment; a file not scanned yet is not known to be healthy).
+/// </summary>
 public sealed record KindSummary(MediaKind Kind, long Files, long Bytes, int Problems, SeverityCounts Tiers, long HealthyFiles);
 
 /// <summary>The dashboard's health and protection numbers (subplan 02, Health metrics).</summary>
@@ -193,6 +200,12 @@ public sealed class FolderNode
 /// </summary>
 public sealed class LibraryQueries(Database database)
 {
+    /// <summary>A scanned file (OK or with findings) that has no open finding: the OK segment of the severity bars.</summary>
+    private const string HealthyFile = "state IN (1, 2) AND worst_severity = 0";
+
+    /// <summary>The name order of the file lists: without case, then the id.</summary>
+    private const string ByName = "f.name COLLATE NOCASE, f.id";
+
     public long[] FindingIds(FindingFilter filter, FindingSort sort = FindingSort.Severity, bool descending = false) =>
         FindingIds(filter, sort, descending, null);
 
@@ -414,7 +427,7 @@ public sealed class LibraryQueries(Database database)
         Dictionary<MediaKind, (long Files, long Bytes, long Healthy)> files = [];
         using (SqliteCommand command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT media_kind, COUNT(*), SUM(size), SUM(CASE WHEN worst_severity = 0 THEN 1 ELSE 0 END) FROM files WHERE state <> 3 GROUP BY media_kind";
+            command.CommandText = "SELECT media_kind, COUNT(*), SUM(size), SUM(CASE WHEN " + HealthyFile + " THEN 1 ELSE 0 END) FROM files WHERE state <> 3 GROUP BY media_kind";
             using SqliteDataReader r = command.ExecuteReader();
             while (r.Read())
             {
@@ -459,22 +472,58 @@ public sealed class LibraryQueries(Database database)
     public long[] FileIds(FileFilter filter, FileSort sort = FileSort.Name, bool descending = false) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
-        bool needsDirs = (filter.DirId is not null && !filter.DirectOnly) || !string.IsNullOrWhiteSpace(filter.Text);
-        StringBuilder sql = new(needsDirs ? "SELECT f.id FROM files f JOIN dirs d ON d.id = f.dir_id WHERE 1 = 1" : "SELECT f.id FROM files f WHERE 1 = 1");
+        StringBuilder sql = new StringBuilder("SELECT f.id").Append(FileFrom(filter));
         AppendFileWhere(sql, command, filter);
+        AppendStateWhere(sql, command, filter, "$");
         string direction = descending ? "DESC" : "ASC";
+
+        // Names compare without case, as the folder tree orders them ('apple.jpg' before 'Zebra.jpg'); the id keeps
+        // equal names (search results from several folders) in a stable order.
         sql.Append(" ORDER BY ").Append(sort switch
         {
-            FileSort.Severity => $"f.worst_severity {(descending ? "ASC" : "DESC")}, f.name",
-            FileSort.Size => $"f.size {direction}, f.name",
-            FileSort.Modified => $"f.mtime_utc {direction}, f.name",
-            FileSort.State => $"f.state {direction}, f.name",
-            FileSort.Scanned => $"f.last_scanned_utc {direction}, f.name",
-            FileSort.Verified => $"f.last_verified_utc {direction}, f.name",
-            _ => $"f.name {direction}",
+            FileSort.Severity => $"f.worst_severity {(descending ? "ASC" : "DESC")}, {ByName}",
+            FileSort.Size => $"f.size {direction}, {ByName}",
+            FileSort.Modified => $"f.mtime_utc {direction}, {ByName}",
+            FileSort.State => $"f.state {direction}, {ByName}",
+            FileSort.Scanned => $"f.last_scanned_utc {direction}, {ByName}",
+            FileSort.Verified => $"f.last_verified_utc {direction}, {ByName}",
+            _ => $"f.name COLLATE NOCASE {direction}, f.id {direction}",
         });
         command.CommandText = sql.ToString();
         return ReadIds(command);
+    });
+
+    /// <summary>
+    /// How many files of <paramref name="scope"/> each of <paramref name="parts"/> would list, in one pass. A part's
+    /// states and severity limits are the very conditions <see cref="FileIds"/> applies, so a chip's count always equals
+    /// the length of its list (subplan 09, Pitfalls); the part's folder and text are ignored, the scope's apply.
+    /// </summary>
+    public int[] FileCounts(FileFilter scope, IReadOnlyList<FileFilter> parts) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        StringBuilder sql = new("SELECT ");
+        for (int i = 0; i < parts.Count; i++)
+        {
+            sql.Append(i == 0 ? "COALESCE(SUM(CASE WHEN 1 = 1" : ", COALESCE(SUM(CASE WHEN 1 = 1");
+            AppendStateWhere(sql, command, parts[i], "$p" + i.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            sql.Append(" THEN 1 ELSE 0 END), 0)");
+        }
+
+        sql.Append(FileFrom(scope));
+        AppendFileWhere(sql, command, scope);
+        AppendStateWhere(sql, command, scope, "$");
+        command.CommandText = sql.ToString();
+        int[] counts = new int[parts.Count];
+        using SqliteDataReader r = command.ExecuteReader();
+        if (r.Read())
+        {
+            for (int i = 0; i < counts.Length; i++)
+            {
+                counts[i] = r.GetInt32(i);
+            }
+        }
+
+        return counts;
     });
 
     public List<FileRow> FileRows(IReadOnlyList<long> ids) => database.Read(connection =>
@@ -518,20 +567,19 @@ public sealed class LibraryQueries(Database database)
     });
 
     /// <summary>
-    /// The folder tree of one root with counts and the worst open tier rolled up from the files below
-    /// each folder (one grouped query, then summed in memory).
+    /// Per watched folder: present files, their size, last scan, newest fingerprint, open findings per tier and the
+    /// scanned files without an open finding.
     /// </summary>
-    /// <summary>Per watched folder: present files, their size, last scan, newest fingerprint and open findings per tier.</summary>
     public List<RootSummary> RootSummaries() => database.Read(connection =>
     {
-        Dictionary<long, (long Files, long Bytes, long? Scanned, long? Hashed)> files = [];
+        Dictionary<long, (long Files, long Bytes, long? Scanned, long? Hashed, long Healthy)> files = [];
         using (SqliteCommand command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT root_id, COUNT(*), SUM(size), MAX(last_scanned_utc), MAX(hash_utc) FROM files WHERE state <> 3 GROUP BY root_id";
+            command.CommandText = "SELECT root_id, COUNT(*), SUM(size), MAX(last_scanned_utc), MAX(hash_utc), SUM(CASE WHEN " + HealthyFile + " THEN 1 ELSE 0 END) FROM files WHERE state <> 3 GROUP BY root_id";
             using SqliteDataReader r = command.ExecuteReader();
             while (r.Read())
             {
-                files[r.GetInt64(0)] = (r.GetInt64(1), r.GetInt64OrNull(2) ?? 0, r.GetInt64OrNull(3), r.GetInt64OrNull(4));
+                files[r.GetInt64(0)] = (r.GetInt64(1), r.GetInt64OrNull(2) ?? 0, r.GetInt64OrNull(3), r.GetInt64OrNull(4), r.GetInt64OrNull(5) ?? 0);
             }
         }
 
@@ -560,26 +608,19 @@ public sealed class LibraryQueries(Database database)
         List<RootSummary> result = [];
         foreach (long root in files.Keys.Union(tiers.Keys))
         {
-            (long count, long bytes, long? scanned, long? hashed) = files.GetValueOrDefault(root);
+            (long count, long bytes, long? scanned, long? hashed, long healthy) = files.GetValueOrDefault(root);
             int[] t = tiers.GetValueOrDefault(root) ?? new int[5];
-            result.Add(new RootSummary(root, count, bytes, scanned, hashed, new SeverityCounts(t[4], t[3], t[2], t[1])));
+            result.Add(new RootSummary(root, count, bytes, scanned, hashed, new SeverityCounts(t[4], t[3], t[2], t[1]), healthy));
         }
 
         return result;
     });
 
-    /// <summary>The state chips of one folder's own files (Library → Browse).</summary>
-    public FolderStateCounts FolderStates(long dirId) => database.Read(connection =>
-    {
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN state IN (1, 2) AND worst_severity < 2 THEN 1 ELSE 0 END), 0), " +
-            "COALESCE(SUM(CASE WHEN worst_severity >= 2 THEN 1 ELSE 0 END), 0) FROM files WHERE dir_id = $dir AND state <> 3";
-        command.Add("$dir", dirId);
-        using SqliteDataReader r = command.ExecuteReader();
-        return r.Read() ? new FolderStateCounts(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)) : new FolderStateCounts(0, 0, 0);
-    });
-
+    /// <summary>
+    /// The folder tree of one root with counts and the worst open tier rolled up from the files below
+    /// each folder (one grouped query, then summed in memory). A folder with no present file below it (renamed,
+    /// emptied or deleted on disk; folder rows stay until their root goes) is left out; the root's own folder stays.
+    /// </summary>
     public List<FolderNode> FolderRollup(long rootId) => database.Read(connection =>
     {
         Dictionary<long, FolderNode> nodes = [];
@@ -664,6 +705,7 @@ public sealed class LibraryQueries(Database database)
             }
         }
 
+        node.Children.RemoveAll(child => child.Files == 0);
         node.Children.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase));
     }
 
@@ -743,6 +785,11 @@ public sealed class LibraryQueries(Database database)
         }
     }
 
+    /// <summary>The file table, joined to the folders when the filter reads a subtree; ends in an open WHERE.</summary>
+    private static string FileFrom(FileFilter filter) =>
+        filter.DirId is not null && !filter.DirectOnly ? " FROM files f JOIN dirs d ON d.id = f.dir_id WHERE 1 = 1" : " FROM files f WHERE 1 = 1";
+
+    /// <summary>Which files: root, folder, kinds and name text (the states and tiers are <see cref="AppendStateWhere"/>).</summary>
     private static void AppendFileWhere(StringBuilder sql, SqliteCommand command, FileFilter filter)
     {
         if (filter.RootId is long root)
@@ -764,21 +811,29 @@ public sealed class LibraryQueries(Database database)
             }
         }
 
-        AppendIn(sql, command, "f.state", "$state", filter.States?.Select(s => (long)s));
         AppendIn(sql, command, "f.media_kind", "$kind", filter.Kinds?.Select(k => (long)k));
+        if (!string.IsNullOrWhiteSpace(filter.Text))
+        {
+            sql.Append(" AND f.name LIKE $text ESCAPE '\\'");
+            command.Add("$text", LikePattern(filter.Text));
+        }
+    }
+
+    /// <summary>The filter's states and tier limits, with parameter names that start with <paramref name="prefix"/>.</summary>
+    private static void AppendStateWhere(StringBuilder sql, SqliteCommand command, FileFilter filter, string prefix)
+    {
+        AppendIn(sql, command, "f.state", prefix + "state", filter.States?.Select(s => (long)s));
         if (filter.MinSeverity is Severity min)
         {
-            sql.Append(" AND f.worst_severity >= $minSev");
-            command.Add("$minSev", (int)min);
+            sql.Append(" AND f.worst_severity >= ").Append(prefix).Append("minSev");
+            command.Add(prefix + "minSev", (int)min);
         }
 
         if (filter.MaxSeverity is Severity max)
         {
-            sql.Append(" AND f.worst_severity <= $maxSev");
-            command.Add("$maxSev", (int)max);
+            sql.Append(" AND f.worst_severity <= ").Append(prefix).Append("maxSev");
+            command.Add(prefix + "maxSev", (int)max);
         }
-
-        AppendText(sql, command, filter.Text);
     }
 
     private static void AppendSubtree(StringBuilder sql, SqliteCommand command, long dirId)
@@ -795,10 +850,13 @@ public sealed class LibraryQueries(Database database)
             return;
         }
 
-        string escaped = text.Trim().Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
         sql.Append(" AND (f.name LIKE $text ESCAPE '\\' OR d.rel_path LIKE $text ESCAPE '\\')");
-        command.Add("$text", "%" + escaped + "%");
+        command.Add("$text", LikePattern(text));
     }
+
+    /// <summary>A LIKE pattern matching <paramref name="text"/> anywhere, its wildcards taken literally.</summary>
+    private static string LikePattern(string text) =>
+        "%" + text.Trim().Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal) + "%";
 
     private static void AppendIn(StringBuilder sql, SqliteCommand command, string column, string prefix, IEnumerable<long>? values)
     {

@@ -2,6 +2,8 @@ using System.Globalization;
 using MediaVerifier.App;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
+using MediaVerifier.Core.Rules;
+using MediaVerifier.Core.Scheduling;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.UI.Data;
 using MediaVerifier.UI.Kit;
@@ -11,7 +13,7 @@ using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Pages;
 
-/// <summary>A request to show Library → Browse at a folder (from the dashboard, a card or the drawer).</summary>
+/// <summary>A request to show Library → Browse at a folder: a folder card sends it, for its watched folder's top folder.</summary>
 internal sealed record LibraryBrowseRequest(long RootId, long? DirId);
 
 /// <summary>A request to open the Add folder dialog, optionally with a folder chosen (drop, Ctrl+N).</summary>
@@ -36,6 +38,8 @@ internal sealed class LibraryPage : PageBase
         new(Strings.Library.ColumnVerified, 100, Drop: 1),
     ];
 
+    private static readonly ScanOptions VerifyOptions = new() { VerifyOnly = true, VerifyEverything = true };
+
     private readonly SegmentedControl _view = new() { TabIndex = 0 };
     private readonly KitButton _add = new() { Kind = ButtonKind.Secondary, Icon = IconName.FolderAdd, Text = Strings.Library.AddFolder, TabIndex = 1 };
     private readonly List<FolderCardControl> _cards = [];
@@ -52,9 +56,12 @@ internal sealed class LibraryPage : PageBase
     private readonly TreeList _tree = new();
     private readonly Card _tableCard = new() { TabIndex = 7 };
     private readonly VirtualList _table = new() { Mode = ListMode.Table };
+    private readonly EmptyState _empty = new() { Small = true, Visible = false };
     private readonly FileSource _source;
     private readonly Dictionary<long, FileRow> _rows = [];
-    private readonly Dictionary<long, string> _problems = [];
+
+    /// <summary>Per loaded row, the text of each cell (index = column), built once: painting allocates nothing.</summary>
+    private readonly Dictionary<long, string?[]> _cells = [];
     private readonly FileDetailView _detail = new();
     private readonly DrawerActions _drawer;
     private readonly ScrollPanel _detailScroll;
@@ -64,6 +71,9 @@ internal sealed class LibraryPage : PageBase
     private bool _browsing;
     private bool _loadingRows;
     private bool _ignoreTreeSelection;
+
+    /// <summary>The newest load started; an older one that finishes after it is not shown.</summary>
+    private int _loadGeneration;
 
     public LibraryPage(UiServices services)
         : base(services)
@@ -86,8 +96,14 @@ internal sealed class LibraryPage : PageBase
         _view.AccessibleName = PageInfo.Title(PageId.Library);
         _view.SelectedIndexChanged += (_, _) => SetBrowsing(_view.SelectedIndex == 1);
         _add.Click += (_, _) => AddFolder(null);
-        _drop.FolderDropped += (_, path) => AddFolder(path);
-        _drop.Click += (_, _) => AddFolder(null);
+        _drop.FoldersDropped += (_, paths) => AddFolders(paths);
+        _drop.Click += (_, e) =>
+        {
+            if (IsPrimaryClick(e))
+            {
+                AddFolder(null);
+            }
+        };
         _crumbs.SegmentClicked += (_, index) => BrowseCrumb(index);
         for (int i = 0; i < _chips.Length; i++)
         {
@@ -100,6 +116,8 @@ internal sealed class LibraryPage : PageBase
         _tree.KeyDown += OnTreeKey;
         _tree.MouseUp += OnTreeMouseUp;
         _tableCard.Controls.Add(_table);
+        _tableCard.Controls.Add(_empty);
+        _empty.BringToFront();
         _table.Columns = TableColumns;
         _table.Source = _source;
         _table.SetSort(0, false);
@@ -117,22 +135,25 @@ internal sealed class LibraryPage : PageBase
 
     public override PageId Id => PageId.Library;
 
+    /// <summary>F1 in Browse: the help of the focused file's worst finding.</summary>
+    public override string? HelpRule => _browsing ? RowAt(_table.FocusedIndex)?.WorstRuleId : null;
+
     internal IReadOnlyDictionary<long, FileRow> Rows => _rows;
+
+    /// <summary>True while the drawer shows a file of this page (Up and Down then move it to the neighbouring file).</summary>
+    private bool DrawerShowsFile => _detailScroll.Parent is Drawer { IsOpen: true };
 
     public override void HandleRequest(object request)
     {
         switch (request)
         {
             case LibraryBrowseRequest browse:
-                _query = new BrowseQuery(browse.RootId, browse.DirId);
-                _view.SelectedIndex = 1;
-                Reload();
+                // The user's sort stays; a folder from outside the page starts at All.
+                ShowBrowse(_query with { RootId = browse.RootId, DirId = browse.DirId, Search = null, State = BrowseState.All });
                 break;
             case LibrarySearchRequest search:
                 // The header's search: Browse lists the matching files of every watched folder.
-                _query = new BrowseQuery(null, null, Search: search.Text);
-                _view.SelectedIndex = 1;
-                Reload();
+                ShowBrowse(_query with { RootId = null, DirId = null, Search = search.Text, State = BrowseState.All });
                 break;
             case AddFolderRequest add:
                 AddFolder(add.Path);
@@ -153,11 +174,7 @@ internal sealed class LibraryPage : PageBase
     }
 
     /// <summary>The render harness's library-browse state.</summary>
-    internal void ShowDemoBrowse()
-    {
-        _query = new BrowseQuery(1, 14);
-        _view.SelectedIndex = 1;
-    }
+    internal void ShowDemoBrowse() => ShowBrowse(new BrowseQuery(1, 14));
 
     /// <summary>Asks for file rows around <paramref name="index"/> (called while painting).</summary>
     internal void RequestRows(int index)
@@ -186,25 +203,27 @@ internal sealed class LibraryPage : PageBase
 
     protected override object? LoadData()
     {
+        // Loads can finish out of order (a quick second click): only the newest one is shown.
+        int generation = Interlocked.Increment(ref _loadGeneration);
         if (_browsing)
         {
             BrowseData browse = Services.Data.LoadBrowse(_query);
             IReadOnlyList<FileRow> first = Services.Data.LoadFileRows([.. browse.Ids.Take(200)]);
-            return (browse, first);
+            return new BrowseLoad(generation, browse, first);
         }
 
-        return Services.Data.LoadLibrary();
+        return new LibraryLoad(generation, Services.Data.LoadLibrary());
     }
 
     protected override void ApplyData(object data)
     {
         switch (data)
         {
-            case LibraryData library:
-                ApplyLibrary(library);
+            case LibraryLoad load when load.Generation == Volatile.Read(ref _loadGeneration):
+                ApplyLibrary(load.Library);
                 break;
-            case (BrowseData browse, IReadOnlyList<FileRow> rows):
-                ApplyBrowse(browse, rows);
+            case BrowseLoad load when load.Generation == Volatile.Read(ref _loadGeneration):
+                ApplyBrowse(load.Browse, load.First);
                 break;
         }
     }
@@ -233,7 +252,6 @@ internal sealed class LibraryPage : PageBase
             return;
         }
 
-        _crumbs.Bounds = new Rectangle(S(180), S(2), Math.Max(0, width - S(180) - S(320)), S(30));
         int x = width;
         for (int i = _chips.Length - 1; i >= 0; i--)
         {
@@ -243,6 +261,8 @@ internal sealed class LibraryPage : PageBase
             x -= S(8);
         }
 
+        // The breadcrumb (from x0 + 180) takes the room the chips leave, so the open drawer narrows it no more than that.
+        _crumbs.Bounds = new Rectangle(S(180), S(2), Math.Max(0, x - S(180)), S(30));
         int top = S(48);
         int height = Math.Max(S(120), Height - top);
         // The tree gives up width (280 down to 180) to a narrow table: a small window or the open drawer.
@@ -251,6 +271,42 @@ internal sealed class LibraryPage : PageBase
         _tree.Bounds = Rectangle.Inflate(new Rectangle(Point.Empty, _treeCard.Size), -S(1), -S(8));
         _tableCard.Bounds = new Rectangle(treeWidth + S(12), top, Math.Max(S(200), width - treeWidth - S(12)), height);
         _table.Bounds = Rectangle.Inflate(new Rectangle(Point.Empty, _tableCard.Size), -S(1), -S(1));
+
+        // An empty list's message sits under the column headers, which stay.
+        _empty.Bounds = Rectangle.FromLTRB(S(1), S(1) + S(32), Math.Max(S(1), _tableCard.Width - S(1)), Math.Max(S(1) + S(32), _tableCard.Height - S(1)));
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        // The tree's shortcuts (subplan 09, Keyboard), taken before the tree reads Alt+Enter as Enter (expand).
+        if (_tree.Focused && _tree.SelectedNode?.Tag is BrowseFolder folder)
+        {
+            switch (keyData)
+            {
+                case Keys.Shift | Keys.F5:
+                    ScanTreeFolder(folder, verify: false);
+                    return true;
+                case Keys.Alt | Keys.Enter:
+                    ShellActions.OpenFolder(FolderPath(folder));
+                    return true;
+            }
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private static bool IsPrimaryClick(EventArgs e) => e is not MouseEventArgs { Button: not MouseButtons.Left };
+
+    /// <summary>Shows Browse with <paramref name="query"/>: switching the view loads it, otherwise it loads here.</summary>
+    private void ShowBrowse(BrowseQuery query)
+    {
+        _query = query;
+        bool switching = _view.SelectedIndex != 1;
+        _view.SelectedIndex = 1;
+        if (!switching || !IsHandleCreated)
+        {
+            Reload();
+        }
     }
 
     private void SetBrowsing(bool browsing)
@@ -306,21 +362,20 @@ internal sealed class LibraryPage : PageBase
 
     private void ApplyBrowse(BrowseData browse, IReadOnlyList<FileRow> first)
     {
-        bool treeChanged = _browse is null || !ReferenceEquals(_browse.Tree, browse.Tree);
+        BrowseQuery? before = _browse?.Query;
+
+        // A folder the data chose (the first visit, a card) also opens, so its subfolders show under it.
+        bool chosenForUser = _query.DirId is null && _query.Search is null && browse.Query.DirId is not null;
         _browse = browse;
         _query = browse.Query;
         _rows.Clear();
-        _problems.Clear();
+        _cells.Clear();
         foreach (FileRow row in first)
         {
             Store(row);
         }
 
-        if (treeChanged)
-        {
-            RebuildTree(browse.Tree, browse.Query.DirId);
-        }
-
+        RebuildTree(browse.Tree, browse.Query.DirId, chosenForUser);
         _crumbs.SetSegments(browse.Crumbs);
         _chips[0].Count = browse.Counts.All;
         _chips[1].Count = browse.Counts.Ok;
@@ -332,41 +387,95 @@ internal sealed class LibraryPage : PageBase
 
         _source.Reset(browse.Ids.Length);
         _table.Source = _source;
+        if (before is null || before.RootId != browse.Query.RootId || before.DirId != browse.Query.DirId || before.Search != browse.Query.Search || before.State != browse.Query.State)
+        {
+            // Another folder, search or chip: the list starts at its top, and the old list's selection (the list keeps
+            // it by id) cannot reach files that are no longer shown. A new sort or a refresh keeps both.
+            _table.ClearSelection();
+            _table.Refresh(keepScroll: false);
+            _table.FocusRow(0, select: false);
+        }
+
+        ShowEmptyState(browse);
         _table.Invalidate();
         PerformLayout();
     }
 
-    private void RebuildTree(IReadOnlyList<BrowseFolder> folders, long? selectedDir)
+    /// <summary>A one-line message in the table when it has no rows (otherwise Browse looks broken).</summary>
+    private void ShowEmptyState(BrowseData browse)
     {
+        _empty.Visible = browse.Ids.Length == 0;
+        if (!_empty.Visible)
+        {
+            return;
+        }
+
+        (_empty.Icon, _empty.Headline) = browse.Query switch
+        {
+            { Search: string text } => (IconName.Search, string.Format(CultureInfo.CurrentCulture, Strings.Library.NoSearchResults, text.Trim())),
+            { State: not BrowseState.All } => (IconName.Filter, Strings.Issues.FilteredHeadline),
+            { DirId: null, RootId: null } => (IconName.FolderAdd, Strings.Issues.NoFoldersHeadline),
+            { DirId: null } => (IconName.Scans, Strings.Library.NotScannedYet),
+            _ => (IconName.Folder, Strings.Library.NoFilesHere),
+        };
+        _empty.Body = string.Empty;
+        _empty.Invalidate();
+    }
+
+    /// <summary>
+    /// The tree of a new snapshot. Folders the user opened stay open (the old items' expansion, by folder id), the path to
+    /// the shown folder opens, and the selection is always the shown folder's item, or none.
+    /// </summary>
+    private void RebuildTree(IReadOnlyList<BrowseFolder> folders, long? selectedDir, bool expandShown)
+    {
+        HashSet<long> expanded = [];
+        foreach (TreeItem root in _tree.Roots)
+        {
+            CollectExpanded(root, expanded);
+        }
+
         _tree.Roots.Clear();
         TreeItem? selected = null;
         foreach (BrowseFolder folder in folders)
         {
-            TreeItem item = ToItem(folder, selectedDir, ref selected);
-            _tree.Roots.Add(item);
+            _tree.Roots.Add(ToItem(folder, selectedDir, expanded, ref selected));
         }
 
-        // Open the path to the shown folder.
         for (TreeItem? parent = selected?.Parent; parent is not null; parent = parent.Parent)
         {
             parent.Expanded = true;
         }
 
-        _tree.Rebuild();
-        if (selected is not null)
+        if (expandShown && selected is not null)
         {
-            _ignoreTreeSelection = true;
-            _tree.SelectedNode = selected;
-            _ignoreTreeSelection = false;
+            selected.Expanded = true;
+        }
+
+        _tree.Rebuild();
+        _ignoreTreeSelection = true;
+        _tree.SelectedNode = selected;
+        _ignoreTreeSelection = false;
+    }
+
+    private static void CollectExpanded(TreeItem item, HashSet<long> expanded)
+    {
+        if (item.Expanded && item.Tag is BrowseFolder folder)
+        {
+            expanded.Add(folder.DirId);
+        }
+
+        foreach (TreeItem child in item.LoadedChildren ?? [])
+        {
+            CollectExpanded(child, expanded);
         }
     }
 
-    private static TreeItem ToItem(BrowseFolder folder, long? selectedDir, ref TreeItem? selected)
+    private static TreeItem ToItem(BrowseFolder folder, long? selectedDir, HashSet<long> expanded, ref TreeItem? selected)
     {
         TreeItem item = new(folder.Name, folder)
         {
             Severity = folder.Worst == Severity.None ? null : folder.Worst,
-            HasChildren = folder.Children.Count > 0,
+            Expanded = expanded.Contains(folder.DirId),
         };
         if (folder.DirId == selectedDir)
         {
@@ -376,7 +485,7 @@ internal sealed class LibraryPage : PageBase
         List<TreeItem> children = [];
         foreach (BrowseFolder child in folder.Children)
         {
-            children.Add(ToItem(child, selectedDir, ref selected));
+            children.Add(ToItem(child, selectedDir, expanded, ref selected));
         }
 
         item.SetChildren(children);
@@ -396,6 +505,12 @@ internal sealed class LibraryPage : PageBase
 
     private void BrowseCrumb(int index)
     {
+        // Search results have one heading, not a path: it leads nowhere.
+        if (_query.Search is not null)
+        {
+            return;
+        }
+
         TreeItem? node = _tree.SelectedNode;
         int depth = node?.Depth ?? 0;
         for (int i = depth; i > index && node?.Parent is not null; i--)
@@ -441,7 +556,12 @@ internal sealed class LibraryPage : PageBase
                 Store(row);
             }
 
-            _table.Invalidate();
+            // Ids whose rows are gone (a file moved or removed since the snapshot) come back empty: no repaint, so
+            // painting does not ask for them again and again.
+            if (rows.Count > 0)
+            {
+                _table.Invalidate();
+            }
         }
         finally
         {
@@ -449,11 +569,21 @@ internal sealed class LibraryPage : PageBase
         }
     }
 
-    /// <summary>Keeps a loaded row and its Problem text (painting reads both, allocating nothing).</summary>
+    /// <summary>Keeps a loaded row and the texts of its cells (painting reads them, allocating nothing).</summary>
     private void Store(FileRow row)
     {
         _rows[row.Id] = row;
-        _problems[row.Id] = ProblemText(row);
+        DateTimeOffset now = Services.Clock.UtcNow;
+        _cells[row.Id] =
+        [
+            // Search results come from every watched folder: the folder follows the name.
+            _query.Search is null ? row.Name : UiFormat.Facts(row.Name, FolderText(row)),
+            ProblemText(row),
+            UiFormat.FileFormat(row),
+            UiFormat.Size(row.Size),
+            row.LastScannedUtc is long scanned ? UiFormat.RecentDate(new DateTimeOffset(scanned, TimeSpan.Zero), now) : Strings.Dash,
+            row.LastVerifiedUtc is long verified ? UiFormat.RecentDate(new DateTimeOffset(verified, TimeSpan.Zero), now) : Strings.Dash,
+        ];
     }
 
     /// <summary>The worst open finding's title, hedged as in Issues, and how many more the file has.</summary>
@@ -468,13 +598,111 @@ internal sealed class LibraryPage : PageBase
         return row.OpenFindings > 1 ? string.Format(CultureInfo.CurrentCulture, Strings.Library.ProblemMore, title, UiFormat.Count(row.OpenFindings - 1)) : title;
     }
 
-    private FileRow? RowAt(int index) =>
-        _browse is not null && index >= 0 && index < _browse.Ids.Length && _rows.TryGetValue(_browse.Ids[index], out FileRow? row) ? row : null;
+    /// <summary>A file's folder as the breadcrumb names it: the watched folder's name, then the path below it.</summary>
+    private string FolderText(FileRow row)
+    {
+        string root = _browse?.Tree.FirstOrDefault(t => t.RootId == row.RootId)?.Name ?? string.Empty;
+        return row.RelDir.Length == 0 ? root : Path.Combine(root, row.RelDir);
+    }
+
+    private long IdAt(int index) => _browse is not null && index >= 0 && index < _browse.Ids.Length ? _browse.Ids[index] : -1;
+
+    private FileRow? RowAt(int index) => _rows.TryGetValue(IdAt(index), out FileRow? row) ? row : null;
 
     private string? PathOf(FileRow row)
     {
-        string? root = _library?.Folders.FirstOrDefault(f => f.RootId == row.RootId)?.Path ?? _browse?.Tree.FirstOrDefault(t => t.RootId == row.RootId)?.Name;
-        return root is null ? null : row.RelDir.Length == 0 ? Path.Combine(root, row.Name) : Path.Combine(root, row.RelDir, row.Name);
+        if (_browse is null || !_browse.RootPaths.TryGetValue(row.RootId, out string? root))
+        {
+            return null;
+        }
+
+        return row.RelDir.Length == 0 ? Path.Combine(root, row.Name) : Path.Combine(root, row.RelDir, row.Name);
+    }
+
+    private string? FolderPath(BrowseFolder folder)
+    {
+        if (_browse is null || !_browse.RootPaths.TryGetValue(folder.RootId, out string? root))
+        {
+            return null;
+        }
+
+        return folder.RelPath.Length == 0 ? root : Path.Combine(root, folder.RelPath);
+    }
+
+    /// <summary>The selected files in list order (only those of the list shown).</summary>
+    private long[] SelectedIds() => _browse is null || _table.SelectedIds.Count == 0 ? [] : [.. _browse.Ids.Where(_table.SelectedIds.Contains)];
+
+    /// <summary>What the keyboard's Shift+F5 and Ctrl+C act on: the selection, or the focused file when none is selected.</summary>
+    internal long[] SelectionOrFocused()
+    {
+        long[] selected = SelectedIds();
+        long focused = IdAt(_table.FocusedIndex);
+        return selected.Length > 0 ? selected : focused >= 0 ? [focused] : [];
+    }
+
+    /// <summary>
+    /// What an action on a row acts on: the selection when the row is part of it (a right-click keeps the selection it
+    /// lands on), otherwise the row alone.
+    /// </summary>
+    internal long[] TargetsOf(int index)
+    {
+        long id = IdAt(index);
+        return id < 0 ? [] : _table.SelectedIds.Contains(id) ? SelectedIds() : [id];
+    }
+
+    /// <summary>The rows of <paramref name="ids"/>, in their order; rows not painted yet (Ctrl+A) load off the UI thread.</summary>
+    private async Task<List<FileRow>> RowsOfAsync(IReadOnlyList<long> ids)
+    {
+        Dictionary<long, FileRow> found = [];
+        List<long> missing = [];
+        foreach (long id in ids)
+        {
+            if (_rows.TryGetValue(id, out FileRow? row))
+            {
+                found[id] = row;
+            }
+            else
+            {
+                missing.Add(id);
+            }
+        }
+
+        if (missing.Count > 0)
+        {
+            foreach (FileRow row in await Task.Run(() => Services.Data.LoadFileRows(missing)).ConfigureAwait(true))
+            {
+                found[row.Id] = row;
+            }
+        }
+
+        return [.. ids.Select(id => found.GetValueOrDefault(id)).OfType<FileRow>()];
+    }
+
+    /// <summary>The full paths of files, for Copy path.</summary>
+    internal async Task<List<string>> PathsOfAsync(IReadOnlyList<long> ids) =>
+        [.. (await RowsOfAsync(ids).ConfigureAwait(true)).Select(row => PathOf(row) ?? row.Name)];
+
+    private async Task CopyPathsAsync(IReadOnlyList<long> ids) => ShellActions.CopyText(await PathsOfAsync(ids).ConfigureAwait(true));
+
+    /// <summary>The fix the app can run on files: when their worst findings all share one. Null without operations.</summary>
+    private string? FixFor(IReadOnlyList<FileRow> rows)
+    {
+        if (Services.Operations is null || rows.Count == 0 || rows.Any(r => r.WorstRuleId is null))
+        {
+            return null;
+        }
+
+        return Remediator.CommonFix(rows.Select(r => r.WorstRuleId!));
+    }
+
+    /// <summary>Ctrl+Enter: the shared fix of the files (Remediator asks first).</summary>
+    private async Task FixAsync(IReadOnlyList<long> ids)
+    {
+        List<FileRow> rows = await RowsOfAsync(ids).ConfigureAwait(true);
+        if (rows.Count == ids.Count && FixFor(rows) is string fix)
+        {
+            await RunAndReloadAsync(ids, fix).ConfigureAwait(true);
+        }
     }
 
     private void OpenDetails(int index)
@@ -542,14 +770,17 @@ internal sealed class LibraryPage : PageBase
             return;
         }
 
-        string? fix = Services.Operations is null || row.WorstRuleId is null ? null : Remediator.CommonFix([row.WorstRuleId]);
+        // The selection the row is in (all loaded, as a right-click lands on a painted row), or the row alone.
+        long[] targets = TargetsOf(index);
+        List<FileRow> loaded = [.. targets.Select(id => _rows.GetValueOrDefault(id)).OfType<FileRow>()];
+        string? fix = loaded.Count == targets.Length ? FixFor(loaded) : null;
         List<PopupItem> items =
         [
             new(Strings.Menu.Details, IconName.Info, Strings.Menu.ShortcutEnter, Tag: "details"),
         ];
         if (fix is not null)
         {
-            items.Add(new(LiveUiData.ActionName(fix), IconName.Tools, Tag: "fix"));
+            items.Add(new(LiveUiData.ActionName(fix), IconName.Tools, Strings.Menu.ShortcutCtrlEnter, Tag: "fix"));
         }
 
         items.AddRange(
@@ -569,22 +800,22 @@ internal sealed class LibraryPage : PageBase
                     OpenDetails(index);
                     break;
                 case "fix" when fix is not null:
-                    UiTask.Run(RunAndReloadAsync([row.Id], fix));
+                    UiTask.Run(RunAndReloadAsync(targets, fix));
                     break;
                 case "open":
                     ShellActions.OpenFile(PathOf(row));
                     break;
                 case "scan":
-                    UiTask.Run(ScanFilesAsync([row], verify: false));
+                    UiTask.Run(ScanFilesAsync(targets, verify: false));
                     break;
                 case "verify":
-                    UiTask.Run(ScanFilesAsync([row], verify: true));
+                    UiTask.Run(ScanFilesAsync(targets, verify: true));
                     break;
                 case "show":
                     ShellActions.ShowInFolder(PathOf(row));
                     break;
                 case "copy":
-                    ShellActions.CopyText([PathOf(row) ?? row.Name]);
+                    UiTask.Run(CopyPathsAsync(targets));
                     break;
             }
         });
@@ -592,20 +823,41 @@ internal sealed class LibraryPage : PageBase
 
     private void OnTableKey(object? sender, KeyEventArgs e)
     {
-        FileRow? row = RowAt(_table.FocusedIndex);
         switch (e.KeyCode)
         {
-            case Keys.F5 when e.Shift && row is not null:
-                UiTask.Run(ScanFilesAsync([row], verify: false));
+            case Keys.F5 when e.Shift:
+                UiTask.Run(ScanFilesAsync(SelectionOrFocused(), verify: false));
                 e.Handled = true;
                 break;
-            case Keys.Enter when e.Alt && row is not null:
-                ShellActions.ShowInFolder(PathOf(row));
+            case Keys.C when e.Control:
+                UiTask.Run(CopyPathsAsync(SelectionOrFocused()));
                 e.Handled = true;
                 break;
-            case Keys.C when e.Control && row is not null:
-                ShellActions.CopyText([PathOf(row) ?? row.Name]);
+            case Keys.Enter when e.Alt:
+                ShellActions.ShowInFolder(RowAt(_table.FocusedIndex) is FileRow shown ? PathOf(shown) : null);
                 e.Handled = true;
+                break;
+            case Keys.Enter when e.Control:
+                UiTask.Run(FixAsync(TargetsOf(_table.FocusedIndex)));
+                e.Handled = true;
+                break;
+            case Keys.Delete when Services.Operations is not null:
+                // Move to quarantine for the selection the focused row is in; dialog A asks first.
+                if (TargetsOf(_table.FocusedIndex) is { Length: > 0 } quarantine)
+                {
+                    UiTask.Run(RunAndReloadAsync(quarantine, ActionIds.Quarantine));
+                }
+
+                e.Handled = true;
+                break;
+            case Keys.Escape:
+                // With the drawer open the window closes it first; then Esc clears the selection.
+                _table.ClearSelection();
+                e.Handled = true;
+                break;
+            case Keys.Up or Keys.Down when DrawerShowsFile:
+                // The list moves its focus once this returns: the drawer follows to the neighbouring file.
+                BeginInvoke(() => OpenDetails(_table.FocusedIndex));
                 break;
         }
     }
@@ -636,28 +888,26 @@ internal sealed class LibraryPage : PageBase
 
         PopupItem[] items =
         [
-            new(Strings.Menu.ScanThisFolder, IconName.Scans, Tag: "scan"),
+            new(Strings.Menu.ScanThisFolder, IconName.Scans, Strings.Menu.ShortcutShiftF5, Tag: "scan"),
             new(Strings.Menu.VerifyThisFolder, IconName.ShieldCheck, Tag: "verify"),
             new(Strings.Menu.IgnoreRuleHereEllipsis, IconName.Ignore, Enabled: !Services.IsDemo, Tag: "ignore-rule"),
-            new(Strings.Menu.ShowInFolder, IconName.Folder, Tag: "show"),
+            new(Strings.Menu.ShowInFolder, IconName.Folder, Strings.Menu.ShortcutAltEnter, Tag: "show"),
         ];
         KitMenu.Show(_tree, screen, items, item =>
         {
-            string relDir = FolderRelPath(_tree.SelectedNode);
             switch (item.Tag)
             {
                 case "scan":
-                    UiTask.Run(Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], State.Settings.Scanning.DefaultDepth, folder.Name));
+                    ScanTreeFolder(folder, verify: false);
                     break;
                 case "verify":
-                    UiTask.Run(Services.StartScanAsync([new ScanScope(folder.RootId, relDir)], ScanDepth.Quick, folder.Name, new ScanOptions { VerifyOnly = true, VerifyEverything = true }));
+                    ScanTreeFolder(folder, verify: true);
                     break;
                 case "ignore-rule":
                     UiTask.Run(IgnoreRuleHereAsync(folder, screen));
                     break;
                 case "show":
-                    string? root = _library?.Folders.FirstOrDefault(f => f.RootId == folder.RootId)?.Path;
-                    ShellActions.OpenFolder(root is null ? null : Path.Combine(root, relDir));
+                    ShellActions.OpenFolder(FolderPath(folder));
                     break;
             }
         });
@@ -709,24 +959,56 @@ internal sealed class LibraryPage : PageBase
             () => UiTask.Run(DrawerActions.UndoAsync(Services, () => Services.Database.Ignores.RemoveAsync(ignoreId), Reload))));
     }
 
-    private static string RuleTitle(string ruleId) => Core.Rules.RuleCatalog.TryGet(ruleId, out Core.Rules.RuleDefinition rule) ? rule.Title : ruleId;
+    private static string RuleTitle(string ruleId) => RuleCatalog.TryGet(ruleId, out RuleDefinition rule) ? rule.Title : ruleId;
 
-    private static string FolderRelPath(TreeItem? node)
+    /// <summary>Scan again or Verify now for files: one scope per watched folder, "Scanning 1 file" or "Scanning {n} files".</summary>
+    private async Task ScanFilesAsync(IReadOnlyList<long> ids, bool verify)
     {
-        List<string> parts = [];
-        for (TreeItem? n = node; n?.Parent is not null; n = n.Parent)
+        if (ids.Count == 0)
         {
-            parts.Insert(0, n.Text);
+            return;
         }
 
-        return string.Join('\\', parts);
+        List<FileRow> rows = await RowsOfAsync(ids).ConfigureAwait(true);
+        ScanScope[] scopes = [.. rows.GroupBy(r => r.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(r => r.Id)]))];
+        string scope = UiFormat.Plural(rows.Count, Strings.Repair.OneFile, Strings.Scans.FilesScope);
+        await Services.StartScanAsync(scopes, verify ? ScanDepth.Quick : ScanDepth.Standard, scope, verify ? VerifyOptions : null).ConfigureAwait(true);
     }
 
-    private async Task ScanFilesAsync(IReadOnlyList<FileRow> rows, bool verify)
+    /// <summary>The tree menu's Scan this folder and Verify this folder (Shift+F5 scans too).</summary>
+    private void ScanTreeFolder(BrowseFolder folder, bool verify) =>
+        UiTask.Run(StartFolderScanAsync(new ScanScope(folder.RootId, folder.RelPath), folder.Name, verify, folder.Files, folder.Bytes));
+
+    /// <summary>
+    /// A scan of one folder at the default depth, or its verification. Settings → General, Ask before large scans: a
+    /// scan of more than 10,000 files or 100 GB first shows the estimate and the depths, as the header's Scan does
+    /// (subplan 09, Before a large scan).
+    /// </summary>
+    private async Task StartFolderScanAsync(ScanScope scope, string name, bool verify, long files, long bytes)
     {
-        ScanScope[] scopes = [.. rows.GroupBy(r => r.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(r => r.Id)]))];
-        string scope = string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(rows.Count));
-        await Services.StartScanAsync(scopes, verify ? ScanDepth.Quick : ScanDepth.Standard, scope, verify ? new ScanOptions { VerifyOnly = true, VerifyEverything = true } : null).ConfigureAwait(true);
+        ScanDepth depth = verify ? ScanDepth.Quick : State.Settings.Scanning.DefaultDepth;
+        if (!verify && State.Settings.Scanning.AskBeforeLargeScans && !Services.IsDemo && Services.CannotScanReason(true) is null
+            && new ScanEstimate(files, bytes, name, null, null, null).IsLarge && FindForm() is Form owner)
+        {
+            ScanEstimate whole = await Task.Run(() => Services.Data.LoadScanEstimate([scope.RootId])).ConfigureAwait(true);
+            if (LargeScanDialog.Ask(owner, PartOf(whole, name, files, bytes), depth) is not ScanDepth chosen)
+            {
+                return;
+            }
+
+            depth = chosen;
+        }
+
+        await Services.StartScanAsync([scope], depth, name, verify ? VerifyOptions : null).ConfigureAwait(true);
+    }
+
+    /// <summary>The estimate for part of a watched folder: its own files and size, the times in proportion to its size.</summary>
+    internal static ScanEstimate PartOf(ScanEstimate whole, string name, long files, long bytes)
+    {
+        double share = whole.Bytes > 0 ? Math.Min(1, (double)bytes / whole.Bytes) : 0;
+        return new ScanEstimate(files, bytes, name, Scale(whole.Quick), Scale(whole.Standard), Scale(whole.Deep));
+
+        TimeSpan? Scale(TimeSpan? time) => time is TimeSpan t && share > 0 ? t * share : null;
     }
 
     private void AddFolder(string? path)
@@ -737,6 +1019,28 @@ internal sealed class LibraryPage : PageBase
         }
 
         UiTask.Run(ShowFolderDialogAsync(owner, null, path));
+    }
+
+    /// <summary>Folders dropped together: the Add folder dialog for each in turn.</summary>
+    private void AddFolders(IReadOnlyList<string> paths)
+    {
+        if (FindForm() is Form owner)
+        {
+            UiTask.Run(AddFoldersAsync(owner, paths));
+        }
+    }
+
+    private async Task AddFoldersAsync(Form owner, IReadOnlyList<string> paths)
+    {
+        foreach (string path in paths)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            await ShowFolderDialogAsync(owner, null, path).ConfigureAwait(true);
+        }
     }
 
     internal void EditFolder(FolderCard card)
@@ -754,12 +1058,13 @@ internal sealed class LibraryPage : PageBase
         Reload();
     }
 
+    /// <summary>A folder card's Scan, or Verify now in its menu.</summary>
     internal void ScanFolder(FolderCard card, bool verify) =>
-        UiTask.Run(Services.StartScanAsync([new ScanScope(card.RootId)], verify ? ScanDepth.Quick : State.Settings.Scanning.DefaultDepth, card.Name, verify ? new ScanOptions { VerifyOnly = true, VerifyEverything = true } : null));
+        UiTask.Run(StartFolderScanAsync(new ScanScope(card.RootId), card.Name, verify, card.Files, card.Bytes));
 
     internal void BrowseFolder(FolderCard card) => HandleRequest(new LibraryBrowseRequest(card.RootId, null));
 
-    internal async void RemoveFolder(FolderCard card)
+    internal void RemoveFolder(FolderCard card)
     {
         if (FindForm() is not Form owner)
         {
@@ -773,17 +1078,77 @@ internal sealed class LibraryPage : PageBase
             Strings.Kit.Cancel,
             Strings.Library.StopWatching,
             destructive: true);
-        if (!remove || Services.IsDemo)
+        if (remove && !Services.IsDemo)
         {
-            return;
+            UiTask.Run(RemoveFolderAsync(card));
         }
+    }
 
-        await Services.Database.Roots.RemoveAsync(card.RootId).ConfigureAwait(true);
+    private async Task RemoveFolderAsync(FolderCard card)
+    {
+        Database database = Services.Database;
+        await database.Roots.RemoveAsync(card.RootId).ConfigureAwait(true);
 
         // For the Dashboard's Recent activity: "Folder removed: {name}".
-        await Services.Database.Meta.SetAsync(LiveUiData.RemovedFolderKey, string.Create(CultureInfo.InvariantCulture, $"{Services.Clock.UtcNow.UtcTicks}|{card.Name}")).ConfigureAwait(true);
+        await database.Meta.SetAsync(LiveUiData.RemovedFolderKey, string.Create(CultureInfo.InvariantCulture, $"{Services.Clock.UtcNow.UtcTicks}|{card.Name}")).ConfigureAwait(true);
         Reload();
+        await ForgetInPlansAsync(database, card.RootId).ConfigureAwait(true);
     }
+
+    /// <summary>
+    /// Schedules that scanned a folder no longer watched: it leaves their folder list, and one left without a folder is
+    /// switched off (its definition then asks for a folder), so it no longer runs "Completed" over nothing. The
+    /// scheduled tasks are then brought up to date, as the Schedule page does after a change.
+    /// </summary>
+    private async Task ForgetInPlansAsync(Database database, long rootId)
+    {
+        long now = Services.Clock.UtcNow.UtcTicks;
+        try
+        {
+            await Task.Run(async () =>
+            {
+                bool changed = false;
+                foreach (PlanRecord plan in database.Plans.List())
+                {
+                    if (WithoutFolder(plan, rootId, now) is PlanRecord updated)
+                    {
+                        await database.Plans.UpdateAsync(updated).ConfigureAwait(false);
+                        changed = true;
+                    }
+                }
+
+                if (changed)
+                {
+                    await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            State.Log.Warning("Windows would not update the scheduled tasks after a folder was removed", ex);
+        }
+    }
+
+    /// <summary>A schedule without the removed folder, or null when it did not name it.</summary>
+    internal static PlanRecord? WithoutFolder(PlanRecord plan, long rootId, long nowUtcTicks)
+    {
+        if (PlanDefinition.FromJson(plan.DefinitionJson) is not { Roots: long[] roots } definition || !roots.Contains(rootId))
+        {
+            return null;
+        }
+
+        long[] left = [.. roots.Where(id => id != rootId)];
+        return plan with
+        {
+            DefinitionJson = (definition with { Roots = left }).ToJson(),
+            Enabled = plan.Enabled && left.Length > 0,
+            UpdatedUtc = nowUtcTicks,
+        };
+    }
+
+    private sealed record LibraryLoad(int Generation, LibraryData Library);
+
+    private sealed record BrowseLoad(int Generation, BrowseData Browse, IReadOnlyList<FileRow> First);
 
     /// <summary>Rows of the file table; unloaded rows draw as skeletons until their data arrives.</summary>
     private sealed class FileSource(LibraryPage page) : IListSource
@@ -798,20 +1163,19 @@ internal sealed class LibraryPage : PageBase
 
         public void Fill(int index, ListRow row)
         {
-            if (page.RowAt(index) is not FileRow file)
+            if (page.RowAt(index) is not FileRow file || !page._cells.TryGetValue(file.Id, out string?[]? cells))
             {
                 row.Loaded = false;
                 page.RequestRows(index);
                 return;
             }
 
-            row.Line1 = file.Name;
-            row.Cells[1] = page._problems.GetValueOrDefault(file.Id);
-            row.Cells[2] = UiFormat.FileFormat(file);
-            row.Cells[3] = UiFormat.Size(file.Size);
-            DateTimeOffset now = page.Services.Clock.UtcNow;
-            row.Cells[4] = file.LastScannedUtc is long scanned ? UiFormat.RecentDate(new DateTimeOffset(scanned, TimeSpan.Zero), now) : Strings.Dash;
-            row.Cells[5] = file.LastVerifiedUtc is long verified ? UiFormat.RecentDate(new DateTimeOffset(verified, TimeSpan.Zero), now) : Strings.Dash;
+            row.Line1 = cells[0] ?? string.Empty;
+            for (int i = 1; i < cells.Length; i++)
+            {
+                row.Cells[i] = cells[i];
+            }
+
             switch (file.State)
             {
                 case FileState.Pending:
@@ -853,8 +1217,9 @@ internal sealed class LibraryPage : PageBase
         private readonly KitButton _scan = new() { Kind = ButtonKind.Secondary, Icon = IconName.Play, Text = Strings.Library.Scan, Compact = true };
         private readonly IconButton _more = new() { Icon = IconName.More, Compact = true };
         private readonly InfoBar _offline = new() { Tier = Severity.Medium, Text = Strings.Library.NotConnected };
-        private readonly long[] _bar = new long[5];
-        private readonly RectangleF[] _segments = new RectangleF[5];
+
+        /// <summary>The kit's severity bar: a tooltip per segment, "<c>tier: count</c>" (subplan 08).</summary>
+        private readonly SeverityBar _bar = new();
         private FolderCard? _card;
 
         public FolderCardControl(LibraryPage page)
@@ -863,9 +1228,13 @@ internal sealed class LibraryPage : PageBase
             Clickable = true;
             _more.ToolTipText = Strings.Kit.MoreActions;
             _scan.Click += (_, _) => { if (_card is not null) { _page.ScanFolder(_card, verify: false); } };
-            _more.Click += (_, _) => ShowMenu();
-            Click += (_, _) => { if (_card is not null) { _page.BrowseFolder(_card); } };
-            Controls.AddRange([_scan, _more, _offline]);
+            _more.Click += (_, _) => ShowMenu(null);
+
+            // A left click (or Enter) opens the folder in Browse; a right click opens the card's menu.
+            Click += (_, e) => { if (_card is not null && IsPrimaryClick(e)) { _page.BrowseFolder(_card); } };
+            MouseUp += (_, e) => { if (e.Button == MouseButtons.Right) { ShowMenu(PointToScreen(e.Location)); } };
+            _bar.SegmentClicked += (_, _) => { if (_card is not null) { _page.BrowseFolder(_card); } };
+            Controls.AddRange([_scan, _more, _offline, _bar]);
         }
 
         public void Bind(FolderCard card)
@@ -875,11 +1244,10 @@ internal sealed class LibraryPage : PageBase
             bool library = card.Role == RootRole.Library;
             _scan.Visible = library && card.Connected;
             _offline.Visible = !card.Connected;
-            _bar[0] = card.Problems.Critical;
-            _bar[1] = card.Problems.High;
-            _bar[2] = card.Problems.Medium;
-            _bar[3] = card.Problems.Low;
-            _bar[4] = card.OkFiles;
+
+            // Backup folders and folders that are not connected show no bar.
+            _bar.Visible = library && card.Connected;
+            _bar.SetCounts(card.Problems.Critical, card.Problems.High, card.Problems.Medium, card.Problems.Low, card.OkFiles);
             PerformLayout();
             Invalidate();
         }
@@ -892,6 +1260,17 @@ internal sealed class LibraryPage : PageBase
             int scanWidth = S(_scan.PreferredLogicalWidth);
             _scan.Bounds = new Rectangle(_more.Left - S(8) - scanWidth, S(12), scanWidth, S(28));
             _offline.Bounds = new Rectangle(S(16), S(72), Width - S(32), S(36));
+            _bar.Bounds = new Rectangle(S(16), S(103), Math.Max(0, Width - S(32)), S(8));
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && e.Shift))
+            {
+                e.Handled = true;
+                ShowMenu(null);
+            }
         }
 
         protected override void PaintContent(Graphics g)
@@ -932,7 +1311,6 @@ internal sealed class LibraryPage : PageBase
                 int problems = card.Problems.Total;
                 string count = problems == 0 ? Strings.Library.NoProblems : problems == 1 ? Strings.Library.OneProblem : string.Format(CultureInfo.CurrentCulture, Strings.Library.Problems, UiFormat.Count(problems));
                 KitPaint.DrawText(g, count, type.Body, t.Text, width / 2, S(87), (width / 2) - S(16), TextFormatFlags.Right);
-                DataPaint.SeverityBar(g, new RectangleF(SF(16), SF(103), width - SF(32), SF(8)), _bar, _segments, DeviceDpi);
                 footer = card.LastScanned is DateTimeOffset scanned
                     ? string.Format(CultureInfo.CurrentCulture, Strings.Library.Scanned, UiFormat.RecentDate(scanned, now, inSentence: true), storage)
                     : string.Format(CultureInfo.CurrentCulture, Strings.Library.NotScanned, storage);
@@ -951,7 +1329,8 @@ internal sealed class LibraryPage : PageBase
             _ => Strings.Library.HardDrive,
         };
 
-        private void ShowMenu()
+        /// <summary>The card's menu: under the More button, or at <paramref name="screen"/> for a right click.</summary>
+        private void ShowMenu(Point? screen)
         {
             if (_card is not FolderCard card)
             {
@@ -967,7 +1346,7 @@ internal sealed class LibraryPage : PageBase
             items.Add(new(Strings.Menu.OpenInExplorer, IconName.Open, Tag: "open"));
             items.Add(PopupItem.Separator);
             items.Add(new(Strings.Menu.Remove, IconName.Trash, Tag: "remove"));
-            KitMenu.ShowBelow(_more, items, item =>
+            Action<PopupItem> chosen = item =>
             {
                 switch (item.Tag)
                 {
@@ -984,11 +1363,19 @@ internal sealed class LibraryPage : PageBase
                         _page.RemoveFolder(card);
                         break;
                 }
-            });
+            };
+            if (screen is Point at)
+            {
+                KitMenu.Show(this, at, items, chosen);
+            }
+            else
+            {
+                KitMenu.ShowBelow(_more, items, chosen);
+            }
         }
     }
 
-    /// <summary>The dashed drop area under the cards: folders dropped here open the Add folder dialog.</summary>
+    /// <summary>The dashed drop area under the cards: folders dropped here open the Add folder dialog, one after another.</summary>
     private sealed class DropArea : KitControl
     {
         private readonly System.Drawing.Drawing2D.GraphicsPath _outline = new();
@@ -1002,7 +1389,7 @@ internal sealed class LibraryPage : PageBase
             AccessibleName = Strings.Library.DropArea;
         }
 
-        public event EventHandler<string>? FolderDropped;
+        public event EventHandler<IReadOnlyList<string>>? FoldersDropped;
 
         protected override bool Interactive => true;
 
@@ -1041,15 +1428,15 @@ internal sealed class LibraryPage : PageBase
         protected override void OnDragEnter(DragEventArgs drgevent)
         {
             base.OnDragEnter(drgevent);
-            drgevent.Effect = FirstPath(drgevent.Data) is null ? DragDropEffects.None : DragDropEffects.Link;
+            drgevent.Effect = DroppedPaths(drgevent.Data).Length == 0 ? DragDropEffects.None : DragDropEffects.Link;
         }
 
         protected override void OnDragDrop(DragEventArgs drgevent)
         {
             base.OnDragDrop(drgevent);
-            if (FirstPath(drgevent.Data) is string folder)
+            if (DroppedPaths(drgevent.Data) is { Length: > 0 } folders)
             {
-                FolderDropped?.Invoke(this, folder);
+                FoldersDropped?.Invoke(this, folders);
             }
         }
 
@@ -1077,11 +1464,11 @@ internal sealed class LibraryPage : PageBase
         }
 
         /// <summary>
-        /// The first dropped path, without touching the disk: checking it here held the window (and the drag) for minutes
-        /// when it was a network folder that had gone offline. The Add folder dialog checks it off the UI thread and says
-        /// when it is not a folder.
+        /// The dropped paths, without touching the disk: checking them here held the window (and the drag) for minutes
+        /// when one was a network folder that had gone offline. The Add folder dialog checks each off the UI thread and
+        /// says when it is not a folder.
         /// </summary>
-        private static string? FirstPath(IDataObject? data) =>
-            data?.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths ? paths[0] : null;
+        private static string[] DroppedPaths(IDataObject? data) =>
+            data?.GetData(DataFormats.FileDrop) is string[] paths ? paths : [];
     }
 }

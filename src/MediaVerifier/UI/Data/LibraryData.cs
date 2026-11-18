@@ -30,27 +30,39 @@ internal enum BrowseState
     Problems,
 }
 
-/// <summary>What Library → Browse shows: a folder (or a whole root), a state chip and a sort.</summary>
-/// <summary>What Browse shows: a folder, or with <paramref name="Search"/> the files of every watched folder matching it.</summary>
+/// <summary>
+/// What Library → Browse shows: a folder (with only <paramref name="RootId"/>, that watched folder's top folder), a state
+/// chip and a sort; or with <paramref name="Search"/> the files of every watched folder whose name holds the text.
+/// </summary>
 internal sealed record BrowseQuery(long? RootId, long? DirId, BrowseState State = BrowseState.All, FileSort Sort = FileSort.Name, bool Descending = false, string? Search = null);
 
-/// <summary>A folder of the Browse tree: name, worst open tier below it, children.</summary>
-internal sealed record BrowseFolder(long RootId, long DirId, string Name, Severity Worst, IReadOnlyList<BrowseFolder> Children);
+/// <summary>
+/// A folder of the Browse tree: name, path below its watched folder (empty for the watched folder itself), worst open
+/// tier, present files and their size below it, children.
+/// </summary>
+internal sealed record BrowseFolder(long RootId, long DirId, string Name, string RelPath, Severity Worst, long Files, long Bytes, IReadOnlyList<BrowseFolder> Children);
 
-/// <summary>Library → Browse: the tree, the shown folder's path, its files in order and the chip counts.</summary>
+/// <summary>
+/// Library → Browse: the tree, the shown folder's path, its files in order, the chip counts and every watched folder's
+/// path (file actions build full paths from it, so a folder added while browsing works at once).
+/// </summary>
 internal sealed record BrowseData(
     BrowseQuery Query,
     IReadOnlyList<BrowseFolder> Tree,
     IReadOnlyList<string> Crumbs,
     long[] Ids,
-    FolderStateCounts Counts);
+    FolderStateCounts Counts,
+    IReadOnlyDictionary<long, string> RootPaths);
 
 /// <summary>Library data (separate interface so pages depend only on what they read).</summary>
 internal interface ILibraryData
 {
     LibraryData LoadLibrary();
 
-    /// <summary>The Browse view; a query without a folder shows the first root's top folder.</summary>
+    /// <summary>
+    /// The Browse view. A query without a folder (or with one that is gone) shows the top folder of the watched folder
+    /// it names, else of the first one.
+    /// </summary>
     BrowseData LoadBrowse(BrowseQuery query);
 
     IReadOnlyList<FileRow> LoadFileRows(IReadOnlyList<long> ids);
