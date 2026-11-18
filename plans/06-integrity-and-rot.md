@@ -55,8 +55,13 @@ Never retry a CRC or device error in a tight loop; one retry after 500 ms, then 
   evidence and say so in its summary: compressed media essentially never contains 64 KiB of zeros, so
   this explains the cause.
 - Known padding must not trigger: MP4 `free`/`skip` boxes, Matroska `Void` elements, FLAC `PADDING`
-  blocks, ID3v2 padding. Where the structure reader (subplan 07) has located such regions, subtract
-  them. Until then the Low severity keeps the cost of a false positive small.
+  blocks, RIFF `JUNK`, ID3v2 padding, and zero or `FF` bytes after a JPEG's EOI (alone, or before an
+  appended picture). The structure reader (subplan 07) records these regions and the detector reads
+  them: when padding holds the longest zero run, that run leaves the Critical share (zero blocks and
+  total blocks both lose it), and the Low is raised only for a recorded run whose first 64 KiB padding
+  does not hold. Such a run's length is not stored, so its summary reads "64 KB or more of zeros at
+  byte N". Run offsets inside padding are left out of the evidence. Measured on the owner's library:
+  650 of 661 findings, 5 of them Critical, were padding before this.
 
 ## Baselines and change classification
 

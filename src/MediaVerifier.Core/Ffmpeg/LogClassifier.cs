@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using MediaVerifier.Core.Logging;
 
 namespace MediaVerifier.Core.Ffmpeg;
 
@@ -267,6 +268,20 @@ public sealed class LogCollector
         }
 
         LogLine line = LogClassifier.Classify(raw);
+        Add(line);
+        if (line.Kind == LogSignalKind.Unknown)
+        {
+            UnknownLines.Report(line);
+        }
+
+        OnLine?.Invoke(line);
+    }
+
+    /// <summary>Adds a line classified already (a provider's own digest of the lines it keeps); <see cref="OnLine"/> is not called.</summary>
+    public void Add(LogLine line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        string raw = line.Raw;
         lock (_gate)
         {
             _total++;
@@ -308,8 +323,6 @@ public sealed class LogCollector
                 state.Messages[normalized] = 1;
             }
         }
-
-        OnLine?.Invoke(line);
     }
 
     public LogSummary ToSummary()
@@ -343,6 +356,31 @@ public sealed class LogCollector
         public HashSet<int> Streams { get; } = [];
 
         public Dictionary<string, int> Messages { get; } = new(StringComparer.Ordinal);
+    }
+}
+
+/// <summary>
+/// Error lines no pattern matches are written to the app log, once per distinct message per process, so the
+/// pattern table can grow from field logs (subplan 04: "logged for corpus growth").
+/// </summary>
+internal static class UnknownLines
+{
+    private const int MaxReported = 200;
+    private static readonly HashSet<string> Reported = new(StringComparer.Ordinal);
+    private static readonly Lock Gate = new();
+
+    public static void Report(LogLine line)
+    {
+        string message = line.Normalized;
+        lock (Gate)
+        {
+            if (Reported.Count >= MaxReported || !Reported.Add(message))
+            {
+                return;
+            }
+        }
+
+        AppLog.Shared?.Info("FFmpeg error line the classifier does not know: " + line.Raw);
     }
 }
 

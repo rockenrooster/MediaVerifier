@@ -83,7 +83,7 @@ option, verified on 8.0.1):
 and, for `ffmpeg` commands that decode:
 
 ```
--max_error_rate 1 -err_detect crccheck+bitstream+buffer
+-max_error_rate 1 -err_detect crccheck+bitstream
 ```
 
 Why each one matters (all verified in appendix A):
@@ -91,7 +91,7 @@ Why each one matters (all verified in appendix A):
 | Argument | Reason |
 |----------|--------|
 | `-loglevel repeat+level+warning` | H.264 damage is reported only as a *warning* (`corrupt decoded frame`). At `-v error` a corrupted film decodes "cleanly". `level` prefixes every line with `[warning]`/`[error]`/`[fatal]`; `repeat` stops FFmpeg collapsing repeated lines |
-| `-err_detect crccheck+bitstream+buffer` | Decoder CRC checks are off by default. A single flipped byte in a FLAC is silent without `crccheck` |
+| `-err_detect crccheck+bitstream` | Decoder CRC checks are off by default. A single flipped byte in a FLAC is silent without `crccheck`. Do not add `buffer`: with it the MP3 decoder reports every granule that ends in legal stuffing bits (LAME CBR) as `[error] bits_left=N` and zeroes it, so healthy MP3s read as damaged and decode to different audio. Measured on the 9.0.2 bundle over the benchmark cells: without `buffer` every cell detects the same files; only MP3 counts change (deviations log) |
 | `-max_error_rate 1` | Without it FFmpeg aborts with *Decode error rate exceeds maximum* and stops reporting |
 | `-protocol_whitelist file,pipe` | Media containers and playlists can reference URLs and other files. The bundle contains no network code at all; the whitelist keeps the same guarantee when a developer override points at a full build |
 | `-nostdin` | Prevents `ffmpeg` reading the console and hanging (`ffprobe` has no such option and does not read the console) |
@@ -184,7 +184,7 @@ Signal kinds:
 | `Timestamp` | Timestamp order or continuity problem | COR-TIMESTAMPS |
 | `Unsupported` | This FFmpeg build cannot decode the stream | Skipped state, not a finding |
 | `Benign` | Known harmless message | ignored |
-| `Unknown` | Unmatched `[error]` or `[fatal]` line | counted as `DecodeError` with weight 0.5 and logged for corpus growth |
+| `Unknown` | Unmatched `[error]` or `[fatal]` line | counted as `DecodeError` with weight 0.5 and logged for corpus growth (the app log gets the raw line once per distinct message per run of the app, at most 200) |
 | `Noise` | Unmatched warning or unparsed line | ignored |
 
 Starter pattern table (case-insensitive substring or regex on the message; first match wins). Extend

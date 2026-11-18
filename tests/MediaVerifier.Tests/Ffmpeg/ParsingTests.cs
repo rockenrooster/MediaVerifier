@@ -144,8 +144,8 @@ public sealed class ParsingTests
     {
         Assert.Equal(["-hide_banner", "-nostdin", "-loglevel", "repeat+level+warning", "-protocol_whitelist", "file,pipe"], FfmpegArgs.Standard(FfTool.Ffmpeg));
         Assert.Equal(["-hide_banner", "-loglevel", "repeat+level+warning", "-protocol_whitelist", "file,pipe"], FfmpegArgs.Standard(FfTool.Ffprobe));
-        Assert.Equal(["-max_error_rate", "1", "-err_detect", "crccheck+bitstream+buffer"], FfmpegArgs.Decode());
-        Assert.Equal("crccheck+bitstream+buffer+careful+compliant", FfmpegArgs.Decode(strict: true)[3]);
+        Assert.Equal(["-max_error_rate", "1", "-err_detect", "crccheck+bitstream"], FfmpegArgs.Decode());
+        Assert.Equal("crccheck+bitstream+careful+compliant", FfmpegArgs.Decode(strict: true)[3]);
     }
 
     [Fact]

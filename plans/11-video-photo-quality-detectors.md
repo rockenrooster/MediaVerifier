@@ -85,8 +85,11 @@ ffmpeg <std> -noaccurate_seek -ss <t0> -i <file> -noaccurate_seek -ss <t1> -i <f
 
 1. **Usable frames**: spatial information (`lavfi.siti.si`) at or above `MinSpatialInfo` (started at 25;
    calibrated on real material to 40 for video and kept at 25 for photos, see
-   `docs/calibration/real-material.md`). Dark, flat or defocused frames cannot tell an upscale from a native picture. Fewer
-   than 4 usable frames → `insufficient`, no finding.
+   `docs/calibration/real-material.md`). Dark, flat or defocused frames cannot tell an upscale from a native picture.
+   Each picture counts once: in a clip shorter than a group of pictures several sample times land on the same key
+   frame, and such repeats measure bit-identically (same spatial information and SSIM for every candidate; the
+   block score jitters in the sixth decimal). Fewer than 4 usable frames → `insufficient`, no finding. Repeats are
+   also left out of the block and blur medians and shown faded in the frame strip.
 2. For each candidate take the **10th percentile** of SSIM-Y over usable frames. Using a low
    percentile means nearly every frame must be reproducible; a few natively rendered titles do not
    mask an upscaled film, and a few soft shots do not condemn a native one.
@@ -97,12 +100,18 @@ ffmpeg <std> -noaccurate_seek -ss <t0> -i <file> -noaccurate_seek -ss <t1> -i <f
    or drops by at least 0.008 (the fall-off that marks the true source size). If every candidate
    passes with no fall-off, report the smallest and lower the confidence.
 5. Confidence: 0.85 when the margin over the threshold is 0.005 or more, else 0.65; −0.20 with fewer
-   than 6 usable frames; −0.15 when the file is also bitrate-starved (softness may be compression).
+   than 6 usable frames; −0.15 when the file is also bitrate-starved (softness may be compression). The
+   result is rounded to two decimals (0.65 − 0.15 is 0.49999997 in float arithmetic, which would read
+   "Suspicious" and cap the finding at Low); every finding's confidence is.
 6. Severity for `VID-UPSCALED`, with `r = effective height / container height`:
    `r ≤ 0.55` and confidence ≥ 0.80 → High; `r ≤ 0.80` and confidence ≥ 0.50 → Medium; otherwise Low.
 
 Summary: *"Likely upscaled: 2160p file with detail equivalent to about 1080p (12 of 12 sampled frames
 are reproducible from 1080p)."* When the file is also starved, say "upscaled or heavily compressed".
+As built: *"2160p file with detail equivalent to 1080p (12 of 12 sampled frames are reproducible from
+1080p)"*, the count being the usable frames, each picture once; starved files read *"(upscaled or
+heavily compressed; 12 of 12 sampled frames are reproducible from 1080p)"*. The hedge comes from the
+confidence wording (subplan 02).
 
 ### Limits to state in the rule text
 

@@ -260,7 +260,7 @@ public sealed class RealMaterialCalibration(ITestOutputHelper output)
         if (stored.TryGetValue(ArtifactKind.AudioDecode, out (int, string Data) audioData) && new AudioDecodeProvider().Deserialize(audioData.Data) is AudioDecodeArtifact { Stats: PcmStats stats })
         {
             SpectrumStats s = stats.Spectrum;
-            measures.Add(string.Create(C, $"knee {(s.Brickwall ? (s.KneeHz / 1000).ToString("0.0", C) + " kHz" : "none")}, drop {s.DropDb:0.0} dB, bits {stats.EffectiveBits}, clipped runs {stats.Clipping.Runs}"));
+            measures.Add(string.Create(C, $"knee {((s.Sufficient && s.DropDb >= 30) ? (s.KneeHz / 1000).ToString("0.0", C) + " kHz" : "none")}, drop {s.DropDb:0.0} dB, bits {stats.EffectiveBits}, clipped runs {stats.Clipping.Runs}"));
         }
 
         if (damage.Count > 0)

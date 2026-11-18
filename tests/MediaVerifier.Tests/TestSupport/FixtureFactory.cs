@@ -207,6 +207,12 @@ public static class FixtureFactory
         Add("av.mp4", "-i fs.mp4 -i a128.m4a -map 0:v:0 -map 1:a:0 -c copy -shortest -movflags +faststart -f mp4 {out}", "fs.mp4", "a128.m4a");
         Add("starved.mp4", "-i native1080.mp4 -c:v libx264 -b:v 300k -preset veryfast -f mp4 {out}", "native1080.mp4");
 
+        // The same three with a key frame every half second: the 6 samples of a 6 s clip land on 6 different key frames
+        // (with -g 48 they land on 3, too few for an upscale verdict, subplan 11 step 1).
+        Add("native1080k.mp4", "-f lavfi -i \"mandelbrot=size=1920x1080:rate=24\" -t 6 -vf \"noise=c0s=6:c0f=t+u,format=yuv420p\" -c:v libx264 -crf 20 -preset veryfast -g 12 -f mp4 {out}");
+        Add("up720k.mp4", "-f lavfi -i \"mandelbrot=size=1280x720:rate=24\" -t 6 -vf \"noise=c0s=6:c0f=t+u,scale=1920:1080:flags=lanczos,format=yuv420p\" -c:v libx264 -crf 20 -preset veryfast -g 12 -f mp4 {out}");
+        Add("up540k.mp4", "-f lavfi -i \"mandelbrot=size=960x540:rate=24\" -t 6 -vf \"noise=c0s=6:c0f=t+u,scale=1920:1080:flags=bicubic,format=yuv420p\" -c:v libx264 -crf 20 -preset veryfast -g 12 -f mp4 {out}");
+
         // Photos.
         Add("img.jpg", "-ss 2 -i native1080.mp4 -frames:v 1 -q:v 3 -f image2 -update 1 {out}", "native1080.mp4");
         Add("img.png", "-ss 2 -i native1080.mp4 -frames:v 1 -c:v png -f image2 -update 1 {out}", "native1080.mp4");

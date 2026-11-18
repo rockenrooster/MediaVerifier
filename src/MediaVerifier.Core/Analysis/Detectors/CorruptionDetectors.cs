@@ -347,12 +347,12 @@ public sealed class AudioDecodeDetector : IDetector
             Severity severity = lossless || errors >= input.Settings.Value("COR-DECODE", "highErrors") || lost >= input.Settings.Value("COR-DECODE", "audioHighSeconds")
                 ? Severity.High
                 : Severity.Medium;
-            string summary = "Decoder reported " + Plural(errors, "error", "errors") + EvidenceText.Around(decode.ErrorPositions) + missing;
+            string summary = "Decoder reported " + Plural(errors, "error", "errors") + EvidenceText.Around(decode.ErrorPositions, decode.ErrorSpotCount) + missing;
             sink.Raise("COR-DECODE", severity, 1f, summary, ErrorSpots.AddTo(new Dictionary<string, object>(shared) { ["errors"] = errors }, decode.ErrorPositions));
         }
         else if (counts.MinorDecode > 0)
         {
-            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(counts.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(decode.ErrorPositions), ErrorSpots.AddTo(new Dictionary<string, object>(shared), decode.ErrorPositions));
+            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(counts.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(decode.ErrorPositions, decode.ErrorSpotCount), ErrorSpots.AddTo(new Dictionary<string, object>(shared), decode.ErrorPositions));
         }
 
         if (timedOut || declared is not double length || length <= 0 || decoded is not double got)
@@ -427,10 +427,14 @@ public sealed class ImageDecodeDetector : IDetector
         }
 
         int frames = image.FramesRead ?? 0;
-        int errors = counts.DecodeError + counts.Unknown + counts.Truncation;
-        if (frames == 0 && errors > 0)
+
+        // A picture came out: only truncation and the decoder's own error counts say part of it is missing (subplan 07).
+        // An unknown error line is not proof of that; when nothing came out, it counts at half weight (subplan 04).
+        int errors = counts.DecodeError + counts.Truncation;
+        int unreadable = errors + (int)Math.Ceiling(0.5 * counts.Unknown);
+        if (frames == 0 && unreadable > 0)
         {
-            sink.Raise("COR-DECODE", Severity.Critical, 1f, $"Nothing could be decoded ({Plural(errors, "decoder error", "decoder errors")})", new Dictionary<string, object>(shared) { ["errors"] = errors });
+            sink.Raise("COR-DECODE", Severity.Critical, 1f, $"Nothing could be decoded ({Plural(unreadable, "decoder error", "decoder errors")})", new Dictionary<string, object>(shared) { ["errors"] = unreadable });
         }
         else if (frames > 0 && errors > 0)
         {
@@ -519,7 +523,7 @@ public sealed class VideoDecodeDetector : IDetector
         }
         else if (all.MinorDecode > 0)
         {
-            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(all.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(video.ErrorPositions), ErrorSpots.AddTo(new Dictionary<string, object>(shared), video.ErrorPositions));
+            sink.Raise("COR-DECODE", Severity.Low, 1f, "Decoder reported " + Plural(all.MinorDecode, "minor problem", "minor problems") + EvidenceText.Around(video.ErrorPositions, video.ErrorSpotCount), ErrorSpots.AddTo(new Dictionary<string, object>(shared), video.ErrorPositions));
         }
 
         if (all.Concealed > 0)
@@ -569,7 +573,7 @@ public sealed class VideoDecodeDetector : IDetector
             text += " in the sound";
         }
 
-        text += EvidenceText.Around(video.ErrorPositions);
+        text += EvidenceText.Around(video.ErrorPositions, video.ErrorSpotCount);
 
         if (missingFrames > 0)
         {

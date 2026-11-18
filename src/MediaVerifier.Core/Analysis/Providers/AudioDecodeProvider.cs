@@ -43,7 +43,10 @@ public sealed record AudioDecodeArtifact(
     Audio.PcmStats? Stats = null,
 
     // Where the decoder reported errors (ErrorSpots); null in decodes stored before the spots were kept.
-    double[]? ErrorPositions = null) : IArtifact
+    double[]? ErrorPositions = null,
+
+    // How many spots there were in all; ErrorPositions keeps the first 50. Null in decodes stored before it was kept.
+    int? ErrorSpotCount = null) : IArtifact
 {
     [JsonIgnore]
     public double? DecodedSeconds => Opened && SampleRate > 0 ? (double)SampleFrames / SampleRate : null;
@@ -188,8 +191,12 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
     /// <summary>Samples per block handed to the analyzers (about 46 ms of stereo audio at 44.1 kHz).</summary>
     private const int BlockSamples = 4096;
 
-    /// <summary>Version 2 adds the signal features of subplan 10 (<see cref="Audio.PcmStats"/>); version 3 the clicks.</summary>
-    public override int Version => 3;
+    /// <summary>
+    /// Version 2 adds the signal features of subplan 10 (<see cref="Audio.PcmStats"/>); version 3 the clicks. Version 4
+    /// decodes without <c>buffer</c> in the checks (MP3 stuffing bits read as errors, and the audio changed) and
+    /// counts every error spot.
+    /// </summary>
+    public override int Version => 4;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -219,7 +226,7 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
         }
 
         WavFormat? format = null;
-        List<double> errorSeconds = [];
+        SpotList errorSpots = new();
         List<string> args = [.. FfmpegArgs.Decode(file.Settings.StrictDecoding && file.Depth == ScanDepth.Deep)];
         args.AddRange(["-i", file.FullPath, "-map", "0:a:0", "-map_metadata", "-1", "-fflags", "+bitexact", "-c:a", "pcm_f32le", "-f", "wav", "-"]);
         FfResult result = await file.Runner.RunAsync(
@@ -233,12 +240,13 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
                 HardTimeout = FfmpegArgs.HardTimeout(file.Depth, DeclaredForTimeout(flac), file.Stat.Size),
                 BinaryConsumer = async (stream, token) => format = await PumpAsync(stream, analyzers, token).ConfigureAwait(false),
 
-                // The audio read so far places each error (the pipe holds a fraction of a second more).
+                // The audio read so far places each error (the pipe holds a fraction of a second more); it only grows,
+                // so errors merge into spots as they arrive, from the start of the file to its end.
                 OnLogLine = line =>
                 {
-                    if (ErrorSpots.Counts(line.Kind) && errorSeconds.Count < 1000)
+                    if (ErrorSpots.Counts(line.Kind))
                     {
-                        errorSeconds.Add(counter.Seconds);
+                        errorSpots.Add(counter.Seconds);
                     }
                 },
             },
@@ -295,7 +303,8 @@ public sealed class AudioDecodeProvider() : ArtifactProvider<AudioDecodeArtifact
             format?.Channels ?? 0,
             verdict,
             stats,
-            ErrorSpots.Merge(errorSeconds));
+            errorSpots.ToArray(),
+            errorSpots.Count);
     }
 
     /// <summary>Reads the WAV stream to its end, feeding whole frames to every analyzer. Null when no audio arrived.</summary>

@@ -86,6 +86,11 @@ The fractal source has detail at every scale, so a version rendered small and en
 lacks detail. That makes it a fair stand-in for the upscale tests, but thresholds still need real
 footage (see Calibration).
 
+The upscale tests use `native1080k.mp4`, `up720k.mp4` and `up540k.mp4`: the same three commands with
+`-g 12`. Frame sampling takes the key frame at or before each sample time (subplan 11), so the six
+samples of a 6 s clip with `-g 48` are only three different pictures, too few for a verdict; with a key
+frame every half second they are six. `starved.mp4` (x264's default GOP) has a single key frame.
+
 ### Photos
 
 ```

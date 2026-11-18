@@ -27,18 +27,34 @@ public sealed record ImageDecodeArtifact(
 /// </summary>
 public sealed partial class ImageDecodeProvider() : ArtifactProvider<ImageDecodeArtifact>(new ArtifactCodec<ImageDecodeArtifact>(ArtifactKind.Decode, ProviderJsonContext.Default.ImageDecodeArtifact))
 {
-    public override int Version => 1;
+    /// <summary>Version 2 decodes only the first picture of a JPEG and drops <c>buffer</c> from the checks.</summary>
+    public override int Version => 2;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
     public override bool Applies(FileContext file) => file.Kind == MediaKind.Photo && !MediaClassifier.IsRaw(file.Extension);
 
+    /// <summary>The ffprobe arguments: the explicit demuxer and, for a JPEG, only its first picture.</summary>
+    public static List<string> Arguments(string path, string? sniffedFormat)
+    {
+        List<string> args = ["-err_detect", FfmpegArgs.ErrorDetection()];
+        string? demuxer = FfmpegArgs.PhotoDemuxer(sniffedFormat);
+        args.AddRange(FfmpegArgs.Input(path, MediaKind.Photo, sniffedFormat).SkipLast(2));
+        if (demuxer == "jpeg_pipe")
+        {
+            // The photo is the first picture. Phones append depth maps, previews and small stubs after it, which
+            // jpeg_pipe reads as more frames; they are not the photo (an animated GIF, PNG or WebP keeps every frame).
+            args.AddRange(["-read_intervals", "%+#1"]);
+        }
+
+        args.AddRange(["-count_frames", "-show_entries", "stream=codec_name,width,height,pix_fmt,nb_read_frames:format=format_name", "-of", "json", "-i", path]);
+        return args;
+    }
+
     protected override async Task<ImageDecodeArtifact> ProduceTypedAsync(FileContext file)
     {
         string? sniffed = await StructureProvider.SniffedImageFormatAsync(file).ConfigureAwait(false);
-        List<string> args = ["-err_detect", "crccheck+bitstream+buffer"];
-        args.AddRange(FfmpegArgs.Input(file.FullPath, MediaKind.Photo, sniffed).SkipLast(2));
-        args.AddRange(["-count_frames", "-show_entries", "stream=codec_name,width,height,pix_fmt,nb_read_frames:format=format_name", "-of", "json", "-i", file.FullPath]);
+        List<string> args = Arguments(file.FullPath, sniffed);
         FfResult result = await file.Runner.RunAsync(
             new FfRequest
             {
@@ -134,11 +150,14 @@ public sealed record VideoDecodeArtifact(
     double[]? BlackStarts = null,
     double[]? BlackDurations = null,
 
-    // volumedetect on the first audio stream: the loudest sample in dBFS; null without audio or a reading.
+    // volumedetect on the first audio stream: the loudest sample in dBFS (-91 for digital silence); null without audio or a reading.
     double? AudioMaxVolumeDb = null,
 
     // Where the decoder reported errors (ErrorSpots); null in decodes stored before the spots were kept.
-    double[]? ErrorPositions = null) : IArtifact, IStreamHashSource
+    double[]? ErrorPositions = null,
+
+    // How many spots there were in all; ErrorPositions keeps the first 50. Null in decodes stored before it was kept.
+    int? ErrorSpotCount = null) : IArtifact, IStreamHashSource
 {
     [JsonIgnore]
     public byte[]? StreamHash => StreamHashBytes;
@@ -160,8 +179,12 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
     /// <summary>Most freezes and black sections whose positions are kept.</summary>
     private const int MaxSections = 50;
 
-    /// <summary>Version 2 keeps freeze and black positions and the soundtrack's peak (subplan 11, M3 rules).</summary>
-    public override int Version => 2;
+    /// <summary>
+    /// Version 2 keeps freeze and black positions and the soundtrack's peak (subplan 11, M3 rules). Version 3 drops
+    /// <c>buffer</c> from the checks, ignores lines the command itself causes (<see cref="Ignored"/>) and counts every
+    /// error spot.
+    /// </summary>
+    public override int Version => 3;
 
     public override ScanDepth MinDepth => ScanDepth.Standard;
 
@@ -237,7 +260,10 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         Stopwatch wall = Stopwatch.StartNew();
         Lock spotsGate = new();
         List<(double Wall, double Media)> marks = [];
-        List<double> errorWall = [];
+        ErrorTimes errorWall = new();
+
+        // The digest's top messages and first line, without the lines Ignored drops.
+        LogCollector kept = new();
         FfResult result = await file.Runner.RunAsync(
             new FfRequest
             {
@@ -260,14 +286,18 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                 },
                 OnLogLine = line =>
                 {
+                    if (Ignored(line, deep))
+                    {
+                        return;
+                    }
+
+                    kept.Add(line);
                     if (ErrorSpots.Counts(line.Kind))
                     {
+                        double now = wall.Elapsed.TotalSeconds;
                         lock (spotsGate)
                         {
-                            if (errorWall.Count < 1000)
-                            {
-                                errorWall.Add(wall.Elapsed.TotalSeconds);
-                            }
+                            errorWall.Add(now);
                         }
                     }
 
@@ -307,8 +337,8 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
                     Match volume = MaxVolume().Match(line.Raw);
                     if (volume.Success)
                     {
-                        maxVolume = volume.Groups[1].Value == "-inf" ? double.NegativeInfinity
-                            : double.TryParse(volume.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) ? db : maxVolume;
+                        // volumedetect measures 16-bit samples: digital silence reads -91.0 dB, never -inf.
+                        maxVolume = double.TryParse(volume.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) ? db : maxVolume;
                         return;
                     }
 
@@ -341,7 +371,14 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
         }
 
         // Per-stream digests keep the top messages of the whole log for the evidence table.
-        LogDigest all = LogDigest.From(result.Log);
+        LogDigest all = LogDigest.From(kept.ToSummary());
+        double[] spots;
+        int spotCount;
+        lock (spotsGate)
+        {
+            spots = ErrorSpots.Merge(ErrorSpots.Interpolate(errorWall.Times, marks), out spotCount);
+        }
+
         return new VideoDecodeArtifact(
             deep ? VideoPass.Deep : VideoPass.Standard,
             OutcomeMapping.From(result.Outcome),
@@ -364,9 +401,20 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
             [.. freezeDurations],
             [.. blackStarts],
             [.. blackDurations],
-            maxVolume is double v && double.IsNegativeInfinity(v) ? -200 : maxVolume,
-            ErrorSpots.Merge(ErrorSpots.Interpolate(errorWall, marks)));
+            maxVolume,
+            spots,
+            spotCount);
     }
+
+    /// <summary>
+    /// Lines this command causes, which say nothing about the file: the <c>null</c> muxer's complaints about the
+    /// timestamps of the decoded frames it is handed (the file's own packets go to the stream hash, whose muxer
+    /// lines count), and in a key-frame pass HEVC's <c>Duplicate POC in a sequence</c>, which skipping the frames
+    /// in between causes; a full decode of the same file prints none (deviations log).
+    /// </summary>
+    internal static bool Ignored(LogLine line, bool deep) =>
+        (line.Contexts.Count > 0 && line.Contexts[0] == "null")
+        || (!deep && line.Message.StartsWith("Duplicate POC in a sequence", StringComparison.Ordinal));
 
     /// <summary>Which stream a log line is about: input-stream contexts first, then the decoder's codec name.</summary>
     internal static string StreamOf(LogLine line, IReadOnlySet<string> videoCodecs, IReadOnlySet<string> audioCodecs)
@@ -410,7 +458,7 @@ public sealed partial class VideoDecodeProvider() : ArtifactProvider<VideoDecode
     [GeneratedRegex(@"black_start:\s*([0-9.]+)", RegexOptions.CultureInvariant)]
     private static partial Regex BlackStart();
 
-    [GeneratedRegex(@"max_volume:\s*(-inf|-?[0-9.]+) dB", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"max_volume:\s*(-?[0-9.]+) dB", RegexOptions.CultureInvariant)]
     private static partial Regex MaxVolume();
 
     [GeneratedRegex(@"black_duration:\s*([0-9.]+)", RegexOptions.CultureInvariant)]

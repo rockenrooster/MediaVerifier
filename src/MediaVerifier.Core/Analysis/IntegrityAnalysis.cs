@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
+using MediaVerifier.Core.Analysis.Detectors;
+using MediaVerifier.Core.Analysis.Structure;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Integrity;
 using MediaVerifier.Core.Model;
@@ -61,6 +63,9 @@ public sealed class IntegrityDetector : IDetector
 
     public IReadOnlyList<Type> Needs { get; } = [typeof(IntegrityArtifact)];
 
+    /// <summary>The structure check's padding regions: zeros the container declares as padding are not lost data (subplan 06).</summary>
+    public IReadOnlyList<Type> Optional { get; } = [typeof(StructureArtifact)];
+
     public ScanDepth MinDepth => ScanDepth.Quick;
 
     public bool Applies(DetectorInput input) => true;
@@ -95,25 +100,86 @@ public sealed class IntegrityDetector : IDetector
             return;
         }
 
+        // Known padding must not trigger (subplan 06): MP4 free boxes, FLAC PADDING, zeros after a JPEG's end and the
+        // like, as the structure check recorded them. The longest run leaves the share when padding holds all of it;
+        // a recorded run counts only when padding does not hold its first 64 KiB (each recorded run is at least that long).
+        IReadOnlyList<PaddingRegion> padding = input.Get<StructureArtifact>() is { ReadFailed: false } structure ? structure.Padding : [];
+        long longestBytes = integrity.LongestZeroRunBlocks * IntegrityReader.BlockSize;
+        bool longestIsPadding = longestBytes > 0 && InPadding(padding, integrity.LongestZeroRunOffset, Math.Min(integrity.Size, integrity.LongestZeroRunOffset + longestBytes));
+        long paddingBlocks = longestIsPadding ? integrity.LongestZeroRunBlocks : 0;
+        long zeroBlocks = integrity.ZeroBlocks - paddingBlocks;
+        long totalBlocks = integrity.TotalBlocks - paddingBlocks;
+        double share = totalBlocks > 0 ? (double)zeroBlocks / totalBlocks : 0;
+        const long recordedBytes = ZeroMap.RecordedRunBlocks * IntegrityReader.BlockSize;
+        long[] runs = [.. integrity.ZeroRunOffsets.Where(offset => !InPadding(padding, offset, Math.Min(integrity.Size, offset + recordedBytes)))];
+
         double criticalShare = input.Settings.Value("GEN-ZEROFILL", "criticalPercent") / 100.0;
         Dictionary<string, object> evidence = new()
         {
-            ["zeroBlocks"] = integrity.ZeroBlocks,
-            ["totalBlocks"] = integrity.TotalBlocks,
-            ["zeroPercent"] = Math.Round(integrity.ZeroFraction * 100, 1),
-            ["longestRunBytes"] = integrity.LongestZeroRunBlocks * IntegrityReader.BlockSize,
-            ["longestRunOffsetBytes"] = integrity.LongestZeroRunOffset,
-            ["runOffsetsBytes"] = integrity.ZeroRunOffsets,
+            ["zeroBlocks"] = zeroBlocks,
+            ["totalBlocks"] = totalBlocks,
+            ["zeroPercent"] = Math.Round(share * 100, 1),
+            ["runOffsetsBytes"] = runs,
             ["sizeBytes"] = integrity.Size,
         };
-        if (integrity.TotalBlocks > 0 && integrity.ZeroFraction >= criticalShare)
+        if (longestIsPadding)
         {
-            sink.Raise("GEN-ZEROFILL", Severity.Critical, 1f, string.Create(CultureInfo.InvariantCulture, $"{integrity.ZeroFraction * 100:F0}% of the file is zeros; typical of a failed copy or file-system recovery"), evidence);
+            evidence["paddingBytes"] = Math.Min(longestBytes, integrity.Size - integrity.LongestZeroRunOffset);
+        }
+        else
+        {
+            evidence["longestRunBytes"] = longestBytes;
+            evidence["longestRunOffsetBytes"] = integrity.LongestZeroRunOffset;
+        }
+
+        if (totalBlocks > 0 && share >= criticalShare)
+        {
+            sink.Raise("GEN-ZEROFILL", Severity.Critical, 1f, string.Create(CultureInfo.InvariantCulture, $"{share * 100:F0}% of the file is zeros; typical of a failed copy or file-system recovery"), evidence);
         }
         else if (integrity.LongestZeroRunBlocks >= ZeroMap.RecordedRunBlocks && !Uncompressed.Contains(input.Extension))
         {
-            sink.Raise("GEN-ZEROFILL", Severity.Low, 1f, string.Create(CultureInfo.InvariantCulture, $"{integrity.LongestZeroRunBlocks * 4:N0} KiB of zeros at byte {integrity.LongestZeroRunOffset:N0}"), evidence);
+            if (!longestIsPadding)
+            {
+                sink.Raise("GEN-ZEROFILL", Severity.Low, 1f, string.Create(CultureInfo.InvariantCulture, $"{EvidenceText.Size(longestBytes)} of zeros at byte {integrity.LongestZeroRunOffset:N0}"), evidence);
+            }
+            else if (runs.Length > 0)
+            {
+                // The longest run is padding; another one is not, and only its start is known.
+                sink.Raise("GEN-ZEROFILL", Severity.Low, 1f, string.Create(CultureInfo.InvariantCulture, $"{EvidenceText.Size(recordedBytes)} or more of zeros at byte {runs[0]:N0}"), evidence);
+            }
         }
+    }
+
+    /// <summary>True when the bytes <c>[start, end)</c> lie inside the declared padding (touching regions join up).</summary>
+    internal static bool InPadding(IReadOnlyList<PaddingRegion> padding, long start, long end)
+    {
+        if (padding.Count == 0 || end <= start)
+        {
+            return false;
+        }
+
+        long reach = start;
+        foreach (PaddingRegion region in padding.OrderBy(r => r.Offset))
+        {
+            long regionEnd = region.Offset + region.Length;
+            if (regionEnd <= reach)
+            {
+                continue;
+            }
+
+            if (region.Offset > reach)
+            {
+                return false;
+            }
+
+            reach = regionEnd;
+            if (reach >= end)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

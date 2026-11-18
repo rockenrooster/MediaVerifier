@@ -77,9 +77,9 @@ Read the first 64 bytes (and for MP3 the bytes after an ID3v2 tag).
 | Format | Checks | Findings | Ms |
 |--------|--------|----------|----|
 | ISO-BMFF | Walk top-level boxes (32-bit size, `1` = 64-bit size follows, `0` = to end of file). Record `free`/`skip` as padding | No `moov` → `COR-CONTAINER` ("index missing; typical of an interrupted recording or download"); fragmented files still carry a `moov`. A box extending past the end → `COR-TRUNCATED` with the missing byte count and which box. Bytes after the last box that are not a valid box → `COR-TRAILING` | M1 |
-| RIFF | Compare the RIFF size + 8 and the `data`/`movi` chunk extent with the file length | Declared beyond the end → `COR-TRUNCATED`. Sizes of 0 or `FFFFFFFF` (never finalised) → `COR-INDEX` Low | M1 |
+| RIFF | Compare the RIFF size + 8 and the `data`/`movi` chunk extent with the file length | Declared beyond the end → `COR-TRUNCATED`. Not when the RIFF size equals the file length (a writer counting its own 8-byte header) and the last chunk ends exactly at the end of the file. Sizes of 0 or `FFFFFFFF` (never finalised) → `COR-INDEX` Low | M1 |
 | FLAC | Skip ID3v2 if present; walk the metadata block chain; parse STREAMINFO (sample rate, channels, bits per sample, total samples, 16-byte MD5 at file offset 26 when STREAMINFO is first); record `PADDING` blocks; confirm a frame sync follows | Bad block chain → `COR-CONTAINER`. STREAMINFO values feed truncation and MD5 checks | M1 |
-| JPEG | Walk markers: segments with lengths until SOS, then scan entropy data for the next marker that is not a stuffed `FF 00` or `RST0–7`, across all scans, until EOI. Record SOF dimensions, quantisation tables (for subplan 11), scan count, bytes after EOI | No EOI → `COR-TRUNCATED`. Segment length past the end → `COR-TRUNCATED`. Bytes after EOI are fine when they start with another `FF D8` (multi-picture formats), contain `ftyp` at +4 (motion photos), or are all zero / `FF` padding; otherwise `COR-TRAILING` | M1 |
+| JPEG | Walk markers: segments with lengths until SOS, then scan entropy data for the next marker that is not a stuffed `FF 00` or `RST0–7`, across all scans, until EOI. Record SOF dimensions, quantisation tables (for subplan 11), scan count, bytes after EOI | No EOI → `COR-TRUNCATED`. Segment length past the end → `COR-TRUNCATED`. Bytes after EOI are fine when they start with another `FF D8` (multi-picture formats), hold `FF D8 FF` within 64 bytes after any zero padding (Sony MPF previews after zeros, Olympus previews), contain `ftyp` at +4 (motion photos), start with `MotionPhoto_Data` or end with `SEFT` (Samsung), are all zero / `FF` padding, or are Google camera records (`[payload][u32 LE length][8-byte NUL-padded tag]`, such as `ctrace`, `best`, `edof`, `DepthEn`) that chain back from the end of the file to EOI; otherwise `COR-TRAILING`. Zero padding after EOI is recorded as padding for the zero-fill check (subplan 06) | M1 |
 | PNG | Walk chunks by length without reading data: IHDR first, IEND last | Chunk past the end or no IEND → `COR-TRUNCATED`. CRCs are verified at Standard depth by the decoder | M1 |
 | Matroska | Validate the EBML header; read the Segment size | Known segment size past the end → `COR-TRUNCATED` | M1 |
 | Matroska (index) | Walk top-level elements, look for Cues (directly or through SeekHead) | No Cues in a file with video → `COR-INDEX` | M2 |
@@ -139,18 +139,21 @@ normalised messages, and the first raw line.
 One ffprobe process per file does both the probe and a full decode:
 
 ```
-ffprobe <std> -err_detect crccheck+bitstream+buffer -f <demuxer> -count_frames
+ffprobe <std> -err_detect crccheck+bitstream -f <demuxer> [-read_intervals %+#1] -count_frames
         -show_entries stream=codec_name,width,height,pix_fmt,nb_read_frames:format=format_name -of json -i <file>
 ```
 
 `<demuxer>` comes from the sniffed signature (subplan 04, input-path rules); omit `-f` for ISO-BMFF
-images so the MOV demuxer is used.
+images so the MOV demuxer is used. `-read_intervals %+#1` is added for `jpeg_pipe` only: phones append
+depth maps, previews and small stubs after the photo, which `jpeg_pipe` reads as further frames (a Pixel
+photo gave `[fatal] No JPEG data found in image` from a 17-byte stub after two complete pictures). The
+photo is the first picture; animated GIF, PNG and WebP keep every frame.
 
 | Rule | Condition | Severity |
 |------|-----------|----------|
 | `COR-CONTAINER` | Cannot open, or no image stream | Critical |
-| `COR-DECODE` | `nb_read_frames` is 0 or `N/A` together with decode errors (nothing usable decoded) | Critical |
-| `COR-PARTIAL-IMAGE` | `Truncation` signals (`EOI missing`, `overread`, `chunk too big`) or JPEG decoder error counts (`error count:`, `error y=`) while a frame was still produced | High |
+| `COR-DECODE` | `nb_read_frames` is 0 or `N/A` together with decode errors (nothing usable decoded); unknown error lines count at half weight here | Critical |
+| `COR-PARTIAL-IMAGE` | `Truncation` signals (`EOI missing`, `overread`, `chunk too big`) or JPEG decoder error counts (`error count:`, `error y=`) while a frame was still produced. Unknown error lines do not count: a picture came out | High |
 | `COR-CHECKSUM` | PNG `CRC mismatch`, zlib `inflate returned error` | High |
 | `COR-HANG` | Timed out | High |
 
@@ -178,6 +181,14 @@ This reads every byte of the file once (so it also exercises the storage) and co
 Verified on a 6-second 1080p file with AAC audio: about 200 ms, and it reports mid-file damage in
 both the video and the audio stream.
 
+Two kinds of line come from the command, not the file, and are not counted (in either pass unless
+noted): lines from the `null` muxer (context `[null @ …]`), whose *non monotonically increasing dts
+to muxer* complaints are about the decoded frames it is handed (a phone video with strictly increasing
+packet DTS printed 10 in the key-frame pass and about 640 in a full decode); and, in the key-frame pass
+only, HEVC's `Duplicate POC in a sequence`, which skipping the frames in between causes (a full decode
+of the same files prints none). The stream hash muxer's lines are kept: they describe the file's own
+packets.
+
 | Rule | Condition | Severity |
 |------|-----------|----------|
 | `COR-CONTAINER` | Cannot open; no video stream in a file classified as video and no audio either | Critical |
@@ -195,7 +206,7 @@ visible; the classifier ignores unknown info lines.
 
 ```
 ffmpeg -hide_banner -nostdin -loglevel repeat+level+info -protocol_whitelist file,pipe
-       -max_error_rate 1 -err_detect crccheck+bitstream+buffer -threads <n> -i <file>
+       -max_error_rate 1 -err_detect crccheck+bitstream -threads <n> -i <file>
        -map 0:v:0 -map 0:a? -vf "freezedetect=n=0.003:d=10,blackdetect=d=30:pix_th=0.10" -f null -
        -progress pipe:1 -nostats
 ```
