@@ -1424,6 +1424,7 @@ internal sealed class LibraryPage : PageBase
     {
         private readonly System.Drawing.Drawing2D.GraphicsPath _outline = new();
         private Pen? _dash;
+        private bool _dragOver;
 
         public DropArea()
         {
@@ -1437,14 +1438,31 @@ internal sealed class LibraryPage : PageBase
 
         protected override bool Interactive => true;
 
+        /// <summary>The page paints the ring around the area (drawn here, it fell outside the bounds and was clipped).</summary>
+        protected internal override Rectangle FocusRingBounds => ClientRectangle;
+
+        protected internal override float FocusRingRadius => SF(8);
+
+        /// <summary>Enter acts once per press and Space on release, as for buttons.</summary>
+        protected override bool ActsOnEnter => true;
+
+        protected override bool ActsOnSpace => true;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             ThemeTokens t = Tokens;
             Graphics g = e.Graphics;
             g.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : t.Bg);
-            Rectangle bounds = new(0, 0, Width - 1, Height - 1);
             VisualState state = PaintState;
-            Color line = state.HasFlag(VisualState.Hover) ? t.StrokeStrong : t.Stroke;
+            bool pressed = state.HasFlag(VisualState.Pressed);
+
+            // Hover, pressed and a folder dragged over it each show (subplan 08: every interactive state is visible).
+            Color line = pressed || _dragOver ? t.Accent : state.HasFlag(VisualState.Hover) ? t.StrokeStrong : t.Stroke;
+            if (pressed || _dragOver)
+            {
+                KitPaint.FillRoundedRect(g, new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), SF(8), pressed ? t.Pressed : t.Hover);
+            }
+
             if (_dash is null || _dash.Color != line || Math.Abs(_dash.Width - SF(1)) > 0.01f)
             {
                 _dash?.Dispose();
@@ -1463,36 +1481,38 @@ internal sealed class LibraryPage : PageBase
             int left = (Width - textWidth - S(24)) / 2;
             IconRenderer.Draw(g, IconName.FolderAdd, left, (Height / 2f) - SF(8), 16, DeviceDpi, t.Text2);
             KitPaint.DrawText(g, Strings.Library.DropArea, type.Body, t.Text2, left + S(24), Height / 2, textWidth + 1);
-            if (state.HasFlag(VisualState.Focused))
-            {
-                KitPaint.DrawFocusRing(g, bounds, SF(8), DeviceDpi);
-            }
         }
 
         protected override void OnDragEnter(DragEventArgs drgevent)
         {
             base.OnDragEnter(drgevent);
-            drgevent.Effect = DroppedPaths(drgevent.Data).Length == 0 ? DragDropEffects.None : DragDropEffects.Link;
+            bool folders = DroppedPaths(drgevent.Data).Length > 0;
+            drgevent.Effect = folders ? DragDropEffects.Link : DragDropEffects.None;
+            SetDragOver(folders);
+        }
+
+        protected override void OnDragLeave(EventArgs e)
+        {
+            base.OnDragLeave(e);
+            SetDragOver(false);
         }
 
         protected override void OnDragDrop(DragEventArgs drgevent)
         {
             base.OnDragDrop(drgevent);
+            SetDragOver(false);
             if (DroppedPaths(drgevent.Data) is { Length: > 0 } folders)
             {
                 FoldersDropped?.Invoke(this, folders);
             }
         }
 
-        protected override bool IsInputKey(Keys keyData) => keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
-
-        protected override void OnKeyDown(KeyEventArgs e)
+        private void SetDragOver(bool over)
         {
-            base.OnKeyDown(e);
-            if (e.KeyCode is Keys.Enter or Keys.Space)
+            if (over != _dragOver)
             {
-                e.Handled = true;
-                OnClick(EventArgs.Empty);
+                _dragOver = over;
+                Invalidate();
             }
         }
 
