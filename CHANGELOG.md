@@ -4,8 +4,11 @@ All notable changes to MediaVerifier are documented here.
 
 ## Unreleased
 
-### Menus, lists and the keyboard
+- Add upcoming user-visible changes here before tagging a release.
 
+## 0.1.0.15 - 2026-11-18
+
+### Menus, lists and the keyboard
 - Fixed: choices in drop-down lists, menu items and the notification flyout's buttons did nothing (the click went
   to the window underneath). Long lists such as the Issues Rule list scroll; context menus open above the pointer
   when there is no room below; a menu item shows that it is pressed.
@@ -20,9 +23,7 @@ All notable changes to MediaVerifier are documented here.
   selection in every list; option groups are one Tab stop.
 - Disabled buttons explain why in a tooltip; long toast texts can be shown in full; long dialog titles wrap.
 - Screen readers read the dialog fields, Group by, the navigation and the chosen option of segmented controls.
-
 ### Scans and schedules
-
 - Fixed: scheduled scans never ran while MediaVerifier was closed.
 - Fixed: a scheduled scan with a time limit did not stop at the limit; Run now ignored the schedule's time limit.
 - Fixed: every-N-days schedules never ran when the app was started daily.
@@ -35,9 +36,7 @@ All notable changes to MediaVerifier are documented here.
 - A scan asked for while another runs waits for it; Stop also withdraws it. Scans you start notify you when they end,
   as scheduled scans do. Skipped scheduled scans are listed in the bell. Stopping a background scan says Finishing.
 - The Dashboard's Create schedule adds the Nightly verification and Weekly check schedules.
-
 ### Findings
-
 - Fixed: most MP3 'Decoder errors' were caused by the app's own decode settings; HEVC videos, phone photos with
   appended pictures, AVI files and files with declared padding were reported damaged or zero-filled; upscaling
   findings counted one key frame several times.
@@ -48,9 +47,7 @@ All notable changes to MediaVerifier are documented here.
   few minutes were placed up to 20 s late.
 - Switching off bit rot or 'Metadata changed without a timestamp update' closes their findings, and switching them on
   reopens them. Settings → Rules no longer lists checks that are not built.
-
 ### Repairs, quarantine and undo
-
 - Fixed: Rebuild index removed phone videos' capture date, place and camera; Store as 16-bit turned a WAV into FLAC
   inside a .wav; long repairs were stopped after 60 seconds.
 - Fixed: a repair closed findings it did not fix, and the next scan raised the repaired problem again.
@@ -61,9 +58,7 @@ All notable changes to MediaVerifier are documented here.
   temporary files alone and do not start during a repair. An undo cut short by a crash is settled at the next start.
 - Undo tries every file, pauses a running scan and says how many came back; Ctrl+Z closes the notice whose Undo it
   ran and says when there is nothing to undo.
-
 ### Pages
-
 - Dashboard: values show dashes before the first scan; the engine-missing bar shows; a folder dropped on the window
   opens Add folder; each severity segment has a tooltip.
 - Issues: Select all and every action reach every selected problem; Fix… lists only fixes that suit every selection;
