@@ -532,6 +532,7 @@ internal static class Strings
 
     public static class Schedule
     {
+        public const string NoFolder = "The folders of this schedule are no longer watched. Edit it to choose one.";
         public const string Intro = "Scans run on their own, even when MediaVerifier is closed.";
         public const string NewSchedule = "New schedule";
         public const string EditSchedule = "Edit schedule";

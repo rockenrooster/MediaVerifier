@@ -404,7 +404,7 @@ internal sealed class UiServices : IDisposable
     /// another process); returns false when the request was refused, after saying why. While this window's scan runs,
     /// the request waits for it (subplan 05: a second manual request is queued) and starts when it ends.
     /// </summary>
-    public async Task<bool> StartScanAsync(IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null)
+    public async Task<bool> StartScanAsync(IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null, long? planId = null, TimeSpan? budget = null)
     {
         if (IsDemo || scopes.Count == 0)
         {
@@ -416,7 +416,7 @@ internal sealed class UiServices : IDisposable
             if (MediaEngine.ScanningAllowed && Scans.Status.IsActive)
             {
                 // The same request twice (Scan again pressed twice) waits once.
-                QueuedScan request = new(scopes, depth, scopeText, options);
+                QueuedScan request = new(scopes, depth, scopeText, options, planId, budget);
                 if (!_queuedScans.Any(request.SameAs))
                 {
                     _queuedScans.Enqueue(request);
@@ -433,7 +433,7 @@ internal sealed class UiServices : IDisposable
 
         try
         {
-            await Scans.StartAsync(new ScanRequest(scopes, depth, RunTrigger.Manual, Options: options), scopeText).ConfigureAwait(true);
+            await Scans.StartAsync(new ScanRequest(scopes, depth, RunTrigger.Manual, planId, budget, options), scopeText).ConfigureAwait(true);
             ScanStarted?.Invoke();
             return true;
         }
@@ -465,10 +465,10 @@ internal sealed class UiServices : IDisposable
         }
 
         QueuedScan next = _queuedScans.Dequeue();
-        _ = await StartScanAsync(next.Scopes, next.Depth, next.ScopeText, next.Options).ConfigureAwait(true);
+        _ = await StartScanAsync(next.Scopes, next.Depth, next.ScopeText, next.Options, next.PlanId, next.Budget).ConfigureAwait(true);
     }
 
-    private sealed record QueuedScan(IReadOnlyList<ScanScope> Scopes, ScanDepth Depth, string ScopeText, ScanOptions? Options)
+    private sealed record QueuedScan(IReadOnlyList<ScanScope> Scopes, ScanDepth Depth, string ScopeText, ScanOptions? Options, long? PlanId, TimeSpan? Budget)
     {
         /// <summary>The same scopes at the same depth with the same options (file lists compared item by item).</summary>
         public bool SameAs(QueuedScan other) =>

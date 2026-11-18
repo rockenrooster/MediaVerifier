@@ -704,17 +704,20 @@ internal sealed class SchedulePage : PageBase
         }
 
         List<RootRecord> roots = await Task.Run(Services.Database.Roots.List).ConfigureAwait(true);
-        List<RootRecord> chosen = plan.Definition.Roots is { Length: > 0 } ids ? [.. roots.Where(r => ids.Contains(r.Id))] : roots;
+        // A plan whose folders are no longer watched scans nothing (it used to scan every folder).
+        List<RootRecord> chosen = plan.Definition.Roots is long[] ids ? [.. roots.Where(r => ids.Contains(r.Id))] : roots;
         if (chosen.Count == 0)
         {
-            Services.ShowScanNotStarted(Strings.Shell.AddFolderFirst);
+            Services.ShowScanNotStarted(roots.Count == 0 ? Strings.Shell.AddFolderFirst : Strings.Schedule.NoFolder);
             return;
         }
 
         string folders = plan.Definition.Roots is { Length: > 0 }
             ? UiFormat.JoinNames([.. chosen.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))])
             : Strings.Scans.AllFolders;
-        await Services.StartScanAsync([.. chosen.Select(r => new ScanScope(r.Id))], plan.Definition.Depth, folders).ConfigureAwait(true);
+        // The run keeps the schedule's time limit and is linked to it (Last result follows), as a scheduled run is.
+        TimeSpan? budget = plan.Definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null;
+        await Services.StartScanAsync([.. chosen.Select(r => new ScanScope(r.Id))], plan.Definition.Depth, folders, planId: plan.Id, budget: budget).ConfigureAwait(true);
     }
 
     /// <summary>The switch, Run now, Edit and more of one plan row.</summary>
