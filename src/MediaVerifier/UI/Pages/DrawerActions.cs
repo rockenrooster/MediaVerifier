@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using MediaVerifier.App;
 using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Model;
@@ -12,9 +13,9 @@ namespace MediaVerifier.UI.Pages;
 
 /// <summary>
 /// The detail drawer's buttons, the same on every page that shows it (subplan 09, Detail drawer): the recommended fix,
-/// Show in folder, the More menu (every other fix, Open file, Scan again, Copy path, Move to quarantine) and each
-/// finding's Ignore and Scan again. Issues and Library wire their drawer through this, so none of its buttons is
-/// left without a handler on one page.
+/// Show in folder, the More menu (every other fix, Open file, Scan again, Copy path, Move to quarantine), each
+/// finding's Ignore and Scan again, Copy details and the breadcrumb's links to Library → Browse. Issues and Library
+/// wire their drawer through this, so none of its buttons is left without a handler on one page.
 /// </summary>
 internal sealed class DrawerActions
 {
@@ -41,9 +42,15 @@ internal sealed class DrawerActions
         };
         view.MoreRequested += (_, screen) => ShowMenu(screen);
         view.FindingAction += (_, action) => UiTask.Run(OnFindingActionAsync(action.FindingId, action.Ignore));
+        view.CopyRequested += (_, text) => Copy(services, [text], Strings.Drawer.DetailsCopied);
+        view.CrumbClicked += (_, index) => UiTask.Run(BrowseFolderAsync(index));
     }
 
-    /// <summary>Scan again: through the services' start, which shows the strip at once or says why nothing started.</summary>
+    /// <summary>
+    /// Scan again: through the services' start, which shows the strip at once or says why nothing started. The scope is
+    /// the deepest folder holding the files, not their whole watched folder, and the files are read again: a scan at
+    /// the depth they already have otherwise found nothing to do for an unchanged file.
+    /// </summary>
     public static async Task RescanAsync(UiServices services, IReadOnlyList<long> fileIds)
     {
         if (fileIds.Count == 0 || services.IsDemo)
@@ -52,9 +59,36 @@ internal sealed class DrawerActions
         }
 
         List<FileRecord> files = await Task.Run(() => services.Database.Files.GetMany([.. fileIds])).ConfigureAwait(true);
-        ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, null, [.. g.Select(f => f.Id)]))];
-        string scope = string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(fileIds.Count));
-        _ = await services.StartScanAsync(scopes, ScanDepth.Standard, scope).ConfigureAwait(true);
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        // One scope per watched folder: a scope per file's folder listed nested folders again for each one (a file in
+        // Music and one in Music\Album listed the album twice).
+        ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, CommonFolder(g.Select(f => f.RelDir ?? string.Empty)), [.. g.Select(f => f.Id)]))];
+        ScanDepth depth = (ScanDepth)Math.Max((int)ScanDepth.Standard, files.Max(f => (int)f.ScannedDepth));
+        string scope = string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(files.Count));
+        _ = await services.StartScanAsync(scopes, depth, scope, new ScanOptions { VerifyEverything = true }).ConfigureAwait(true);
+    }
+
+    /// <summary>The deepest folder holding all of <paramref name="relDirs"/> (relative to their watched folder); null for the watched folder itself.</summary>
+    internal static string? CommonFolder(IEnumerable<string> relDirs)
+    {
+        string[]? common = null;
+        foreach (string relDir in relDirs)
+        {
+            string[] parts = relDir.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+            int same = 0;
+            while (common is not null && same < common.Length && same < parts.Length && string.Equals(common[same], parts[same], StringComparison.OrdinalIgnoreCase))
+            {
+                same++;
+            }
+
+            common = common is null ? parts : common[..same];
+        }
+
+        return common is { Length: > 0 } ? string.Join('\\', common) : null;
     }
 
     /// <summary>
@@ -69,12 +103,67 @@ internal sealed class DrawerActions
             Strings.Dialogs.Undo,
             () => UiTask.Run(UndoAsync(services, () => services.Database.Findings.ReopenAsync(findingIds), reload))));
 
+    /// <summary>After Stop ignoring: <c>Shown again for {n} problems</c> (a lifted folder ignore can bring back more than were chosen).</summary>
+    public static void ShowReopened(UiServices services, int reopened) =>
+        services.ShowToast?.Invoke(new ToastContent(
+            Severity.None,
+            string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Issues.ShownAgain, UiFormat.Plural(reopened, Strings.Dashboard.OneProblem, Strings.Dashboard.Problems)),
+            string.Empty));
+
     /// <summary>Runs an Undo, refreshes the page and says it is done.</summary>
     public static async Task UndoAsync(UiServices services, Func<Task> undo, Action reload)
     {
         await undo().ConfigureAwait(true);
         reload();
         services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Repair.Undone, string.Empty));
+    }
+
+    /// <summary>
+    /// Copies lines to the clipboard through the shell's copy and says so in one line, <paramref name="copied"/> (Copy
+    /// path seemed to do nothing). While another program holds the clipboard Windows refuses: that is said in a toast
+    /// instead of the error dialog.
+    /// </summary>
+    public static void Copy(UiServices services, IReadOnlyList<string> lines, string copied)
+    {
+        if (!lines.Any(line => line.Length > 0))
+        {
+            return;
+        }
+
+        try
+        {
+            ShellActions.CopyText(lines);
+            services.ShowToast?.Invoke(new ToastContent(Severity.None, copied, string.Empty));
+        }
+        catch (ExternalException)
+        {
+            services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Strings.Drawer.CopyFailed, string.Empty));
+        }
+    }
+
+    /// <summary>Copy path's confirmation: <c>Path copied</c>, or <c>{n} paths copied</c>.</summary>
+    public static string PathsCopied(int count) =>
+        count == 1 ? Strings.Drawer.PathCopied : string.Format(CultureInfo.CurrentCulture, Strings.Drawer.PathsCopied, UiFormat.Count(count));
+
+    /// <summary>
+    /// Open file: the file in the program Windows has for it. A file that is gone (deleted or moved since the scan, or
+    /// on a drive that is not connected) says so; Open file did nothing at all. The check runs off the UI thread.
+    /// </summary>
+    public static async Task OpenFileAsync(UiServices services, string? path)
+    {
+        if (string.IsNullOrEmpty(path) || services.IsDemo)
+        {
+            return;
+        }
+
+        if (await Task.Run(() => File.Exists(path)).ConfigureAwait(true))
+        {
+            ShellActions.OpenFile(path);
+        }
+        else
+        {
+            services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Strings.Drawer.OpenFailed, Core.CoreStrings.Remediation.Missing));
+        }
     }
 
     private async Task OnFindingActionAsync(long findingId, bool ignore)
@@ -84,16 +173,68 @@ internal sealed class DrawerActions
             return;
         }
 
-        if (ignore)
-        {
-            await _services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
-            _findingIgnored(shown.FileId);
-            ShowIgnored(_services, [findingId], () => _findingIgnored(shown.FileId));
-        }
-        else
+        if (!ignore)
         {
             await RescanAsync(_services, [shown.FileId]).ConfigureAwait(true);
+            return;
         }
+
+        if (shown.Findings.FirstOrDefault(f => f.Id == findingId) is { Status: FindingStatus.Ignored })
+        {
+            int reopened = await _services.Database.Findings.ReopenAsync([findingId]).ConfigureAwait(true);
+            _findingIgnored(shown.FileId);
+            ShowReopened(_services, reopened);
+            return;
+        }
+
+        await _services.Database.Findings.SetStatusAsync([findingId], FindingStatus.Ignored).ConfigureAwait(true);
+        _findingIgnored(shown.FileId);
+        ShowIgnored(_services, [findingId], () => _findingIgnored(shown.FileId));
+    }
+
+    /// <summary>
+    /// A breadcrumb segment's link (subplan 09, Detail drawer): Library → Browse at that folder; segments of the watched
+    /// folder's own path open the watched folder.
+    /// </summary>
+    private async Task BrowseFolderAsync(int index)
+    {
+        if (_view.Detail is not FileDetail shown || shown.RootId == 0 || _services.Navigate is not { } navigate)
+        {
+            return;
+        }
+
+        string[] parts = shown.RelDir.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        int depth = index + 1 - shown.RootSegments;
+        long? dirId = null;
+        if (depth >= parts.Length)
+        {
+            dirId = parts.Length == 0 ? null : shown.DirId;
+        }
+        else if (depth > 0)
+        {
+            string relPath = string.Join('\\', parts.Take(depth));
+            dirId = await Task.Run(() => FindFolder(_services.Database.Queries.FolderRollup(shown.RootId), relPath)?.Id).ConfigureAwait(true);
+        }
+
+        navigate(PageId.Library, new LibraryBrowseRequest(shown.RootId, dirId));
+    }
+
+    private static FolderNode? FindFolder(IEnumerable<FolderNode> nodes, string relPath)
+    {
+        foreach (FolderNode node in nodes)
+        {
+            if (string.Equals(node.RelPath, relPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return node;
+            }
+
+            if (FindFolder(node.Children, relPath) is FolderNode found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The More menu: every fix the app can run for the file's findings (the primary button's aside), then the file's actions.</summary>
@@ -132,13 +273,13 @@ internal sealed class DrawerActions
             switch (item.Tag as string)
             {
                 case "open":
-                    ShellActions.OpenFile(shown.FullPath);
+                    UiTask.Run(OpenFileAsync(_services, shown.FullPath));
                     break;
                 case "rescan":
                     UiTask.Run(RescanAsync(_services, [shown.FileId]));
                     break;
                 case "copy":
-                    ShellActions.CopyText([shown.FullPath]);
+                    Copy(_services, [shown.FullPath], PathsCopied(1));
                     break;
                 case "quarantine":
                     UiTask.Run(_runFix([shown.FileId], ActionIds.Quarantine));

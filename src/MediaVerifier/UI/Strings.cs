@@ -280,9 +280,9 @@ internal static class Strings
         public const string SortFolder = "Folder";
         public const string SortSize = "Size";
         public const string SortFirstSeen = "First seen";
-        public const string Likely = "Likely";
-        public const string Possibly = "Possibly";
-        public const string Suspicious = "Suspicious";
+        public const string ShownAgain = "Shown again";
+        public const string NoFix = "No fix can run for this problem";
+        public const string NewResultOne = "1 new problem · Show";
     }
 
     /// <summary>Action names (subplan 12, action catalog).</summary>
@@ -373,6 +373,15 @@ internal static class Strings
         public const string ZoomCaption = "{0} · 20 ms around the mark · click to go back";
         public const string FileFingerprint = "File fingerprint (XXH3-128)  ";
         public const string StreamFingerprint = "Stream fingerprint (MD5)  ";
+        public const string TechContainer = "Container  ";
+        public const string TechVideo = "Video  ";
+        public const string TechAudio = "Audio  ";
+        public const string TechMessage = "{0} × {1}";
+        public const string CopyFailed = "Could not copy: another program is using the clipboard";
+        public const string PathCopied = "Path copied";
+        public const string PathsCopied = "{0} paths copied";
+        public const string DetailsCopied = "Details copied";
+        public const string OpenFailed = "Could not open the file";
     }
 
     public static class Events
@@ -958,6 +967,10 @@ internal static class Strings
         public const string OriginalsInQuarantine = "originals are in quarantine";
         public const string Undone = "Undone";
         public const string UndoFailed = "Undo failed";
+        public const string StartedFor = "{0} started for {1}";
+        public const string AlreadyRunning = "A repair is already running";
+        public const string TryAfterScan = "Try again when it has finished.";
+        public const string NothingToUndo = "Nothing to undo";
     }
 
     public static class Tray
