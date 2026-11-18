@@ -13,9 +13,15 @@ public static class FfmpegArgs
         ? ["-hide_banner", "-nostdin", "-loglevel", "repeat+level+" + logLevel, "-protocol_whitelist", "file,pipe"]
         : ["-hide_banner", "-loglevel", "repeat+level+" + logLevel, "-protocol_whitelist", "file,pipe"];
 
+    /// <summary>
+    /// The decoder checks for every decode, ffmpeg and ffprobe alike (subplan 04): CRC checks are off in FFmpeg
+    /// by default. <c>buffer</c> is left out on purpose: with it the MP3 decoder reports each granule that ends
+    /// with legal stuffing bits as <c>bits_left=N</c> and silences it (deviations log).
+    /// </summary>
+    public static string ErrorDetection(bool strict = false) => strict ? "crccheck+bitstream+careful+compliant" : "crccheck+bitstream";
+
     /// <summary>For ffmpeg commands that decode: report every error instead of stopping at the first ones.</summary>
-    public static IReadOnlyList<string> Decode(bool strict = false) =>
-        ["-max_error_rate", "1", "-err_detect", strict ? "crccheck+bitstream+buffer+careful+compliant" : "crccheck+bitstream+buffer"];
+    public static IReadOnlyList<string> Decode(bool strict = false) => ["-max_error_rate", "1", "-err_detect", ErrorDetection(strict)];
 
     /// <summary>
     /// The input arguments for a file. Photos get an explicit demuxer from their sniffed format so that

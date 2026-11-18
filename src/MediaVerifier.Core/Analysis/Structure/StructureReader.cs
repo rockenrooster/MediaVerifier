@@ -64,7 +64,7 @@ public static class StructureReader
                 flac = FlacReader.Read(source, id3, issues, padding);
                 break;
             case ContainerFormat.Jpeg:
-                jpeg = JpegWalker.Read(source, issues, out declaredEnd);
+                jpeg = JpegWalker.Read(source, issues, padding, out declaredEnd);
                 break;
             case ContainerFormat.Png:
                 declaredEnd = PngWalker.Walk(source, issues);

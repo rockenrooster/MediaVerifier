@@ -1,5 +1,6 @@
 using MediaVerifier.Core.Analysis.Structure;
 using MediaVerifier.Core.Engine;
+using MediaVerifier.Core.Integrity;
 using MediaVerifier.Core.Logging;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Storage;
@@ -12,11 +13,20 @@ namespace MediaVerifier.Core.Analysis.Providers;
 /// </summary>
 public sealed class StructureProvider() : ArtifactProvider<StructureArtifact>(new ArtifactCodec<StructureArtifact>(ArtifactKind.Structure, ProviderJsonContext.Default.StructureArtifact))
 {
-    public override int Version => 1;
+    /// <summary>
+    /// Version 2 knows more camera trailers after a JPEG's end and records its padding, and accepts a RIFF size that
+    /// counts its own header.
+    /// </summary>
+    public override int Version => 2;
 
     public override ScanDepth MinDepth => ScanDepth.Quick;
 
-    public override bool Applies(FileContext file) => true;
+    /// <summary>
+    /// Every file but one this run's integrity read could not read: reading its headers again would only repeat the
+    /// failing reads on a failing disk (GEN-UNREADABLE says what happened).
+    /// </summary>
+    public override bool Applies(FileContext file) =>
+        !file.Available.TryGetValue(typeof(IntegrityArtifact), out IArtifact? read) || read is not IntegrityArtifact { Outcome: IntegrityOutcome.Unreadable };
 
     /// <summary>The image format name FFmpeg's demuxer table uses (<see cref="Ffmpeg.FfmpegArgs.PhotoDemuxer"/>), or null.</summary>
     public static string? ImageFormatName(ContainerFormat format) => format switch

@@ -15,7 +15,13 @@ internal static class JpegWalker
     private const byte Sos = 0xDA;
     private const byte Dqt = 0xDB;
 
-    public static JpegInfo Read(StructureSource source, List<StructureIssue> issues, out long? declaredEnd)
+    /// <summary>Bytes from the start of a trailer (after any zeros) in which an appended JPEG may begin.</summary>
+    private const int AppendedPictureWindow = 64;
+
+    /// <summary>The most records <see cref="IsRecordChain"/> follows back from the end of the file.</summary>
+    private const int MaxTrailerRecords = 64;
+
+    public static JpegInfo Read(StructureSource source, List<StructureIssue> issues, List<PaddingRegion> padding, out long? declaredEnd)
     {
         declaredEnd = null;
         long length = source.Length;
@@ -132,7 +138,7 @@ internal static class JpegWalker
         {
             declaredEnd = eoiOffset + 2;
             bytesAfterEoi = length - declaredEnd.Value;
-            if (bytesAfterEoi > 0 && !IsKnownTrailer(source, declaredEnd.Value, bytesAfterEoi))
+            if (bytesAfterEoi > 0 && !IsKnownTrailer(source, declaredEnd.Value, bytesAfterEoi, padding))
             {
                 issues.Add(StructureBytes.Issue(StructureIssueKind.TrailingData, $"{bytesAfterEoi} bytes after the EOI marker are not a known trailer", declaredEnd.Value));
             }
@@ -243,10 +249,13 @@ internal static class JpegWalker
     }
 
     /// <summary>
-    /// What may follow EOI: another JPEG (multi-picture, gain maps), an MP4 with <c>ftyp</c> at +4 (motion
-    /// photos), Samsung's motion-photo marker or SEF trailer (the file ends with "SEFT"), or 0x00/0xFF padding.
+    /// What cameras and phones write after EOI (subplan 07): 0x00/0xFF padding; another JPEG, right away or after zero
+    /// padding (multi-picture files and gain maps; Sony puts its MPF preview after zeros) or within the first 64 bytes
+    /// (Olympus previews); an MP4 with <c>ftyp</c> at +4 (motion photos); Samsung's motion-photo marker or SEF trailer
+    /// (the file ends with "SEFT"); or Google camera records that chain back from the end of the file to EOI. Padding,
+    /// and the zeros before an appended picture, are recorded as padding for the zero-fill check (subplan 06).
     /// </summary>
-    private static bool IsKnownTrailer(StructureSource source, long offset, long count)
+    private static bool IsKnownTrailer(StructureSource source, long offset, long count, List<PaddingRegion> padding)
     {
         Span<byte> head = stackalloc byte[16];
         ReadOnlySpan<byte> start = head[..source.Read(offset, head)];
@@ -262,7 +271,91 @@ internal static class JpegWalker
             return true;
         }
 
-        return source.IsPadding(offset, count);
+        long end = offset + count;
+        if (source.IsPadding(offset, count))
+        {
+            StructureBytes.AddPadding(padding, offset, end);
+            return true;
+        }
+
+        long data = SkipZeros(source, offset, count);
+        Span<byte> window = stackalloc byte[AppendedPictureWindow + 2];
+        ReadOnlySpan<byte> near = window[..source.Read(data, window[..(int)Math.Min(window.Length, Math.Max(0, end - data))])];
+        if (near.IndexOf((ReadOnlySpan<byte>)[0xFF, 0xD8, 0xFF]) >= 0)
+        {
+            StructureBytes.AddPadding(padding, offset, data);
+            return true;
+        }
+
+        return IsRecordChain(source, offset, end);
+    }
+
+    /// <summary>The first byte that is not 0x00 at or after <paramref name="offset"/>, looking at most at the padding scan limit; the end of what was looked at when all are zero.</summary>
+    private static long SkipZeros(StructureSource source, long offset, long count)
+    {
+        long end = offset + Math.Min(count, StructureSource.PaddingScanLimit);
+        byte[] buffer = StructureSource.RentScanBuffer();
+        try
+        {
+            long position = offset;
+            while (position < end)
+            {
+                int read = source.ReadDirect(position, buffer.AsSpan(0, (int)Math.Min(buffer.Length, end - position)));
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                int other = buffer.AsSpan(0, read).IndexOfAnyExcept((byte)0);
+                if (other >= 0)
+                {
+                    return position + other;
+                }
+
+                position += read;
+            }
+
+            return end;
+        }
+        finally
+        {
+            StructureSource.ReturnScanBuffer(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Google camera trailers: records of [payload][payload length, 32-bit little-endian][tag, 8 bytes of ASCII padded
+    /// with zeros] ("ctrace", "best", "edof", "DepthEn"), followed back from the end of the file. Known when the chain
+    /// ends exactly where the trailer starts.
+    /// </summary>
+    private static bool IsRecordChain(StructureSource source, long start, long end)
+    {
+        Span<byte> footer = stackalloc byte[12];
+        long position = end;
+        for (int i = 0; i < MaxTrailerRecords && position > start; i++)
+        {
+            if (position - start < footer.Length || !source.TryRead(position - footer.Length, footer) || !IsTag(footer[4..]))
+            {
+                return false;
+            }
+
+            long payload = BinaryPrimitives.ReadUInt32LittleEndian(footer);
+            position -= footer.Length + payload;
+        }
+
+        return position == start;
+    }
+
+    /// <summary>One to eight printable ASCII characters, then zeros to fill eight bytes.</summary>
+    private static bool IsTag(ReadOnlySpan<byte> tag)
+    {
+        int letters = tag.IndexOf((byte)0);
+        if (letters < 0)
+        {
+            letters = tag.Length;
+        }
+
+        return letters > 0 && tag[..letters].IndexOfAnyExceptInRange((byte)0x21, (byte)0x7E) < 0 && tag[letters..].IndexOfAnyExcept((byte)0) < 0;
     }
 
     private static void ParseDqt(ReadOnlySpan<byte> data, int[]?[] tables)

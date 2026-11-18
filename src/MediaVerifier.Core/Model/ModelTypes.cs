@@ -103,8 +103,6 @@ public sealed record Finding(
     IReadOnlyDictionary<string, object> Evidence)
 {
     public static IReadOnlyDictionary<string, object> NoEvidence { get; } = new Dictionary<string, object>(StringComparer.Ordinal);
-
-    public bool IsFact => Confidence >= 1f;
 }
 
 /// <summary>A run-level alert (not a per-file finding), shown in run summaries and notifications.</summary>

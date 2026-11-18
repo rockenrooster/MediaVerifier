@@ -61,32 +61,30 @@ public sealed record SignalCounts(
     };
 }
 
-/// <summary>A log reduced to counts, the three most frequent damage messages and the first raw line.</summary>
 /// <summary>
 /// Where in the file the decoder reported errors (owner request 2026-11-17): the position decoding had reached
 /// when each error line arrived, so an approximation, merged into spots at least 2 s apart.
 /// </summary>
 public static class ErrorSpots
 {
+    /// <summary>The most spots an artifact keeps; it also keeps how many there were in all.</summary>
     public const int Max = 50;
 
-    /// <summary>Seconds rounded to tenths, sorted; an error within 2 s of the last kept spot belongs to it.</summary>
-    public static double[] Merge(IEnumerable<double> seconds)
+    /// <summary>Seconds rounded to tenths, sorted; an error within 2 s of the last kept spot belongs to it. The first <see cref="Max"/> spots.</summary>
+    public static double[] Merge(IEnumerable<double> seconds) => Merge(seconds, out _);
+
+    /// <summary>As <see cref="Merge(IEnumerable{double})"/>; <paramref name="count"/> is the number of spots in all.</summary>
+    public static double[] Merge(IEnumerable<double> seconds, out int count)
     {
-        List<double> spots = [];
-        foreach (double s in seconds.Where(double.IsFinite).Select(s => Math.Round(Math.Max(0, s), 1)).Order())
+        ArgumentNullException.ThrowIfNull(seconds);
+        SpotList spots = new();
+        foreach (double s in seconds.Where(double.IsFinite).Order())
         {
-            if (spots.Count == 0 || s - spots[^1] >= 2)
-            {
-                spots.Add(s);
-                if (spots.Count == Max)
-                {
-                    break;
-                }
-            }
+            spots.Add(s);
         }
 
-        return [.. spots];
+        count = spots.Count;
+        return spots.ToArray();
     }
 
     /// <summary>
@@ -141,6 +139,101 @@ public static class ErrorSpots
     }
 }
 
+/// <summary>
+/// Error positions merged into spots as they arrive in time order (the audio read so far only grows): the same
+/// spots <see cref="ErrorSpots.Merge(IEnumerable{double})"/> gives, the first <see cref="ErrorSpots.Max"/> kept and
+/// all of them counted, without holding every error.
+/// </summary>
+public sealed class SpotList
+{
+    private readonly List<double> _spots = [];
+    private readonly Lock _gate = new();
+    private double _last;
+    private int _count;
+
+    /// <summary>Spots so far, including those past the first <see cref="ErrorSpots.Max"/>.</summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _count;
+            }
+        }
+    }
+
+    public void Add(double seconds)
+    {
+        if (!double.IsFinite(seconds))
+        {
+            return;
+        }
+
+        double spot = Math.Round(Math.Max(0, seconds), 1);
+        lock (_gate)
+        {
+            if (_count > 0 && spot - _last < 2)
+            {
+                return;
+            }
+
+            _count++;
+            _last = spot;
+            if (_spots.Count < ErrorSpots.Max)
+            {
+                _spots.Add(spot);
+            }
+        }
+    }
+
+    public double[] ToArray()
+    {
+        lock (_gate)
+        {
+            return [.. _spots];
+        }
+    }
+}
+
+/// <summary>
+/// When decoder errors arrived (seconds since the decode started), in order, one per 10 ms at most. When the list
+/// fills up, every other time is dropped and the spacing doubles: a file with errors from start to end keeps times
+/// across all of it in bounded memory.
+/// </summary>
+public sealed class ErrorTimes
+{
+    private const int Capacity = 65_536;
+    private readonly List<double> _times = [];
+    private double _spacing = 0.01;
+
+    public IReadOnlyList<double> Times => _times;
+
+    public void Add(double seconds)
+    {
+        if (_times.Count > 0 && seconds - _times[^1] < _spacing)
+        {
+            return;
+        }
+
+        _times.Add(seconds);
+        if (_times.Count < Capacity)
+        {
+            return;
+        }
+
+        int kept = 0;
+        for (int i = 0; i < _times.Count; i += 2)
+        {
+            _times[kept++] = _times[i];
+        }
+
+        _times.RemoveRange(kept, _times.Count - kept);
+        _spacing *= 2;
+    }
+}
+
+/// <summary>A log reduced to counts, the three most frequent damage messages and the first raw line.</summary>
 public sealed record LogDigest(SignalCounts Counts, MessageCount[] Top, string? FirstLine)
 {
     public static LogDigest Empty { get; } = new(SignalCounts.Zero, [], null);

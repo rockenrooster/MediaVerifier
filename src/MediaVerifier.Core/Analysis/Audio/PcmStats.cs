@@ -38,10 +38,6 @@ public sealed record SpectrumStats(
     // 96 linear bands to Nyquist, dB as bytes: (dB + 160) × 255 / 160, clamped.
     byte[] Spectrum96)
 {
-    /// <summary>A terminal drop of 30 dB or more.</summary>
-    [JsonIgnore]
-    public bool Brickwall => Sufficient && DropDb >= 30;
-
     [JsonIgnore]
     public double Ratio => NyquistHz <= 0 ? 1 : KneeHz / NyquistHz;
 

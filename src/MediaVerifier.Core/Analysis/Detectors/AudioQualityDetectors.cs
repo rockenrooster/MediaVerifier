@@ -173,7 +173,7 @@ public sealed class AudioQualityDetector : IDetector
         confidence += spectrum.DropDb >= 45 ? 0.10f : 0f;
         confidence += !double.IsNaN(floor) && floor <= 6 ? 0.10f : 0f;
         confidence -= spectrum.AnalysedSeconds < 30 ? 0.20f : 0f;
-        confidence = Math.Clamp(confidence, 0.30f, capped ? 0.70f : 0.97f);
+        confidence = FindingSink.RoundConfidence(Math.Clamp(confidence, 0.30f, capped ? 0.70f : 0.97f));
         (string typical, string source, string phrase) = TypicalSource(knee);
         evidence["sourceName"] = source;
         evidence["sourcePhrase"] = phrase;
@@ -297,7 +297,7 @@ public sealed class AudioQualityDetector : IDetector
                 "AUD-OVERS",
                 Severity.Low,
                 1f,
-                "decodes to " + (clip.PeakDb >= 0 ? "+" : string.Empty) + clip.PeakDb.ToString("0.0", Invariant) + " dBFS; will clip on playback without headroom",
+                "decodes to " + (clip.PeakDb >= 0 ? "+" : string.Empty) + clip.PeakDb.ToString("0.00", Invariant) + " dBFS; will clip on playback without headroom",
                 new Dictionary<string, object>(StringComparer.Ordinal) { ["overs"] = overs, ["peakDb"] = Math.Round(clip.PeakDb, 2) });
         }
 

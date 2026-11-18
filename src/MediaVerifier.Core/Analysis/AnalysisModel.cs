@@ -169,21 +169,15 @@ public sealed class FindingSink
     {
         RuleDefinition rule = RuleCatalog.Get(ruleId);
         severity = SeverityPolicy.ClampToRule(severity, rule);
-        _findings.Add(new Finding(ruleId, severity, Math.Clamp(confidence, 0f, 1f), summary, evidence ?? Finding.NoEvidence));
+        _findings.Add(new Finding(ruleId, severity, RoundConfidence(confidence), summary, evidence ?? Finding.NoEvidence));
     }
 
-    /// <summary>Attaches extra evidence to a finding already raised (for example zero runs to a decode finding).</summary>
-    public bool Amend(string ruleId, Func<Finding, Finding> change)
-    {
-        int index = _findings.FindIndex(f => f.RuleId == ruleId);
-        if (index < 0)
-        {
-            return false;
-        }
-
-        _findings[index] = change(_findings[index]);
-        return true;
-    }
+    /// <summary>
+    /// A confidence to two decimals, as the plans state them: in float arithmetic 0.65 - 0.15 is 0.49999997, below the
+    /// 0.5 edge of the "Possibly" band (subplan 02). A detector that picks a severity from a computed confidence rounds
+    /// it with this first.
+    /// </summary>
+    public static float RoundConfidence(float confidence) => MathF.Round(Math.Clamp(confidence, 0f, 1f), 2);
 }
 
 /// <summary>An artifact that knows the file's media facts (the probe), so the engine can store them.</summary>

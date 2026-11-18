@@ -52,6 +52,7 @@ internal static class RiffWalker
         long payloadEnd = 0;
         long walkEnd = riffFinal ? Math.Min(riffEnd, length) : length;
         long position = 12;
+        long lastChunkEnd = 0; // with its pad byte when that is the file's last byte
         Span<byte> chunk = stackalloc byte[12];
         for (int i = 0; i < MaxChunks && position + 8 <= walkEnd; i++)
         {
@@ -86,6 +87,7 @@ internal static class RiffWalker
                 StructureBytes.AddPadding(padding, dataStart, Math.Min(end, length));
             }
 
+            lastChunkEnd = end + (chunkSize & 1) == length ? length : end;
             if (end >= walkEnd)
             {
                 break;
@@ -102,6 +104,13 @@ internal static class RiffWalker
         else if (payloadFound && !payloadFinal)
         {
             issues.Add(StructureBytes.Issue(StructureIssueKind.IndexNotFinalised, $"{payloadName} chunk size is 0xFFFFFFFF; the writer never finalised the file", payloadOffset, null, payloadName));
+        }
+
+        // A RIFF size equal to the file length counts the 8-byte RIFF header itself, a known writer quirk: when the last
+        // chunk ends exactly at the end of the file, nothing is missing.
+        if (riffFinal && riffEnd == length + 8 && lastChunkEnd == length)
+        {
+            riffEnd = length;
         }
 
         // One byte short is the final pad byte that many writers count in the RIFF size but never write.

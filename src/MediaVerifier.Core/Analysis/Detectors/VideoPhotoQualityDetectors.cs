@@ -37,6 +37,26 @@ public static class UpscaleDecision
     }
 
     /// <summary>
+    /// The frames that count (step 1): spatial information at or above the minimum, every candidate measured, and each
+    /// picture once. Fast seeking lands on the key frame at or before each sample time, so in a clip shorter than a
+    /// group of pictures several samples are the same frame; those measure bit-identically and count once.
+    /// </summary>
+    public static SampledFrame[] UsableFrames(FrameSamplesArtifact samples, double minSpatialInfo)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        List<SampledFrame> usable = [];
+        foreach (SampledFrame frame in samples.Frames)
+        {
+            if (frame.SpatialInfo >= minSpatialInfo && frame.Ssim.Length == samples.Candidates.Length && !usable.Exists(f => SameFrame(f, frame)))
+            {
+                usable.Add(frame);
+            }
+        }
+
+        return [.. usable];
+    }
+
+    /// <summary>
     /// Steps 1–5: usable frames by spatial information; per candidate the 10th percentile of SSIM-Y; the
     /// smallest candidate that passes, with all larger ones passing, provided the next smaller one fails or
     /// drops by at least 0.008. Null when there are too few usable frames or nothing passes.
@@ -44,7 +64,7 @@ public static class UpscaleDecision
     public static UpscaleVerdict? Decide(FrameSamplesArtifact samples, double minSpatialInfo, double threshold, int minFrames, bool starved)
     {
         ArgumentNullException.ThrowIfNull(samples);
-        SampledFrame[] usable = [.. samples.Frames.Where(f => f.SpatialInfo >= minSpatialInfo && f.Ssim.Length == samples.Candidates.Length)];
+        SampledFrame[] usable = UsableFrames(samples, minSpatialInfo);
         if (usable.Length < minFrames || samples.Candidates.Length == 0)
         {
             return null;
@@ -81,13 +101,20 @@ public static class UpscaleDecision
         }
 
         int reproducible = usable.Count(f => f.Ssim[chosen] >= threshold);
-        return new UpscaleVerdict(samples.Candidates[chosen], samples.Height, percentiles[chosen], margin, usable.Length, reproducible, samples.Frames.Length, Math.Max(0.3f, confidence), fallOff)
+
+        // Rounded to the plan's two decimals: 0.65 - 0.15 in float arithmetic is 0.49999997, which would read as
+        // "Suspicious" and cap the finding at Low, while the same plan value reached another way reads "Possibly".
+        return new UpscaleVerdict(samples.Candidates[chosen], samples.Height, percentiles[chosen], margin, usable.Length, reproducible, samples.Frames.Length, FindingSink.RoundConfidence(Math.Max(0.3f, confidence)), fallOff)
         {
             FrameTimes = [.. samples.Frames.Select(f => Math.Round(f.Time, 3))],
             FrameSsim = [.. samples.Frames.Select(f => f.Ssim.Length > chosen ? Math.Round(f.Ssim[chosen], 4) : 0)],
-            FrameUsable = [.. samples.Frames.Select(f => f.SpatialInfo >= minSpatialInfo)],
+
+            // A repeated frame is shown faded like an unusable one: it did not count again.
+            FrameUsable = [.. samples.Frames.Select(f => usable.Any(u => ReferenceEquals(u, f)))],
         };
     }
+
+    private static bool SameFrame(SampledFrame a, SampledFrame b) => a.SpatialInfo == b.SpatialInfo && a.Ssim.AsSpan().SequenceEqual(b.Ssim);
 }
 
 /// <summary>Bits per pixel and the H.264-equivalent factor (subplan 11, VID-STARVED; task V-03).</summary>
@@ -189,7 +216,8 @@ public sealed class VideoQualityDetector : IDetector
         UpscaleVerdict? upscale = null;
         if (samples is { Sampled: true })
         {
-            SampledFrame[] usable = [.. samples.Frames.Where(f => f.SpatialInfo >= rules.Value("VID-UPSCALED", "minSpatialInfo"))];
+            // Each picture once: a short clip's samples can all be the same key frame.
+            SampledFrame[] usable = UpscaleDecision.UsableFrames(samples, rules.Value("VID-UPSCALED", "minSpatialInfo"));
             if (usable.Length > 0)
             {
                 block = UpscaleDecision.Percentile([.. usable.Select(f => f.Block)], 0.5);
@@ -254,8 +282,9 @@ public sealed class VideoQualityDetector : IDetector
     {
         if (decode.HasAudio && decode.AudioMaxVolumeDb is double peak && peak < rules.Value("VID-AUDIO-SILENT", "peakDb"))
         {
-            string level = peak <= -150 ? "digital silence" : $"peak {peak.ToString("0.0", Invariant)} dBFS";
-            sink.Raise("VID-AUDIO-SILENT", Severity.Medium, 1f, "the main soundtrack is silent from start to end (" + level + ")", new Dictionary<string, object>(StringComparer.Ordinal) { ["maxVolumeDb"] = Math.Round(Math.Max(peak, -200), 1) });
+            // volumedetect measures 16-bit samples: all zeros read -91.0 dB, and one step above zero -90.3 dB.
+            string level = peak <= -90.5 ? "digital silence" : $"peak {peak.ToString("0.0", Invariant)} dBFS";
+            sink.Raise("VID-AUDIO-SILENT", Severity.Medium, 1f, "the main soundtrack is silent from start to end (" + level + ")", new Dictionary<string, object>(StringComparer.Ordinal) { ["maxVolumeDb"] = Math.Round(peak, 1) });
         }
     }
 
@@ -407,11 +436,9 @@ public sealed class VideoQualityDetector : IDetector
         Severity severity = r <= 0.55 && verdict.Confidence >= 0.80f ? Severity.High
             : r <= 0.80 && verdict.Confidence >= 0.50f ? Severity.Medium
             : Severity.Low;
-        string summary = $"{verdict.ContainerHeight}p file with detail equivalent to {verdict.EffectiveHeight}p";
-        if (starved)
-        {
-            summary += " (upscaled or heavily compressed)";
-        }
+        // Subplan 11: how many of the frames the verdict rests on are reproducible from the effective height.
+        string frames = string.Create(Invariant, $"{verdict.ReproducibleFrames} of {verdict.UsableFrames} sampled frames are reproducible from {verdict.EffectiveHeight}p");
+        string summary = $"{verdict.ContainerHeight}p file with detail equivalent to {verdict.EffectiveHeight}p ({(starved ? "upscaled or heavily compressed; " : string.Empty)}{frames})";
 
         sink.Raise(
             "VID-UPSCALED",

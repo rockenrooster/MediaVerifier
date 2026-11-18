@@ -168,9 +168,10 @@ public sealed class VideoPhotoQualityTests
         Assert.True(Math.Abs(estimate - quality) <= 3, $"quality {quality}: estimated {estimate:0.0}");
     }
 
+    // Each frame a different picture (its spatial information differs): repeated pictures count once.
     private static FrameSamplesArtifact Samples(int height, int[] candidates, int frames, double[] ssim, double spatialInfo = 50) =>
         new(RunOutcome.Completed, LogDigest.Empty, height * 16 / 9, height, 0, 0, candidates,
-            [.. Enumerable.Range(0, frames).Select(i => new SampledFrame(i, spatialInfo, 1.5, 6, [.. ssim]))]);
+            [.. Enumerable.Range(0, frames).Select(i => new SampledFrame(i, spatialInfo + (i * 0.01), 1.5, 6, [.. ssim]))]);
 
     private static StreamInfo Video(string codec, int width, int height, double fps, long? bitRate) =>
         new(0, "video", codec, null, width, height, "yuv420p", "progressive", fps, null, null, null, null, null, 60, bitRate, null, null, null, false, true);
@@ -197,11 +198,17 @@ public sealed class VideoPhotoQualityFixtureTests(ITestOutputHelper output)
     {
         (string Name, string Expected)[] table =
         [
+            ("native1080k.mp4", ""),
+            ("up720k.mp4", "VID-UPSCALED@720"),
+            ("up540k.mp4", "VID-UPSCALED@540"),
+
+            // A key frame every 2 s: the 6 samples of these 6 s clips are 3 different pictures, too few for a verdict.
             ("native1080.mp4", ""),
-            ("up720.mp4", "VID-UPSCALED@720"),
-            ("up540.mp4", "VID-UPSCALED@540"),
-            // Starved encodes are soft: the down-up test may also call them upscaled, worded "upscaled or heavily compressed".
-            ("starved.mp4", "VID-STARVED VID-UPSCALED"),
+            ("up720.mp4", ""),
+            ("up540.mp4", ""),
+
+            // One key frame: starved, but whether it was also upscaled cannot be told from one picture.
+            ("starved.mp4", "VID-STARVED"),
             ("hdr8.mp4", "VID-HDR"),
             ("img.jpg", ""),
             // A 2× bicubic enlargement of a 1080-line image. At the threshold calibrated on real photos (0.996) its

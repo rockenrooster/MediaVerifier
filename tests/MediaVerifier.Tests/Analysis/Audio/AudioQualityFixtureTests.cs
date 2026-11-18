@@ -69,12 +69,12 @@ public sealed class AudioQualityFixtureTests(ITestOutputHelper output)
             output.WriteLine(string.Create(
                 CultureInfo.InvariantCulture,
                 $"{name,-14} knee {s.KneeHz,7:0} drop {s.DropDb,5:0.0} above {s.AboveDb,7:0.0} floor {stats.AboveVsFloorDb,6:0.0} bits {stats.EffectiveBits,3} runs {stats.Clipping.Runs,4} clip% {100.0 * stats.Clipping.ClippedSamples / (stats.Seconds * stats.SampleRate),6:0.000} longest {stats.Clipping.LongestRun,3} overs {stats.Levels.Sum(l => l.Overs),5} | {string.Join(", ", findings.Select(f => $"{f.RuleId} {f.Severity} {f.Confidence:0.00} \"{f.Summary}\""))}"));
-            if (knee > 0 && (!s.Brickwall || Math.Abs(s.KneeHz - knee) > 300))
+            if (knee > 0 && (!(s.Sufficient && s.DropDb >= 30) || Math.Abs(s.KneeHz - knee) > 300))
             {
                 failures.Add($"{name}: knee {s.KneeHz:0} drop {s.DropDb:0.0}, expected about {knee:0}");
             }
 
-            if (knee == 0 && s.Brickwall)
+            if (knee == 0 && s.Sufficient && s.DropDb >= 30)
             {
                 failures.Add($"{name}: unexpected cutoff at {s.KneeHz:0}");
             }

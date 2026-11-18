@@ -44,7 +44,7 @@ public sealed class AudioAnalyzerTests
         }
 
         SpectrumStats stats = SpectrumAnalyzer.Measure(power, 200, size, Rate, 60);
-        Assert.True(stats.Brickwall);
+        Assert.True(stats.Sufficient && stats.DropDb >= 30);
         Assert.InRange(stats.KneeHz, 15_900, 16_100);
         Assert.True(stats.DropDb > 50, $"drop {stats.DropDb}");
     }
@@ -56,7 +56,7 @@ public sealed class AudioAnalyzerTests
         float[] noise = [.. Enumerable.Range(0, Rate * 2 * 20).Select(_ => (float)((random.NextDouble() * 2) - 1) * 0.3f)];
         SpectrumAnalyzer analyzer = Run(new SpectrumAnalyzer(), noise, 2);
         Assert.True(analyzer.Result.Sufficient);
-        Assert.False(analyzer.Result.Brickwall);
+        Assert.False(analyzer.Result.Sufficient && analyzer.Result.DropDb >= 30);
     }
 
     [Fact]

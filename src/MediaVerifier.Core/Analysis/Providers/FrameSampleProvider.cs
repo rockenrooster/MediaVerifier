@@ -263,6 +263,17 @@ public sealed class FrameSampleProvider() : ArtifactProvider<FrameSamplesArtifac
     public override bool Applies(FileContext file) =>
         file.Kind == MediaKind.Video || (file.Kind == MediaKind.Photo && !MediaClassifier.IsRaw(file.Extension));
 
+    /// <summary>
+    /// A skip that rests on something that can change is decided again, which runs no FFmpeg: "disabled" once "Check
+    /// photos for upscaling" is on again, and "damaged" because the decode it judged may have been redone since.
+    /// </summary>
+    public override bool CanReuse(IArtifact stored, FileContext file) => stored switch
+    {
+        FrameSamplesArtifact { Skipped: "damaged" } => false,
+        FrameSamplesArtifact { Skipped: "disabled" } => !file.Settings.CheckPhotosForUpscaling,
+        _ => true,
+    };
+
     protected override async Task<FrameSamplesArtifact> ProduceTypedAsync(FileContext file)
     {
         ProbeArtifact? probe = await file.GetAsync<ProbeArtifact>().ConfigureAwait(false);
@@ -278,9 +289,10 @@ public sealed class FrameSampleProvider() : ArtifactProvider<FrameSamplesArtifac
             return FrameSamplesArtifact.Skip("disabled", width, height);
         }
 
-        // Quality is judged on whole files: a damaged decode is the corruption rules' business.
+        // Quality is judged on whole files: a damaged decode is the corruption rules' business. For a photo that is what
+        // the photo rules count (an unknown error line beside a decoded picture is not damage, subplan 07).
         bool whole = photo
-            ? await file.GetAsync<ImageDecodeArtifact>().ConfigureAwait(false) is { Outcome: RunOutcome.Completed } image && !Damaged(image.Log.Counts)
+            ? await file.GetAsync<ImageDecodeArtifact>().ConfigureAwait(false) is { Outcome: RunOutcome.Completed } image && image.FramesRead != 0 && !Damaged(image.Log.Counts with { Unknown = 0 })
             : await file.GetAsync<VideoDecodeArtifact>().ConfigureAwait(false) is { Outcome: RunOutcome.Completed } decoded && !Damaged(decoded.Video.Counts) && !Damaged(decoded.Container.Counts);
         if (!whole)
         {
