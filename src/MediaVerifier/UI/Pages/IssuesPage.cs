@@ -72,6 +72,9 @@ internal sealed class IssuesPage : PageBase
     private int _detailRequest;
     private int _fixRequest;
 
+    /// <summary>The fixes every selected finding can take, as Fix… shows them; null while they are worked out.</summary>
+    private IReadOnlyList<string>? _shared;
+
     public IssuesPage(UiServices services)
         : base(services)
     {
@@ -881,6 +884,7 @@ internal sealed class IssuesPage : PageBase
         if (!show)
         {
             _fixRequest++;
+            _shared = null;
             return;
         }
 
@@ -933,6 +937,7 @@ internal sealed class IssuesPage : PageBase
     /// <summary>Fix… on (fixes in common), off with the reason (none in common), or off while the answer is worked out.</summary>
     private void SetFixState(IReadOnlyList<string>? fixes)
     {
+        _shared = fixes;
         KitButton fix = _selectionBar.Buttons[0];
         fix.Enabled = fixes is { Count: > 0 };
         KitToolTip.Set(fix, fixes is { Count: 0 } ? Strings.Issues.NeedDifferentFixes : string.Empty);
@@ -1069,15 +1074,15 @@ internal sealed class IssuesPage : PageBase
         KitMenu.ShowBelow(_selectionBar.Buttons[0], items, item => UiTask.Run(RunAndReloadAsync(files, (string)item.Tag!)));
     }
 
-    /// <summary>Ctrl+Enter and the row menu's fix: the recommended fix, when every target can take it; otherwise says why nothing ran.</summary>
-    private async Task RunRecommendedAsync(IssueRow? clicked)
+    /// <summary>Ctrl+Enter: the recommended fix, when every target can take it; otherwise says why nothing ran.</summary>
+    private async Task RunRecommendedAsync()
     {
         if (Services.Operations is null)
         {
             return;
         }
 
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(TargetIds(clicked)).ConfigureAwait(true);
+        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(TargetIds()).ConfigureAwait(true);
         if (rows.Count == 0)
         {
             return;
@@ -1093,7 +1098,8 @@ internal sealed class IssuesPage : PageBase
         }
     }
 
-    private async Task QuarantineAsync(long[] ids)
+    /// <summary>Runs an action on the files of the findings (dialog A first): the row menu's fix, Quarantine.</summary>
+    private async Task RunOnAsync(long[] ids, string actionId)
     {
         if (Services.Operations is null || ids.Length == 0)
         {
@@ -1101,8 +1107,10 @@ internal sealed class IssuesPage : PageBase
         }
 
         IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(ids).ConfigureAwait(true);
-        await RunAndReloadAsync(Files(rows), ActionIds.Quarantine).ConfigureAwait(true);
+        await RunAndReloadAsync(Files(rows), actionId).ConfigureAwait(true);
     }
+
+    private Task QuarantineAsync(long[] ids) => RunOnAsync(ids, ActionIds.Quarantine);
 
     private async Task ScanAsync(long[] ids)
     {
@@ -1222,7 +1230,7 @@ internal sealed class IssuesPage : PageBase
                 e.Handled = true;
                 break;
             case Keys.Enter when e.Control:
-                UiTask.Run(RunRecommendedAsync(null));
+                UiTask.Run(RunRecommendedAsync());
                 e.Handled = true;
                 break;
             case Keys.Delete when Services.Operations is not null:
@@ -1262,10 +1270,31 @@ internal sealed class IssuesPage : PageBase
 
         bool live = Services.Operations is not null;
         long[] targets = TargetIds(row);
-        string? fix = live ? RecommendedFor(await ResolveRowsAsync(targets).ConfigureAwait(true)) : null;
-        if (IsDisposed)
+        string? fix = null;
+        if (live)
         {
-            return;
+            // The clicked row's recommended fix, when every target can take it. For a selection the bar already worked
+            // out what they share, so the menu opens at once also after Select all over thousands of findings.
+            if (targets.Length == 1)
+            {
+                fix = row.RecommendedFix;
+            }
+            else if (targets.All(Rows.ContainsKey))
+            {
+                fix = RecommendedFor([row, .. targets.Select(id => Rows[id])]);
+            }
+            else if (_shared is { } shared)
+            {
+                fix = row.RecommendedFix is string own && shared.Contains(own) ? own : null;
+            }
+            else
+            {
+                fix = RecommendedFor([row, .. await ResolveRowsAsync(targets).ConfigureAwait(true)]);
+                if (IsDisposed)
+                {
+                    return;
+                }
+            }
         }
 
         List<PopupItem> items =
@@ -1309,7 +1338,7 @@ internal sealed class IssuesPage : PageBase
                     OpenDetail(index);
                     break;
                 case "fix" when fix is not null:
-                    UiTask.Run(RunRecommendedAsync(row));
+                    UiTask.Run(RunOnAsync(targets, fix));
                     break;
                 case "rescan":
                     UiTask.Run(ScanAsync(targets));
