@@ -185,9 +185,10 @@ are untrusted input: they select a view by integer ID and can never name a path 
 
 ### Fallback when interop is unavailable
 
-If `ToastInterop` cannot be made reliable on a supported Windows build, record it in the deviations
-log and use this fallback for headless runs: start `MediaVerifier.exe --minimized --notify <run id>`,
-which sits in the tray, shows a balloon, and exits when the user opens or dismisses it.
+When `ToastInterop` fails, a headless run shows the notification as a tray balloon from its own process
+(`SystemToast`: a temporary notification-area icon for a few seconds); the open window falls back to its
+in-app toast. (A `--minimized --notify <run id>` launch was planned for this; nothing used it and it was
+removed in the 2026-11-18 audit.)
 
 ## Optional webhook (stretch)
 

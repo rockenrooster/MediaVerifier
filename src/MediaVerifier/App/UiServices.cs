@@ -91,6 +91,8 @@ internal sealed record MediaEngineInfo(FfmpegLocation Location, BundleCheck Chec
 internal sealed class UiServices : IDisposable
 {
     private readonly List<IDisposable> _owned = [];
+    private readonly Queue<QueuedScan> _queuedScans = new();
+    private Action? _lastUndo;
 
     public required AppState State { get; init; }
 
@@ -117,12 +119,67 @@ internal sealed class UiServices : IDisposable
     /// <summary>Shows a toast at the bottom right of the main window (set by the main window).</summary>
     public Action<UI.Kit.Popups.ToastContent>? ShowToast { get; set; }
 
+    /// <summary>
+    /// Reloads the shell's badges and the page on show (set by the main window). Call it after a change the page did
+    /// not make itself: a repair, an undo.
+    /// </summary>
+    public Action? RefreshAll { get; set; }
+
     /// <summary>Raised on the UI thread when a manual scan has started, so the status strip shows it at once.</summary>
     public event Action? ScanStarted;
 
     /// <summary>Tells the user why a scan they asked for did not start: a scan button never does nothing.</summary>
     public void ShowScanNotStarted(string reason) =>
         ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.Medium, UI.Strings.Activity.CouldNotRun, reason));
+
+    /// <summary>
+    /// Remembers the Undo of a toast for Ctrl+Z (subplan 09, Keyboard: "Undo the last operation that allows it") and
+    /// returns the toast to show, its Undo now running at most once, from the button or from Ctrl+Z. The newest toast
+    /// with Undo wins; a repair from an earlier session is undone from Tools → Operations, never by Ctrl+Z.
+    /// </summary>
+    public UI.Kit.Popups.ToastContent TrackUndo(UI.Kit.Popups.ToastContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (content.Action is not Action undo || content.ActionText != UI.Strings.Dialogs.Undo)
+        {
+            return content;
+        }
+
+        bool done = false;
+        Action? once = null;
+        once = () =>
+        {
+            if (done)
+            {
+                return;
+            }
+
+            done = true;
+            if (ReferenceEquals(_lastUndo, once))
+            {
+                _lastUndo = null;
+            }
+
+            undo();
+        };
+        _lastUndo = once;
+        return content with { Action = once };
+    }
+
+    /// <summary>True while a toast's Undo is waiting for Ctrl+Z.</summary>
+    public bool CanUndo => _lastUndo is not null;
+
+    /// <summary>Ctrl+Z: runs the newest toast's Undo once; false when there is nothing to undo.</summary>
+    public bool UndoLast()
+    {
+        if (_lastUndo is not Action undo)
+        {
+            return false;
+        }
+
+        undo();
+        return true;
+    }
 
     /// <summary>True for the render harness: no timers start work, nothing is written.</summary>
     public bool IsDemo { get; init; }
@@ -133,8 +190,11 @@ internal sealed class UiServices : IDisposable
     /// <summary>The signed updater (subplan 14); null in the render harness, which never checks.</summary>
     public Core.Updates.UpdateService? Updates { get; init; }
 
-    /// <summary>The last check found a newer release (the rail's Update item and the Settings dot).</summary>
-    public bool UpdateAvailable => Updates?.LastResult?.IsUpdateAvailable == true;
+    /// <summary>
+    /// The last check found a newer release that can be installed (the rail's Update item and the Settings dot). A
+    /// release whose signed files are missing or invalid is not offered: its card says it could not be verified.
+    /// </summary>
+    public bool UpdateAvailable => Updates?.LastResult?.CanDownload == true;
 
     /// <summary>
     /// Opens the user's library, the bundled media engine and the scan engine. Tests pass the engine and an update
@@ -147,19 +207,14 @@ internal sealed class UiServices : IDisposable
     public static UiServices CreateLive(AppState state, FfmpegLocation? mediaEngine = null, Core.Updates.UpdateService? updates = null, bool startupMaintenance = true, string? engineMutexName = null)
     {
         ArgumentNullException.ThrowIfNull(state);
-        Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
         FfmpegLocation location = mediaEngine ?? FfmpegLocator.Locate(state.Paths);
-        FfRunner runner = new(location);
-        RuleSettings rules = RuleSettings.Defaults;
-        try
-        {
-            rules = Task.Run(database.RuleSettings.Load).GetAwaiter().GetResult();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
-        {
-            state.Log.Warning("Rule settings could not be loaded; defaults apply", ex);
-        }
 
+        // The media engine's hashes (27 MB) are checked while the database opens, instead of after it on the UI
+        // thread before the window can show.
+        Task<BundleCheck> bundle = Task.Run(() => CheckBundle(location, state.Log));
+        Database database = Database.Open(state.Paths.ResolveDatabaseFile(state.Settings.DatabasePath));
+        Task<RuleSettings> rules = Task.Run(() => LoadRules(database, state.Log));
+        FfRunner runner = new(location);
         UiServices services = null!;
         ScanEngine engine = new(EngineFactory.CreateServices(database, runner, state.Paths, () => state.Settings.Scanning, () => services.Rules), engineMutexName ?? Core.Ipc.NamedMutexLock.EngineName);
         EngineScanControl scans = new(engine);
@@ -169,36 +224,95 @@ internal sealed class UiServices : IDisposable
             Database = database,
             Clock = SystemClock.Instance,
             Scans = scans,
-            MediaEngine = new MediaEngineInfo(location, BundleIntegrity.Check(location)),
+            MediaEngine = new MediaEngineInfo(location, bundle.GetAwaiter().GetResult()),
             Data = new UI.Data.LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance, new Core.Analysis.Audio.EvidenceRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "evidence")), new Core.Analysis.PictureRenderer(runner, Path.Combine(state.Paths.CacheDirectory, "pictures"))),
-            Rules = rules,
+            Rules = rules.GetAwaiter().GetResult(),
             Operations = new Core.Remediation.OperationRunner(database, runner, WindowsFileSystem.Instance, SystemClock.Instance),
             Updates = updates ?? new Core.Updates.UpdateService(),
             BackgroundProbe = engineMutexName is null ? PlanHost.BackgroundRunActive : static () => false,
         };
-        services._owned.Add(services.Updates);
 
-        // A crash during an operation leaves at most its journaled temporary file: clean it up now.
-        _ = !startupMaintenance ? Task.CompletedTask : Task.Run(async () =>
+        // Owned in the order they were created and disposed in reverse (subplan 01): the update service, then the scan
+        // engine, which stops a running scan and records it as stopped while the database can still write, then the
+        // FFmpeg runner, and the database last. (The database went first, so a scan running at exit was recorded as
+        // interrupted, with the next start as its end.)
+        services._owned.AddRange([database, runner, scans, services.Updates]);
+        if (startupMaintenance)
+        {
+            _ = Task.Run(() => RunStartupMaintenanceAsync(state, services, database));
+        }
+
+        return services;
+    }
+
+    /// <summary>The bundle check; a file it cannot read (held by an antivirus) leaves scanning on and says why in Tools.</summary>
+    private static BundleCheck CheckBundle(FfmpegLocation location, Core.Logging.AppLog log)
+    {
+        try
+        {
+            return BundleIntegrity.Check(location);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warning("The media engine files could not be checked", ex);
+            return new BundleCheck(BundleState.Changed, null, [], [], ex.Message);
+        }
+    }
+
+    private static RuleSettings LoadRules(Database database, Core.Logging.AppLog log)
+    {
+        try
+        {
+            return database.RuleSettings.Load();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            log.Warning("Rule settings could not be loaded; defaults apply", ex);
+            return RuleSettings.Defaults;
+        }
+    }
+
+    /// <summary>
+    /// Start-up maintenance, off the UI thread. Crash recovery of an interrupted repair runs first, and every step runs
+    /// on its own: a step that fails (a blocked registry write, an unavailable Task Scheduler) is logged and the rest
+    /// still run. One failure used to skip every later step, crash recovery included.
+    /// </summary>
+    private static Task RunStartupMaintenanceAsync(AppState state, UiServices services, Database database)
+    {
+        Core.Remediation.OperationRunner operations = services.Operations!;
+        return RunStepsAsync(state.Log,
+        [
+            // A crash during an operation leaves at most its journaled temporary file and an original in quarantine.
+            ("crash recovery", () => operations.RecoverAsync()),
+            ("notification registration", () => Task.FromResult(ToastRegistration.Ensure(state))),
+            ("Start with Windows", () =>
+            {
+                new StartupRegistration().Reconcile(state.Settings.StartWithWindows);
+                return Task.CompletedTask;
+            }),
+            ("quarantine purge", () => operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays)),
+            ("scheduled tasks", () => PlanHost.ReconcileAsync(database)),
+            ("version record", () => RecordUpdateAsync(database)),
+        ]);
+    }
+
+    /// <summary>Runs each step in turn; a step that throws is logged and the next one still runs.</summary>
+    internal static async Task RunStepsAsync(Core.Logging.AppLog log, IReadOnlyList<(string Name, Func<Task> Run)> steps)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        ArgumentNullException.ThrowIfNull(steps);
+        foreach ((string name, Func<Task> run) in steps)
         {
             try
             {
-                _ = ToastRegistration.Ensure(state);
-                new StartupRegistration().Reconcile(state.Settings.StartWithWindows);
-                await services.Operations.RecoverAsync().ConfigureAwait(false);
-                await services.Operations.PurgeAsync(state.Settings.Scanning.EmptyQuarantineAfterDays).ConfigureAwait(false);
-                await PlanHost.ReconcileAsync(database).ConfigureAwait(false);
-                await RecordUpdateAsync(database).ConfigureAwait(false);
+                await run().ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException or System.Security.SecurityException)
+            catch (Exception ex)
             {
-                state.Log.Warning("Start-up maintenance failed", ex);
+                // Nothing awaits start-up maintenance: a failure that is not logged here is lost.
+                log.Warning("Start-up maintenance: " + name + " failed", ex);
             }
-        });
-        services._owned.Add(scans);
-        services._owned.Add(runner);
-        services._owned.Add(database);
-        return services;
+        }
     }
 
     /// <summary>Meta key of the version that last ran against this database.</summary>
@@ -259,8 +373,9 @@ internal sealed class UiServices : IDisposable
     public Func<bool> BackgroundProbe { get; init; } = PlanHost.BackgroundRunActive;
 
     /// <summary>
-    /// Starts a manual scan of <paramref name="scopes"/> unless one cannot run (demo, no engine, a scan
-    /// already running); returns false when nothing started.
+    /// Starts a manual scan of <paramref name="scopes"/> unless one cannot run (demo, no engine, a scheduled scan in
+    /// another process); returns false when the request was refused, after saying why. While this window's scan runs,
+    /// the request waits for it (subplan 05: a second manual request is queued) and starts when it ends.
     /// </summary>
     public async Task<bool> StartScanAsync(IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null)
     {
@@ -271,6 +386,13 @@ internal sealed class UiServices : IDisposable
 
         if (CannotScanReason(true) is string reason)
         {
+            if (MediaEngine.ScanningAllowed && Scans.Status.IsActive)
+            {
+                _queuedScans.Enqueue(new QueuedScan(scopes, depth, scopeText, options));
+                ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.None, UI.Strings.Shell.ScanQueued, UI.Strings.Shell.ScanQueuedText));
+                return true;
+            }
+
             ShowScanNotStarted(reason);
             return false;
         }
@@ -289,6 +411,23 @@ internal sealed class UiServices : IDisposable
             return false;
         }
     }
+
+    /// <summary>Requests waiting for this window's scan to end.</summary>
+    public int QueuedScanCount => _queuedScans.Count;
+
+    /// <summary>Starts the oldest queued request once no scan runs here (the shell calls it when a scan ends).</summary>
+    public async Task StartQueuedScanAsync()
+    {
+        if (_queuedScans.Count == 0 || Scans.Status.IsActive)
+        {
+            return;
+        }
+
+        QueuedScan next = _queuedScans.Dequeue();
+        _ = await StartScanAsync(next.Scopes, next.Depth, next.ScopeText, next.Options).ConfigureAwait(true);
+    }
+
+    private sealed record QueuedScan(IReadOnlyList<ScanScope> Scopes, ScanDepth Depth, string ScopeText, ScanOptions? Options);
 
     public void Dispose()
     {

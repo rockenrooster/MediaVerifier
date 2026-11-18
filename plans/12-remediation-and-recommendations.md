@@ -135,7 +135,10 @@ Setting *Keep originals in*: **Quarantine folder** (default), Recycle Bin, or a 
 
 For operations with a quarantined original: move the current file to quarantine (as a new operation),
 move the original back, restore the index row and baseline, reopen the finding. Undo is itself
-journaled. `Ctrl+Z` undoes the most recent undoable batch.
+journaled. `Ctrl+Z` runs the Undo of the newest toast that offered one in this session (an Ignore, a
+repair batch), once; with none it says `Nothing to undo`. Older batches are undone from Tools →
+Operations. (It undid the newest undoable batch in the journal, however old: right after an Ignore it
+reverted an unrelated repair from days before.)
 
 ### Interaction with scans
 

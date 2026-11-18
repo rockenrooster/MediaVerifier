@@ -16,8 +16,9 @@ namespace MediaVerifier.App;
 /// button with its menu and disabled reasons, the search box, and the status strip in every scan phase.
 /// Polls the engine's status snapshot at 4 Hz while a scan runs and every 2 s otherwise. A scheduled scan in another
 /// process (subplan 13, task SCH-06) shows in the strip with its checkpointed counts, polled every second, and its
-/// Stop signals that process. A scan started here shows in the strip at once, and adding, editing or removing a
-/// folder anywhere reloads the counts that decide whether Scan is enabled.
+/// Stop signals that process. A scan started here shows in the strip at once. A change of the folders, findings,
+/// ignores, notifications or repairs anywhere reloads the badge, the bell and the counts that decide whether Scan is
+/// enabled; a request that waited for this window's scan starts when it ends.
 /// </summary>
 internal sealed class ShellBinder : IDisposable
 {
@@ -28,15 +29,20 @@ internal sealed class ShellBinder : IDisposable
     private bool _wasActive;
     private bool _wasBackground;
     private bool _loading;
+    private bool _reloadPending;
+    private bool _starting;
     private bool _readingRun;
     private RunRecord? _backgroundRun;
+
+    /// <summary>Changes that alter the badge, the bell or the Scan button: folders, findings and their ignores, notifications, repairs.</summary>
+    private const ChangeFlags ShellChanges = ChangeFlags.Roots | ChangeFlags.Findings | ChangeFlags.Ignores | ChangeFlags.Notifications | ChangeFlags.Operations;
 
     public ShellBinder(MainForm form, UiServices services)
     {
         _form = form;
         _services = services;
         ShellHeader header = form.Header;
-        header.Scan.Click += (_, _) => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
+        header.Scan.Click += (_, _) => ScanAtDefaultDepth();
         header.Scan.DropDownClick += (_, _) => ShowScanMenu();
         header.Search.KeyDown += OnSearchKey;
         header.Bell.Click += (_, _) => UiTask.Run(ShowNotificationsAsync());
@@ -55,11 +61,20 @@ internal sealed class ShellBinder : IDisposable
     /// <summary>Reads the scan status now (the render harness switches the demo scan between pages).</summary>
     internal void PollNow() => Poll();
 
-    /// <summary>Reloads the badge counts (after scans, repairs and settings changes).</summary>
+    /// <summary>
+    /// Reloads the badge counts (after scans, repairs and settings changes). A call while a load runs loads once more
+    /// when it ends, so the latest change is never lost.
+    /// </summary>
     public void Refresh()
     {
+        if (_form.IsDisposed)
+        {
+            return;
+        }
+
         if (_loading)
         {
+            _reloadPending = true;
             return;
         }
 
@@ -74,23 +89,42 @@ internal sealed class ShellBinder : IDisposable
         _poll.Dispose();
     }
 
-    /// <summary>The database writer's thread: a change of the watched folders reloads the counts on the UI thread.</summary>
+    /// <summary>
+    /// The database writer's thread (at most twice a second): a change of the folders, findings, ignores, notifications
+    /// or repairs reloads the counts on the UI thread. The badge used to follow only folder changes, so it kept counting
+    /// problems the user had just ignored or fixed.
+    /// </summary>
     private void OnLibraryChanged(object? sender, LibraryChangedEventArgs e)
     {
-        if ((e.Changes & ChangeFlags.Roots) == 0 || !_form.IsHandleCreated || _form.IsDisposed)
+        if ((e.Changes & ShellChanges) == 0 || !_form.IsHandleCreated || _form.IsDisposed)
         {
             return;
         }
 
         try
         {
-            _form.BeginInvoke(Refresh);
+            _form.BeginInvoke(() => OnShellDataChanged(e.Changes));
         }
         catch (InvalidOperationException)
         {
             // The window closed in between.
         }
     }
+
+    private void OnShellDataChanged(ChangeFlags changes)
+    {
+        if (ReloadsCounts(changes, _wasActive))
+        {
+            Refresh();
+        }
+    }
+
+    /// <summary>
+    /// Whether a change reloads the counts. A scan of this window writes findings twice a second, and its end reloads
+    /// everything, so findings that change while it runs do not reload the counts each time.
+    /// </summary>
+    internal static bool ReloadsCounts(ChangeFlags changes, bool scanning) =>
+        (changes & (ShellChanges & ~ChangeFlags.Findings)) != 0 || ((changes & ChangeFlags.Findings) != 0 && !scanning);
 
     private async Task LoadAsync()
     {
@@ -115,6 +149,11 @@ internal sealed class ShellBinder : IDisposable
         finally
         {
             _loading = false;
+            if (_reloadPending)
+            {
+                _reloadPending = false;
+                Refresh();
+            }
         }
     }
 
@@ -151,8 +190,13 @@ internal sealed class ShellBinder : IDisposable
             else if (!active && !background)
             {
                 // A scan of this window ended: the page on show reloads too, or Issues and the Dashboard kept
-                // showing what was there before the scan until the user went to another page.
+                // showing what was there before the scan until the user went to another page. Then a request that
+                // waited for it starts.
                 _form.RefreshAll();
+                if (_services.QueuedScanCount > 0)
+                {
+                    UiTask.Run(_services.StartQueuedScanAsync());
+                }
             }
         }
     }
@@ -253,7 +297,10 @@ internal sealed class ShellBinder : IDisposable
         string? reason = _services.CannotScanReason(_counts?.HasFolders ?? true);
         SplitButton scan = _form.Header.Scan;
         scan.Enabled = reason is null;
+
+        // The reason also for screen readers: a disabled button gets no mouse or keyboard input of its own.
         KitToolTip.Set(scan, reason ?? string.Empty);
+        scan.AccessibleDescription = reason;
     }
 
     private void ShowScanMenu()
@@ -278,14 +325,64 @@ internal sealed class ShellBinder : IDisposable
                     StartScan(ScanDepth.Quick, new ScanOptions { VerifyOnly = true, VerifyEverything = true });
                     break;
                 case "folder":
-                    _services.Navigate?.Invoke(PageId.Library, null);
+                    UiTask.Run(ScanFolderAsync());
                     break;
             }
         });
     }
 
-    /// <summary>Ctrl+Shift+S: scan now at the default depth.</summary>
-    internal void ScanNow() => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
+    /// <summary>
+    /// Scan a folder…: the enabled Library folders in a second menu below Scan, and the chosen one is scanned at the
+    /// default depth, as its card's Scan does. With one folder there is nothing to choose; with none it says to add one.
+    /// (It only opened the Library page, and on the Library page it did nothing at all.)
+    /// </summary>
+    internal async Task ScanFolderAsync()
+    {
+        if (_services.IsDemo)
+        {
+            return;
+        }
+
+        List<RootRecord> roots = await Task.Run(_services.Database.Roots.List).ConfigureAwait(true);
+        List<RootRecord> library = [.. roots.Where(r => r.Role == RootRole.Library && r.Enabled)];
+        if (library.Count == 0)
+        {
+            _services.ShowScanNotStarted(Strings.Shell.AddFolderFirst);
+            return;
+        }
+
+        if (library.Count == 1)
+        {
+            await ScanRootAsync(library[0]).ConfigureAwait(true);
+            return;
+        }
+
+        if (_form.IsDisposed || !_form.Header.Scan.IsHandleCreated)
+        {
+            return;
+        }
+
+        PopupItem[] items = [.. library.Select(r => new PopupItem(FolderName(r), IconName.Folder, Tag: r))];
+        KitMenu.ShowBelow(_form.Header.Scan, items, item =>
+        {
+            if (item.Tag is RootRecord root)
+            {
+                UiTask.Run(ScanRootAsync(root));
+            }
+        });
+    }
+
+    private async Task ScanRootAsync(RootRecord root)
+    {
+        await _services.StartScanAsync([new ScanScope(root.Id)], _services.State.Settings.Scanning.DefaultDepth, FolderName(root)).ConfigureAwait(true);
+        Poll();
+    }
+
+    private static string FolderName(RootRecord root) =>
+        root.Label ?? (Path.GetFileName(root.Path.TrimEnd('\\')) is { Length: > 0 } name ? name : root.Path);
+
+    /// <summary>The Scan button, Ctrl+Shift+S and the tray's Scan now: every Library folder at the default depth.</summary>
+    internal void ScanAtDefaultDepth() => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
 
     /// <summary>Opens the notifications flyout under the bell (subplan 09, H).</summary>
     private async Task ShowNotificationsAsync()
@@ -313,19 +410,30 @@ internal sealed class ShellBinder : IDisposable
         };
     }
 
-    /// <summary>The tray's Scan now: a scan of every Library folder at the default depth.</summary>
-    internal void StartDefaultScan() => StartScan(_services.State.Settings.Scanning.DefaultDepth, null);
-
-    /// <summary>Header Scan and its menu; the launcher says why when a scan cannot start.</summary>
+    /// <summary>
+    /// Header Scan and its menu; the launcher says why when a scan cannot start. A second press while the first is still
+    /// starting (a double-click, a held Enter) is ignored, instead of being refused with "A scan is already running".
+    /// </summary>
     private async void StartScan(ScanDepth depth, ScanOptions? options)
     {
-        if (_services.IsDemo)
+        if (_services.IsDemo || _starting)
         {
             return;
         }
 
-        await UI.Pages.ScanLauncher.StartLibraryScanAsync(_form, _services, depth, options).ConfigureAwait(true);
-        Poll();
+        _starting = true;
+        try
+        {
+            await UI.Pages.ScanLauncher.StartLibraryScanAsync(_form, _services, depth, options).ConfigureAwait(true);
+        }
+        finally
+        {
+            _starting = false;
+            if (!_form.IsDisposed)
+            {
+                Poll();
+            }
+        }
     }
 
     private void TogglePause()
@@ -362,18 +470,17 @@ internal sealed class ShellBinder : IDisposable
         }
     }
 
-    private void OnSearchKey(object? sender, KeyEventArgs e)
+    /// <summary>
+    /// Enter searches Library → Browse. The key press is suppressed too, or the single-line box beeped at every search.
+    /// (Esc, which clears the box, is the search box's own.)
+    /// </summary>
+    internal void OnSearchKey(object? sender, KeyEventArgs e)
     {
         if (e.KeyCode == Keys.Enter && _form.Header.Search.Text.Trim().Length > 0)
         {
             e.Handled = true;
+            e.SuppressKeyPress = true;
             _services.Navigate?.Invoke(PageId.Library, new LibrarySearchRequest(_form.Header.Search.Text.Trim()));
-        }
-        else if (e.KeyCode == Keys.Escape && _form.Header.Search.Text.Length > 0)
-        {
-            // Esc clears the box (subplan 09, Shell).
-            e.Handled = true;
-            _form.Header.Search.Text = string.Empty;
         }
     }
 }

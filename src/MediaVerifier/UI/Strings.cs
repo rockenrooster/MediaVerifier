@@ -119,6 +119,15 @@ internal static class Strings
         public const string KeepScanning = "Keep scanning";
         public const string BadgeOverflow = "999+";
         public const string BellOverflow = "9+";
+
+        // Feedback the plans do not word (design cases of the 2026-11-18 audit, plan 09 D's toast patterns).
+        public const string ScanQueued = "Scan queued";
+        public const string ScanQueuedText = "It starts when the current scan ends";
+        public const string NothingToUndo = "Nothing to undo";
+        public const string Copied = "Copied to the clipboard";
+        public const string CopyFailed = "Could not copy";
+        public const string ClipboardBusy = "Another program is using the clipboard. Try again.";
+        public const string FileNotFound = "File not found";
     }
 
     public static class Dashboard
@@ -933,5 +942,9 @@ internal static class Strings
         public const string Body = "MediaVerifier will keep running. Details were saved to the log.";
         public const string OpenLog = "Open log";
         public const string Close = "Close";
+
+        // The library database could not be opened at start (design case of the 2026-11-18 audit).
+        public const string StartupTitle = "MediaVerifier could not open its library";
+        public const string StartupLocked = "The library database is in use by another program. Close that program, then start MediaVerifier again.";
     }
 }

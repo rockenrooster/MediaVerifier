@@ -52,6 +52,8 @@ internal sealed class MainForm : Form
     private readonly Func<UiServices, PageId, PageBase> _pageFactory;
     private readonly UiServices _services;
     private readonly UI.Kit.Popups.ToastHost _toasts;
+    private readonly Action<UI.Kit.Popups.ToastContent> _shellToast;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<IpcMessage> _ipcMessages = new();
     private ShellBinder? _binder;
     private PageBase? _current;
     private TrayIcon? _tray;
@@ -73,17 +75,27 @@ internal sealed class MainForm : Form
         };
         services.ShowDrawer = content => SetDrawerContent(content);
         _toasts = new UI.Kit.Popups.ToastHost(this, () => _shell is { StatusStripVisible: true } ? 36 : 0);
-        services.ShowToast = content => _toasts.Show(content);
+
+        // Every toast passes through the services, which keep the newest Undo for Ctrl+Z.
+        services.ShowToast = content => _toasts.Show(services.TrackUndo(content));
+        services.RefreshAll = RefreshAll;
+        _shellToast = content => services.ShowToast?.Invoke(content);
+        UI.ShellActions.Toast = _shellToast;
         AppState state = services.State;
         _state = state;
         _options = options ?? new LaunchOptions();
         _ipc = ipc;
+        if (_ipc is not null)
+        {
+            // Before anything can create the handle: the pipe starts listening as soon as the handle exists.
+            _ipc.MessageReceived += OnIpcMessage;
+        }
+
         _pageFactory = pageFactory ?? PageFactory.Create;
 
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.None;
         Text = AppInfo.WindowTitle;
-        KeyPreview = true;
         BackColor = ThemeService.Tokens.Bg;
         Icon = AppIcon.Load();
         _shell = new ShellLayout(_rail, _header, _viewport, _statusStrip) { Dock = DockStyle.Fill };
@@ -92,12 +104,6 @@ internal sealed class MainForm : Form
         ThemeService.Changed += OnThemeChanged;
         RestorePlacement();
         ResumeLayout(performLayout: false);
-
-        if (_ipc is not null)
-        {
-            _ipc.MessageReceived += OnIpcMessage;
-        }
-
         ConfigureTray();
         Navigate(PageInfo.TryParse(_state.Settings.WindowPlacement.LastPage, out PageId last) ? last : PageId.Dashboard);
         _binder = new ShellBinder(this, services);
@@ -169,6 +175,9 @@ internal sealed class MainForm : Form
 
     internal NavigationRail Rail => _rail;
 
+    /// <summary>The shell's bindings (the tests drive the Scan menu through it).</summary>
+    internal ShellBinder? Binder => _binder;
+
     internal ShellHeader Header => _header;
 
     internal PageViewport Viewport => _viewport;
@@ -215,12 +224,17 @@ internal sealed class MainForm : Form
 
     protected override void SetVisibleCore(bool value)
     {
-        if (_startHidden && value && !IsHandleCreated)
+        if (_startHidden && value)
         {
-            // Started with --minimized and the tray on: create the window (IPC and the tray need it)
-            // but keep it hidden until the user opens it.
+            // Started with --minimized and the tray on: the window exists (IPC and the tray need its handle) but stays
+            // hidden until the user opens it. The handle already exists by now (the constructor's layout creates it),
+            // so this must not wait for the handle to be missing: the window showed at every Windows start.
             _startHidden = false;
-            CreateHandle();
+            if (!IsHandleCreated)
+            {
+                CreateHandle();
+            }
+
             value = false;
         }
 
@@ -238,7 +252,22 @@ internal sealed class MainForm : Form
             BeginInvoke(() => OpenActivation(link));
         }
 
+        // Later launches reach this window from now on: the handler is subscribed, and what it queues runs once the
+        // message loop does. (The pipe listened from the start of Main, before anything handled it, so a link or a
+        // forwarded scheduled scan that came in while the window was starting was dropped.)
+        _ipc?.Start();
+        PostIpcDrain();
         UI.UiTask.Run(StartupUpdateCheckAsync());
+    }
+
+    /// <summary>
+    /// After Windows Forms has set the window's icons: the title bar gets the small image from MediaVerifier.ico
+    /// instead of the 32 px icon scaled down.
+    /// </summary>
+    protected override void CreateHandle()
+    {
+        base.CreateHandle();
+        ApplySmallIcon();
     }
 
     /// <summary>
@@ -271,6 +300,7 @@ internal sealed class MainForm : Form
     protected override void OnDpiChanged(DpiChangedEventArgs e)
     {
         base.OnDpiChanged(e);
+        ApplySmallIcon();
         UpdateMinimumSize();
         _shell.PerformLayout();
         Invalidate(invalidateChildren: true);
@@ -337,14 +367,15 @@ internal sealed class MainForm : Form
                 (_current?.FilterBox ?? _header.Search).Focus();
                 return true;
             case Keys.F5:
-                _current?.Reload();
+                // Refresh the view: the page and the shell's badges.
+                RefreshAll();
                 return true;
             case Keys.Control | Keys.N:
                 Navigate(PageId.Library);
                 _current?.HandleRequest(new AddFolderRequest(null));
                 return true;
             case Keys.Control | Keys.Shift | Keys.S:
-                _binder?.ScanNow();
+                _binder?.ScanAtDefaultDepth();
                 return true;
             case Keys.F1:
                 UI.ShellActions.OpenUrl(UI.ShellActions.HelpUrl(_current?.HelpRule));
@@ -353,7 +384,13 @@ internal sealed class MainForm : Form
                 SetDrawerContent(null);
                 return true;
             case Keys.Control | Keys.Z when !IsTextInput(FromChildHandle(msg.HWnd)):
-                UI.UiTask.Run(UI.Remediator.UndoLatestAsync(_services));
+                // The newest toast's Undo (an Ignore, a repair of this session). It undid the newest repair in the
+                // journal, however old, even right after an Ignore, and said nothing when there was none.
+                if (!_services.UndoLast())
+                {
+                    _services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.None, UI.Strings.Shell.NothingToUndo, string.Empty));
+                }
+
                 return true;
         }
 
@@ -386,6 +423,13 @@ internal sealed class MainForm : Form
             {
                 _ipc.MessageReceived -= OnIpcMessage;
             }
+
+            if (ReferenceEquals(UI.ShellActions.Toast, _shellToast))
+            {
+                UI.ShellActions.Toast = null;
+            }
+
+            _services.RefreshAll = null;
 
             _tray?.Dispose();
             _binder?.Dispose();
@@ -422,14 +466,8 @@ internal sealed class MainForm : Form
         }
     }
 
-    /// <summary>Shows or hides the rail's Update item after a check (subplan 14, Where it shows).</summary>
-    internal void RefreshUpdateIndicator()
-    {
-        if (_services.UpdateAvailable)
-        {
-            _rail.UpdateAvailable = true;
-        }
-    }
+    /// <summary>Shows or hides the rail's Update item after a check (subplan 14, Where it shows); the shell's reload decides.</summary>
+    internal void RefreshUpdateIndicator() => _binder?.Refresh();
 
     /// <summary>Closes for good after the installer started (even with Keep running in the notification area on).</summary>
     internal void ExitForUpdate() => ExitApplication();
@@ -470,20 +508,39 @@ internal sealed class MainForm : Form
         Invalidate(invalidateChildren: true);
     }
 
+    /// <summary>
+    /// The pipe's thread: the message waits in a queue that the UI thread drains, so one that arrives while the handle
+    /// is being created or recreated is handled when it exists instead of being dropped.
+    /// </summary>
     private void OnIpcMessage(object? sender, IpcMessage message)
     {
-        if (IsDisposed || !IsHandleCreated)
+        _ipcMessages.Enqueue(message);
+        PostIpcDrain();
+    }
+
+    private void PostIpcDrain()
+    {
+        if (IsDisposed || !IsHandleCreated || _ipcMessages.IsEmpty)
         {
+            // Drained when the handle exists (OnHandleCreated).
             return;
         }
 
         try
         {
-            BeginInvoke(() => HandleIpc(message));
+            BeginInvoke(DrainIpc);
         }
         catch (InvalidOperationException)
         {
-            // The window is closing.
+            // The window is closing, or its handle is being recreated: OnHandleCreated drains the queue.
+        }
+    }
+
+    private void DrainIpc()
+    {
+        while (!IsDisposed && _ipcMessages.TryDequeue(out IpcMessage? message))
+        {
+            HandleIpc(message);
         }
     }
 
@@ -555,13 +612,13 @@ internal sealed class MainForm : Form
 
         if (_tray is null)
         {
-            _tray = new TrayIcon(Icon ?? SystemIcons.Application) { Visible = true };
+            _tray = new TrayIcon(AppIcon.Small(SystemInformation.SmallIconSize.Width)) { Visible = true };
             _tray.OpenRequested += (_, _) => BringToFrontFromAnywhere();
-            _tray.CanScan = () => !_services.IsDemo && _services.CannotScanReason(true) is null;
+            _tray.CannotScanReason = () => _services.IsDemo ? string.Empty : _services.CannotScanReason(true);
             _tray.ScanRequested += (_, _) =>
             {
                 BringToFrontFromAnywhere();
-                _binder?.StartDefaultScan();
+                _binder?.ScanAtDefaultDepth();
             };
             _tray.ExitRequested += (_, _) => ExitApplication();
         }
@@ -643,7 +700,20 @@ internal sealed class MainForm : Form
         _ = DwmSetWindowAttribute(Handle, DwmUseImmersiveDarkMode, ref dark, sizeof(int));
     }
 
+    private void ApplySmallIcon()
+    {
+        if (IsHandleCreated && ShowIcon)
+        {
+            _ = SendMessageW(Handle, WmSetIcon, IconSmall, AppIcon.Small(Dpi.Scale(16, DeviceDpi)).Handle);
+        }
+    }
+
     private const int DwmUseImmersiveDarkMode = 20;
+    private const int WmSetIcon = 0x0080;
+    private const nint IconSmall = 0;
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessageW(nint hwnd, int message, nint wParam, nint lParam);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -682,7 +752,7 @@ internal static class WindowPlacementRules
         new(area.Left + Math.Max(0, (area.Width - size.Width) / 2), area.Top + Math.Max(0, (area.Height - size.Height) / 2));
 }
 
-/// <summary>Creates the page object for a page id. Real pages replace the placeholders phase by phase.</summary>
+/// <summary>Creates the page object for a page id.</summary>
 internal static class PageFactory
 {
     public static PageBase Create(UiServices services, PageId id) => id switch
@@ -694,15 +764,17 @@ internal static class PageFactory
         PageId.Settings => new SettingsPage(services),
         PageId.Tools => new ToolsPage(services),
         PageId.Schedule => new SchedulePage(services),
-        _ => new PlaceholderPage(services, id),
+        _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),
     };
 }
 
 /// <summary>The app icon from the executable's resources (task F-09).</summary>
 internal static class AppIcon
 {
+    private static readonly Dictionary<int, Icon> SmallIcons = [];
     private static Icon? s_icon;
 
+    /// <summary>The 32 px icon: the window's large icon (Alt+Tab, the taskbar).</summary>
     public static Icon Load()
     {
         if (s_icon is not null)
@@ -721,5 +793,34 @@ internal static class AppIcon
         }
 
         return s_icon;
+    }
+
+    /// <summary>
+    /// The image of MediaVerifier.ico nearest <paramref name="size"/> pixels (16, 20, 24 for the title bar and the
+    /// notification area), so they show the small design of plan 08 instead of the 32 px icon scaled down. Kept for the
+    /// life of the process, one per size.
+    /// </summary>
+    public static Icon Small(int size)
+    {
+        lock (SmallIcons)
+        {
+            if (SmallIcons.TryGetValue(size, out Icon? icon))
+            {
+                return icon;
+            }
+
+            try
+            {
+                string? path = Environment.ProcessPath;
+                icon = (path is not null ? Icon.ExtractIcon(path, 0, size) : null) ?? Load();
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException)
+            {
+                icon = Load();
+            }
+
+            SmallIcons[size] = icon;
+            return icon;
+        }
     }
 }

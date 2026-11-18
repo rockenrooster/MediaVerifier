@@ -22,6 +22,7 @@ internal enum PageId
 internal abstract class PageBase : KitControl
 {
     private readonly List<System.Windows.Forms.Timer> _timers = [];
+    private int _reloadGeneration;
 
     protected PageBase(UiServices services)
     {
@@ -37,8 +38,17 @@ internal abstract class PageBase : KitControl
     /// <summary>The current load, so the render harness can wait for a page's data.</summary>
     public Task Loading { get; private set; } = Task.CompletedTask;
 
-    /// <summary>Reloads the page's data off the UI thread, then applies it on the UI thread.</summary>
-    public void Reload() => Loading = ReloadAsync();
+    /// <summary>
+    /// Reloads the page's data off the UI thread, then applies it on the UI thread. Only the newest reload is applied:
+    /// loads run side by side on the database's reader pool, and an older, slower one (the folder before the one just
+    /// chosen, the filter before the last click) overwrote the newer one. A failure the load does not handle reaches
+    /// the app's error handler instead of being lost in an unobserved task.
+    /// </summary>
+    public void Reload()
+    {
+        Loading = ReloadAsync();
+        UiTask.Run(Loading);
+    }
 
     /// <summary>The page's own filter box, focused by Ctrl+F or / (subplan 09, Keyboard); null uses the header search.</summary>
     public virtual Control? FilterBox => null;
@@ -61,14 +71,21 @@ internal abstract class PageBase : KitControl
 
     private async Task ReloadAsync()
     {
+        int generation = ++_reloadGeneration;
         object? data;
         try
         {
             data = await Task.Run(LoadData).ConfigureAwait(true);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
+        catch (Exception ex) when (IsLoadFailure(ex))
         {
             State.Log.Warning($"Could not load {Id}", ex);
+            return;
+        }
+
+        if (generation != _reloadGeneration)
+        {
+            // A newer reload started while this one ran: its result is the one to show.
             return;
         }
 
@@ -85,6 +102,17 @@ internal abstract class PageBase : KitControl
             Invalidate(true);
         }
     }
+
+    /// <summary>
+    /// A load that failed for a reason the page survives (the database busy or closing, a disk error), also when it
+    /// comes wrapped from parallel queries.
+    /// </summary>
+    private static bool IsLoadFailure(Exception exception) => exception switch
+    {
+        InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException => true,
+        AggregateException aggregate => aggregate.InnerExceptions.Count > 0 && aggregate.InnerExceptions.All(IsLoadFailure),
+        _ => false,
+    };
 
     public abstract PageId Id { get; }
 
@@ -204,18 +232,4 @@ internal static class PageInfo
 
     public static bool TryParse(string? text, out PageId page) =>
         Enum.TryParse(text, ignoreCase: true, out page) && Enum.IsDefined(page);
-}
-
-/// <summary>A page with nothing on it yet (phase 1 placeholders).</summary>
-internal sealed class PlaceholderPage : PageBase
-{
-    private readonly PageId _id;
-
-    public PlaceholderPage(UiServices services, PageId id)
-        : base(services)
-    {
-        _id = id;
-    }
-
-    public override PageId Id => _id;
 }

@@ -93,7 +93,8 @@ internal static class ToastRegistration
                 WriteIcon(icon);
             }
 
-            Register(new CurrentUserRegistry(), Environment.ProcessPath ?? Application.ExecutablePath, icon);
+            // The installed copy handles the links when there is one, not whichever copy started last.
+            Register(new CurrentUserRegistry(), RegistrationTarget.ExePath(), icon);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or ExternalException or ArgumentException)

@@ -56,7 +56,6 @@ Expose these through a single `AppPaths` class in Core. Tests override the base 
 | `--run-plan <id>` | Headless run of a saved plan (subplan 13). Forwards to a running GUI instance if there is one |
 | `--render-screens <dir>` | Render every page to PNG with demo data, then exit (subplan 08) |
 | `--cleanup` | Remove scheduled tasks and per-user registry entries, then exit. Called by the uninstaller (subplans 13, 14) |
-| `--notify <run id>` | With `--minimized`: tray fallback that announces a finished run (subplan 13) |
 | `mediaverifier://...` | Activation URI from a toast (subplan 13). Forwarded to the running instance |
 
 Parsing is hand-written and strict: unknown arguments print usage to the log and exit 1.

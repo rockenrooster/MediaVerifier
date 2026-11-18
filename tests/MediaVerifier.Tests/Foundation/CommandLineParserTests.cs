@@ -18,7 +18,6 @@ public sealed class CommandLineParserTests
         LaunchOptions options = CommandLineParser.Parse(["--minimized"]);
         Assert.Equal(LaunchMode.Gui, options.Mode);
         Assert.True(options.Minimized);
-        Assert.Null(options.NotifyRunId);
     }
 
     [Fact]
@@ -50,17 +49,6 @@ public sealed class CommandLineParserTests
         Assert.Equal(LaunchMode.Cleanup, CommandLineParser.Parse(["--cleanup"]).Mode);
     }
 
-    [Theory]
-    [InlineData("--minimized", "--notify", "42")]
-    [InlineData("--notify", "42", "--minimized")]
-    public void NotifyWithMinimizedAnnouncesARun(params string[] args)
-    {
-        LaunchOptions options = CommandLineParser.Parse(args);
-        Assert.Equal(LaunchMode.Gui, options.Mode);
-        Assert.True(options.Minimized);
-        Assert.Equal(42, options.NotifyRunId);
-    }
-
     [Fact]
     public void ActivationUriIsForwarded()
     {
@@ -80,7 +68,7 @@ public sealed class CommandLineParserTests
     [InlineData("--render-screens")]
     [InlineData("--render-screens", "--minimized")]
     [InlineData("--notify", "5")]
-    [InlineData("--minimized", "--notify")]
+    [InlineData("--minimized", "--notify", "42")]
     [InlineData("--minimized", "--minimized")]
     [InlineData("--self-check", "--cleanup")]
     [InlineData("--self-check", "--minimized")]
