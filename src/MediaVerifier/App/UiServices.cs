@@ -427,7 +427,7 @@ internal sealed class UiServices : IDisposable
         }
     }
 
-    /// <summary>Requests waiting for this window's scan to end.</summary>
+    /// <summary>Requests asked for during this window's scan, waiting until no scan runs.</summary>
     public int QueuedScanCount => _queuedScans.Count;
 
     /// <summary>
