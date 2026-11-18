@@ -47,9 +47,9 @@ internal sealed class DrawerActions
     }
 
     /// <summary>
-    /// Scan again: through the services' start, which shows the strip at once or says why nothing started. Each file's
-    /// folder is the scope, not its whole watched folder, and the files are read again: a scan at the depth they
-    /// already have otherwise found nothing to do for an unchanged file.
+    /// Scan again: through the services' start, which shows the strip at once or says why nothing started. The scope is
+    /// the deepest folder holding the files, not their whole watched folder, and the files are read again: a scan at
+    /// the depth they already have otherwise found nothing to do for an unchanged file.
     /// </summary>
     public static async Task RescanAsync(UiServices services, IReadOnlyList<long> fileIds)
     {
@@ -64,10 +64,31 @@ internal sealed class DrawerActions
             return;
         }
 
-        ScanScope[] scopes = [.. files.GroupBy(f => (f.RootId, RelDir: f.RelDir ?? string.Empty)).Select(g => new ScanScope(g.Key.RootId, g.Key.RelDir.Length == 0 ? null : g.Key.RelDir, [.. g.Select(f => f.Id)]))];
+        // One scope per watched folder: a scope per file's folder listed nested folders again for each one (a file in
+        // Music and one in Music\Album listed the album twice).
+        ScanScope[] scopes = [.. files.GroupBy(f => f.RootId).Select(g => new ScanScope(g.Key, CommonFolder(g.Select(f => f.RelDir ?? string.Empty)), [.. g.Select(f => f.Id)]))];
         ScanDepth depth = (ScanDepth)Math.Max((int)ScanDepth.Standard, files.Max(f => (int)f.ScannedDepth));
         string scope = string.Format(CultureInfo.CurrentCulture, Strings.Scans.FilesScope, UiFormat.Count(files.Count));
         _ = await services.StartScanAsync(scopes, depth, scope, new ScanOptions { VerifyEverything = true }).ConfigureAwait(true);
+    }
+
+    /// <summary>The deepest folder holding all of <paramref name="relDirs"/> (relative to their watched folder); null for the watched folder itself.</summary>
+    internal static string? CommonFolder(IEnumerable<string> relDirs)
+    {
+        string[]? common = null;
+        foreach (string relDir in relDirs)
+        {
+            string[] parts = relDir.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+            int same = 0;
+            while (common is not null && same < common.Length && same < parts.Length && string.Equals(common[same], parts[same], StringComparison.OrdinalIgnoreCase))
+            {
+                same++;
+            }
+
+            common = common is null ? parts : common[..same];
+        }
+
+        return common is { Length: > 0 } ? string.Join('\\', common) : null;
     }
 
     /// <summary>

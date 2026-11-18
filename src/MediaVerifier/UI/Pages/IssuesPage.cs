@@ -298,17 +298,17 @@ internal sealed class IssuesPage : PageBase
 
         int start = Math.Max(0, position - 50);
         int end = Math.Min(_data.Ids.Length, position + 200);
-        List<long> missing = [];
+        List<long>? missing = null;
         for (int i = start; i < end; i++)
         {
             long id = _data.Ids[i];
             if (!Rows.ContainsKey(id) && !_gone.Contains(id))
             {
-                missing.Add(id);
+                (missing ??= []).Add(id);
             }
         }
 
-        if (missing.Count > 0)
+        if (missing is not null)
         {
             UiTask.Run(LoadRowsAsync(missing));
         }
@@ -471,7 +471,7 @@ internal sealed class IssuesPage : PageBase
         _source.Rebuild(issues);
         _list.Refresh();
         PruneSelection(issues);
-        UpdateSelectionBar();
+        UpdateSelectionBar(keepFixState: true);
         UpdateEmptyState(issues);
         if (chosenRoot is not null && folder == 0)
         {
@@ -644,7 +644,7 @@ internal sealed class IssuesPage : PageBase
 
             _list.Invalidate();
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
+        catch (Exception ex) when (IsReadFailure(ex))
         {
             State.Log.Warning("Issue rows could not be loaded", ex);
         }
@@ -653,6 +653,9 @@ internal sealed class IssuesPage : PageBase
             _loadingRows = false;
         }
     }
+
+    /// <summary>A read the database could not answer now (locked by a scan's write, the file gone): the page carries on.</summary>
+    private static bool IsReadFailure(Exception ex) => ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException;
 
     private int DropWidth(DropDown drop) => KitPaint.MeasureWidth(drop.ShownText, Type.Body) + S(12 + 4 + 26);
 
@@ -875,7 +878,11 @@ internal sealed class IssuesPage : PageBase
         _empty.Invalidate();
     }
 
-    private void UpdateSelectionBar()
+    /// <param name="keepFixState">
+    /// After a reload that kept the selection: Fix… stays as it was until the new answer is in (it went off for every
+    /// reload while thousands of rows were read again).
+    /// </param>
+    private void UpdateSelectionBar(bool keepFixState = false)
     {
         int count = _list.SelectedIds.Count;
         bool show = count >= 2;
@@ -898,14 +905,14 @@ internal sealed class IssuesPage : PageBase
 
         _selectionBar.Buttons[3].Enabled = Services.Operations is not null;
         _selectionBar.Invalidate();
-        UiTask.Run(UpdateFixStateAsync());
+        UiTask.Run(UpdateFixStateAsync(keepFixState));
     }
 
     /// <summary>
     /// Fix… is enabled when the selected findings share a fix (subplan 09), worked out from all of them: rows that were
     /// never painted are read from the database, so a Ctrl+A over thousands of findings is judged on every one.
     /// </summary>
-    private async Task UpdateFixStateAsync()
+    private async Task UpdateFixStateAsync(bool keepShown)
     {
         int request = ++_fixRequest;
         if (Services.Operations is null)
@@ -919,7 +926,11 @@ internal sealed class IssuesPage : PageBase
         if (!ids.All(Rows.ContainsKey))
         {
             // Off until the answer is in; a run of Shift+Down presses asks once.
-            SetFixState(null);
+            if (!keepShown)
+            {
+                SetFixState(null);
+            }
+
             await Task.Delay(150).ConfigureAwait(true);
             if (request != _fixRequest)
             {
@@ -927,14 +938,17 @@ internal sealed class IssuesPage : PageBase
             }
         }
 
-        IReadOnlyList<string> fixes = await CommonFixesAsync(ids, request).ConfigureAwait(true);
+        IReadOnlyList<string>? fixes = await CommonFixesAsync(ids, request).ConfigureAwait(true);
         if (request == _fixRequest && !IsDisposed)
         {
             SetFixState(fixes);
         }
     }
 
-    /// <summary>Fix… on (fixes in common), off with the reason (none in common), or off while the answer is worked out.</summary>
+    /// <summary>
+    /// Fix… on (fixes in common), off with the reason (none in common), or off while the answer is worked out or could
+    /// not be read.
+    /// </summary>
     private void SetFixState(IReadOnlyList<string>? fixes)
     {
         _shared = fixes;
@@ -943,8 +957,17 @@ internal sealed class IssuesPage : PageBase
         KitToolTip.Set(fix, fixes is { Count: 0 } ? Strings.Issues.NeedDifferentFixes : string.Empty);
     }
 
-    /// <summary>The fixes every one of the findings can take; rows not in the paint cache are read in chunks, off the UI thread.</summary>
-    private async Task<IReadOnlyList<string>> CommonFixesAsync(long[] ids, int request)
+    /// <summary>
+    /// The fixes the bar worked out when the findings are its selection, so Fix…, the row menu and Ctrl+Enter need not
+    /// read every row again; null otherwise.
+    /// </summary>
+    private IReadOnlyList<string>? SharedFor(long[] ids) => ids.Length >= 2 && ids.Length == _list.SelectedIds.Count ? _shared : null;
+
+    /// <summary>
+    /// The fixes every one of the findings can take; rows not in the paint cache are read in chunks, off the UI thread.
+    /// Null when they could not be read (Fix… stays off; the error dialog is for faults, not a busy database).
+    /// </summary>
+    private async Task<IReadOnlyList<string>?> CommonFixesAsync(long[] ids, int request)
     {
         List<IReadOnlyList<string>> known = [];
         List<long> missing = [];
@@ -966,26 +989,34 @@ internal sealed class IssuesPage : PageBase
             return common;
         }
 
-        return await Task.Run(() =>
+        try
         {
-            IReadOnlyList<string>? result = known.Count > 0 ? common : null;
-            foreach (long[] chunk in missing.Chunk(ResolveChunk))
+            return await Task.Run(() =>
             {
-                if (Volatile.Read(ref _fixRequest) != request)
+                IReadOnlyList<string>? result = known.Count > 0 ? common : null;
+                foreach (long[] chunk in missing.Chunk(ResolveChunk))
                 {
-                    return [];
+                    if (Volatile.Read(ref _fixRequest) != request)
+                    {
+                        return [];
+                    }
+
+                    IReadOnlyList<IssueRow> rows = Services.Data.LoadIssueRows(chunk);
+                    result = Remediator.CommonFixes(result is null ? rows.Select(r => r.Fixes) : rows.Select(r => r.Fixes).Prepend(result));
+                    if (result.Count == 0)
+                    {
+                        break;
+                    }
                 }
 
-                IReadOnlyList<IssueRow> rows = Services.Data.LoadIssueRows(chunk);
-                result = Remediator.CommonFixes(result is null ? rows.Select(r => r.Fixes) : rows.Select(r => r.Fixes).Prepend(result));
-                if (result.Count == 0)
-                {
-                    break;
-                }
-            }
-
-            return result ?? [];
-        }).ConfigureAwait(true);
+                return result ?? [];
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (IsReadFailure(ex))
+        {
+            State.Log.Warning("The fixes of the selection could not be read", ex);
+            return null;
+        }
     }
 
     /// <summary>
@@ -1021,16 +1052,29 @@ internal sealed class IssuesPage : PageBase
         return _source.RowAt(_list.FocusedIndex) is IssueRow focused ? [focused.Id] : [];
     }
 
-    /// <summary>The rows of the findings, in order: the painted ones from the cache, the rest read off the UI thread.</summary>
-    private async Task<IReadOnlyList<IssueRow>> ResolveRowsAsync(long[] ids)
+    /// <summary>
+    /// The rows of the findings, in order: the painted ones from the cache, the rest read off the UI thread, with their
+    /// fixes only when <paramref name="withFixes"/> (Scan again, Copy path and Quarantine need only the files). Null when
+    /// the database could not answer: a toast says so instead of the error dialog.
+    /// </summary>
+    private async Task<IReadOnlyList<IssueRow>?> ResolveRowsAsync(long[] ids, bool withFixes)
     {
         List<long> missing = [.. ids.Where(id => !Rows.ContainsKey(id))];
         Dictionary<long, IssueRow> loaded = [];
         if (missing.Count > 0)
         {
-            foreach (IssueRow row in await Task.Run(() => Services.Data.LoadIssueRows(missing)).ConfigureAwait(true))
+            try
             {
-                loaded[row.Id] = row;
+                foreach (IssueRow row in await Task.Run(() => Services.Data.LoadIssueRows(missing, withFixes)).ConfigureAwait(true))
+                {
+                    loaded[row.Id] = row;
+                }
+            }
+            catch (Exception ex) when (IsReadFailure(ex))
+            {
+                State.Log.Warning("Issue rows could not be read", ex);
+                Services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Strings.UnhandledError.Title, ex.Message));
+                return null;
             }
         }
 
@@ -1052,15 +1096,22 @@ internal sealed class IssuesPage : PageBase
     private static string? RecommendedFor(IReadOnlyList<IssueRow> rows) =>
         rows.Count > 0 && rows[0].RecommendedFix is string fix && rows.All(r => r.Fixes.Contains(fix)) ? fix : null;
 
-    /// <summary>Fix… (subplan 09, selection bar): the fixes valid for every selected finding, then the chosen one runs.</summary>
+    /// <summary>
+    /// Fix… (subplan 09, selection bar): the fixes valid for every selected finding, then the chosen one runs. The menu
+    /// opens on what the bar worked out; the files are read once a fix is chosen.
+    /// </summary>
     private async Task ShowFixMenuAsync()
     {
         long[] ids = TargetIds();
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(ids).ConfigureAwait(true);
-        IReadOnlyList<string> fixes = Services.Operations is null ? [] : Remediator.CommonFixes(rows.Select(r => r.Fixes));
-        if (IsDisposed)
+        IReadOnlyList<string>? fixes = SharedFor(ids);
+        if (fixes is null)
         {
-            return;
+            if (await ResolveRowsAsync(ids, withFixes: true).ConfigureAwait(true) is not { } rows || IsDisposed)
+            {
+                return;
+            }
+
+            fixes = Services.Operations is null ? [] : Remediator.CommonFixes(rows.Select(r => r.Fixes));
         }
 
         if (fixes.Count == 0)
@@ -1069,36 +1120,40 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
-        long[] files = Files(rows);
         PopupItem[] items = [.. fixes.Select(fix => new PopupItem(LiveUiData.ActionName(fix), IconName.Tools, Tag: fix))];
-        KitMenu.ShowBelow(_selectionBar.Buttons[0], items, item => UiTask.Run(RunAndReloadAsync(files, (string)item.Tag!)));
+        KitMenu.ShowBelow(_selectionBar.Buttons[0], items, item => UiTask.Run(RunOnAsync(ids, (string)item.Tag!)));
     }
 
-    /// <summary>Ctrl+Enter: the recommended fix, when every target can take it; otherwise says why nothing ran.</summary>
+    /// <summary>
+    /// Ctrl+Enter: the recommended fix, when every target can take it; otherwise says why nothing ran. For the bar's
+    /// selection only the first row is read: what they share is known.
+    /// </summary>
     private async Task RunRecommendedAsync()
     {
-        if (Services.Operations is null)
+        long[] ids = TargetIds();
+        if (Services.Operations is null || ids.Length == 0)
         {
             return;
         }
 
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(TargetIds()).ConfigureAwait(true);
-        if (rows.Count == 0)
+        IReadOnlyList<string>? shared = SharedFor(ids);
+        if (await ResolveRowsAsync(shared is null ? ids : ids[..1], withFixes: true).ConfigureAwait(true) is not { Count: > 0 } rows || IsDisposed)
         {
             return;
         }
 
-        if (RecommendedFor(rows) is string fix)
+        string? fix = shared is null ? RecommendedFor(rows) : rows[0].RecommendedFix is string own && shared.Contains(own) ? own : null;
+        if (fix is not null)
         {
-            await RunAndReloadAsync(Files(rows), fix).ConfigureAwait(true);
+            await RunOnAsync(ids, fix).ConfigureAwait(true);
         }
         else
         {
-            Services.ShowToast?.Invoke(new ToastContent(Severity.None, rows.Count > 1 ? Strings.Issues.NeedDifferentFixes : Strings.Issues.NoFix, string.Empty));
+            Services.ShowToast?.Invoke(new ToastContent(Severity.None, ids.Length > 1 ? Strings.Issues.NeedDifferentFixes : Strings.Issues.NoFix, string.Empty));
         }
     }
 
-    /// <summary>Runs an action on the files of the findings (dialog A first): the row menu's fix, Quarantine.</summary>
+    /// <summary>Runs an action on the files of the findings (dialog A first): a chosen fix, Quarantine.</summary>
     private async Task RunOnAsync(long[] ids, string actionId)
     {
         if (Services.Operations is null || ids.Length == 0)
@@ -1106,23 +1161,31 @@ internal sealed class IssuesPage : PageBase
             return;
         }
 
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(ids).ConfigureAwait(true);
-        await RunAndReloadAsync(Files(rows), actionId).ConfigureAwait(true);
+        if (await ResolveRowsAsync(ids, withFixes: false).ConfigureAwait(true) is { } rows && !IsDisposed)
+        {
+            await RunAndReloadAsync(Files(rows), actionId).ConfigureAwait(true);
+        }
     }
 
     private Task QuarantineAsync(long[] ids) => RunOnAsync(ids, ActionIds.Quarantine);
 
     private async Task ScanAsync(long[] ids)
     {
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(ids).ConfigureAwait(true);
-        await DrawerActions.RescanAsync(Services, Files(rows)).ConfigureAwait(true);
+        if (await ResolveRowsAsync(ids, withFixes: false).ConfigureAwait(true) is { } rows)
+        {
+            await DrawerActions.RescanAsync(Services, Files(rows)).ConfigureAwait(true);
+        }
     }
 
     private async Task CopyAsync(long[] ids)
     {
-        IReadOnlyList<IssueRow> rows = await ResolveRowsAsync(ids).ConfigureAwait(true);
+        if (await ResolveRowsAsync(ids, withFixes: false).ConfigureAwait(true) is not { } rows || IsDisposed)
+        {
+            return;
+        }
+
         string[] paths = [.. rows.Select(r => r.FullPath).Distinct(StringComparer.OrdinalIgnoreCase)];
-        if (paths.Length > 0 && !IsDisposed)
+        if (paths.Length > 0)
         {
             DrawerActions.Copy(Services, paths, DrawerActions.PathsCopied(paths.Length));
         }
@@ -1279,21 +1342,18 @@ internal sealed class IssuesPage : PageBase
             {
                 fix = row.RecommendedFix;
             }
-            else if (targets.All(Rows.ContainsKey))
-            {
-                fix = RecommendedFor([row, .. targets.Select(id => Rows[id])]);
-            }
-            else if (_shared is { } shared)
+            else if (SharedFor(targets) is { } shared)
             {
                 fix = row.RecommendedFix is string own && shared.Contains(own) ? own : null;
             }
             else
             {
-                fix = RecommendedFor([row, .. await ResolveRowsAsync(targets).ConfigureAwait(true)]);
-                if (IsDisposed)
+                if (await ResolveRowsAsync(targets, withFixes: true).ConfigureAwait(true) is not { } rows || IsDisposed)
                 {
                     return;
                 }
+
+                fix = RecommendedFor([row, .. rows]);
             }
         }
 
@@ -1569,8 +1629,14 @@ internal sealed class IssuesPage : PageBase
             long id = _data.Ids[position];
             if (!page.Rows.TryGetValue(id, out IssueRow? issue))
             {
-                row.Loaded = false;
-                page.RequestRows(position);
+                // A finding that went away since the list was read stays an empty row until the next reload: no skeleton
+                // and no request (one that read nothing on every paint).
+                if (!page._gone.Contains(id))
+                {
+                    row.Loaded = false;
+                    page.RequestRows(position);
+                }
+
                 return;
             }
 

@@ -15,6 +15,9 @@ internal sealed partial class LiveUiData
     /// <summary>The rules whose finding means the file's content is no longer what was fingerprinted: only then can a copy with the old fingerprint be healthier.</summary>
     private static readonly string[] ChangedContentRules = ["INT-ROT", "GEN-UNREADABLE"];
 
+    /// <summary>The lowest tier those findings take (Critical): a file whose worst open finding is below it has none of them.</summary>
+    private static readonly Severity ChangedContentTier = ChangedContentRules.Min(r => RuleCatalog.Get(r).MinSeverity);
+
     public IssuesData LoadIssues(IssuesQuery query)
     {
         // The list and its counts are separate reads, each in its own snapshot. A scan that commits between them
@@ -112,33 +115,57 @@ internal sealed partial class LiveUiData
 
     public SeverityCounts CountIssues(FindingFilter filter) => database.Queries.SeverityCounts(filter);
 
-    public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids)
+    public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids, bool withFixes = true)
     {
         List<FindingRow> rows = database.Queries.FindingRows(ids);
-        Dictionary<long, RootRecord> roots = database.Roots.List().ToDictionary(r => r.Id);
-
-        // Restore from a healthy copy, for the files whose content changed: a copy in the index with the old fingerprint
-        // (read from the database only; the copy is checked again before it is used). Rewrite FLAC, for a checksum finding
-        // on a file that otherwise decodes cleanly. Both need more than the row, so only those rows pay for it.
-        HashSet<long> withCopy = FilesWithIndexedCopy([.. rows.Where(r => ChangedContentRules.Contains(r.RuleId)).Select(r => r.FileId).Distinct()]);
-        Dictionary<long, bool> clean = [];
-        foreach (long fileId in rows.Where(r => r.RuleId == "COR-CHECKSUM").Select(r => r.FileId).Distinct())
-        {
-            clean[fileId] = DecodesCleanly(database.Findings.ForFile(fileId).Where(f => f.Status == FindingStatus.Open).Select(f => (f.RuleId, (IReadOnlyDictionary<string, object>)EvidenceJson.Deserialize(f.EvidenceJson))));
-        }
-
+        Dictionary<long, RootRecord> roots = withFixes ? database.Roots.List().ToDictionary(r => r.Id) : [];
+        Dictionary<long, (bool HasCopy, bool Clean)> facts = withFixes ? FileFacts(rows) : [];
         List<IssueRow> result = new(rows.Count);
         foreach (FindingRow row in rows)
         {
             string folder = row.RelDir.Length == 0 ? row.RootPath : Path.Combine(row.RootPath, row.RelDir);
             RootRecord root = roots.GetValueOrDefault(row.RootId) ?? new RootRecord { Id = row.RootId, Path = row.RootPath };
+            (bool hasCopy, bool clean) = facts.GetValueOrDefault(row.FileId);
             result.Add(new IssueRow(row.Id, row.FileId, row.RuleId, row.Severity, row.FileName, row.Summary, folder, row.Size, row.Kind, Path.Combine(folder, row.FileName), Title(row.RuleId, row.Confidence))
             {
-                Fixes = ListFixes(row.RuleId, row.Kind, row.FileName, root, withCopy.Contains(row.FileId), clean.GetValueOrDefault(row.FileId)),
+                Fixes = withFixes ? ListFixes(row.RuleId, row.Kind, row.FileName, root, hasCopy, clean) : [],
             });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Per file, what its fixes depend on beyond the finding: Restore needs changed content (rot, unreadable) and a copy
+    /// in the index with the old fingerprint (database only; the copy is checked again before it is used); Rewrite FLAC
+    /// and Store as 16-bit need audio that nothing says is damaged. Both are judged on all the file's open findings, as
+    /// the drawer judges them: a rotted file's decode row offered Restore only when its rot row was read in the same
+    /// window. Only files that can take those fixes are looked at, and their other findings are read only when the rows
+    /// at hand are not all of them.
+    /// </summary>
+    private Dictionary<long, (bool HasCopy, bool Clean)> FileFacts(List<FindingRow> rows)
+    {
+        Dictionary<long, (bool HasCopy, bool Clean)> facts = [];
+        ILookup<long, FindingRow> byFile = rows.ToLookup(r => r.FileId);
+        foreach (FileRecord file in database.Files.GetMany([.. byFile.Select(g => g.Key)]))
+        {
+            bool mayHaveChanged = file.Hash is not null && file.WorstSeverity >= ChangedContentTier;
+            bool rewritable = (file.Ext.Equals("flac", StringComparison.OrdinalIgnoreCase) || file.Ext.Equals("wav", StringComparison.OrdinalIgnoreCase))
+                && byFile[file.Id].Any(r => RuleCatalog.TryGet(r.RuleId, out RuleDefinition rule) && rule.ActionIds.Any(a => a is ActionIds.ReencodeFlac or ActionIds.ShrinkBitDepth));
+            if (!mayHaveChanged && !rewritable)
+            {
+                continue;
+            }
+
+            List<FindingRow> open = [.. byFile[file.Id].Where(r => r.Status == FindingStatus.Open)];
+            List<(string RuleId, IReadOnlyDictionary<string, object> Evidence)> findings = open.Count >= file.OpenFindings
+                ? [.. open.Select(r => (r.RuleId, (IReadOnlyDictionary<string, object>)EvidenceJson.Deserialize(r.EvidenceJson)))]
+                : [.. database.Findings.ForFile(file.Id).Where(f => f.Status == FindingStatus.Open).Select(f => (f.RuleId, (IReadOnlyDictionary<string, object>)EvidenceJson.Deserialize(f.EvidenceJson)))];
+            bool changed = mayHaveChanged && findings.Any(f => ChangedContentRules.Contains(f.RuleId));
+            facts[file.Id] = (changed && HasIndexedCopy(file), DecodesCleanly(findings));
+        }
+
+        return facts;
     }
 
     /// <summary>
@@ -149,9 +176,17 @@ internal sealed partial class LiveUiData
     internal static IReadOnlyList<string> ListFixes(string ruleId, MediaKind kind, string fileName, RootRecord root, bool hasHealthyCopy, bool decodesCleanly)
     {
         FileRecord file = new() { Name = fileName, Ext = MediaClassifier.Extension(fileName), MediaKind = kind };
-        return [.. ActionCatalog.ForFinding(ruleId, file, root, hasHealthyCopy, decodesCleanly)
+        return [.. ActionsFor(ruleId, file, root, hasHealthyCopy, decodesCleanly)
             .Where(a => ActionCatalog.Runnable.Contains(a) && a is not (ActionIds.Quarantine or ActionIds.Recycle or ActionIds.AcceptBaseline))];
     }
+
+    /// <summary>
+    /// The catalogue's actions for a finding, with Store as 16-bit held to what Rewrite FLAC needs: both decode and
+    /// encode the audio again, so on a file that does not decode cleanly (frames failing their checksums) either one
+    /// stores the damage under fresh, valid checksums and closes the finding that reported it.
+    /// </summary>
+    private static IEnumerable<string> ActionsFor(string ruleId, FileRecord file, RootRecord root, bool hasHealthyCopy, bool decodesCleanly) =>
+        ActionCatalog.ForFinding(ruleId, file, root, hasHealthyCopy, decodesCleanly).Where(a => decodesCleanly || a != ActionIds.ShrinkBitDepth);
 
     /// <summary>
     /// True when nothing says the file's sound or picture is damaged: no decode, truncation or concealment finding, and
@@ -162,26 +197,10 @@ internal sealed partial class LiveUiData
         !findings.Any(f => f.RuleId is "COR-DECODE" or "COR-TRUNCATED" or "COR-CONCEALED"
             || (f.RuleId == "COR-CHECKSUM" && f.Evidence.TryGetValue("checksumErrors", out object? errors) && Convert.ToInt64(errors, CultureInfo.InvariantCulture) > 0));
 
-    /// <summary>The files with another, present file in the index that has their fingerprint (database only, no disk access).</summary>
-    private HashSet<long> FilesWithIndexedCopy(IReadOnlyCollection<long> fileIds)
-    {
-        HashSet<long> found = [];
-        if (fileIds.Count == 0)
-        {
-            return found;
-        }
-
-        foreach (FileRecord file in database.Files.GetMany(fileIds))
-        {
-            if (file.Hash is { Length: > 0 } hash && file.HashSize is > 0
-                && database.Files.FindByHash(hash).Any(copy => copy.Id != file.Id && copy.State != FileState.Missing && copy.HashSize is > 0))
-            {
-                found.Add(file.Id);
-            }
-        }
-
-        return found;
-    }
+    /// <summary>Another, present file in the index has the file's fingerprint (database only, no disk access).</summary>
+    private bool HasIndexedCopy(FileRecord file) =>
+        file.Hash is { Length: > 0 } hash && file.HashSize is > 0
+        && database.Files.FindByHash(hash).Any(copy => copy.Id != file.Id && copy.State != FileState.Missing && copy.HashSize is > 0);
 
     public long? FileOfFinding(long findingId) => database.Findings.Get(findingId)?.FileId;
 
@@ -262,7 +281,7 @@ internal sealed partial class LiveUiData
             bool clean = DecodesCleanly(open.Select(f => (f.RuleId, f.Evidence)));
             foreach (FindingDetail finding in open)
             {
-                IReadOnlyList<string> actions = ActionCatalog.ForFinding(finding.RuleId, file, root, healthy, clean);
+                IReadOnlyList<string> actions = [.. ActionsFor(finding.RuleId, file, root, healthy, clean)];
                 recommended ??= ActionCatalog.Recommended(actions);
                 foreach (string action in actions)
                 {

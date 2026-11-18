@@ -6,6 +6,7 @@ using MediaVerifier.Core.Storage;
 using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI;
 using MediaVerifier.UI.Data;
+using MediaVerifier.UI.Pages;
 using Microsoft.Data.Sqlite;
 
 namespace MediaVerifier.Tests.UI;
@@ -40,8 +41,9 @@ public sealed class IssuesDataTests
         Assert.DoesNotContain(ActionIds.ReencodeFlac, LiveUiData.ListFixes("COR-CHECKSUM", MediaKind.Photo, "scan.png", library, false, true));
         Assert.Contains(ActionIds.ReencodeFlac, LiveUiData.ListFixes("COR-CHECKSUM", MediaKind.Audio, "song.flac", library, false, true));
         Assert.DoesNotContain(ActionIds.ReencodeFlac, LiveUiData.ListFixes("COR-CHECKSUM", MediaKind.Audio, "song.flac", library, false, false));
-        Assert.Empty(LiveUiData.ListFixes("AUD-PADDED-BITS", MediaKind.Audio, "song.m4a", library, false, false));
-        Assert.Equal([ActionIds.ShrinkBitDepth], LiveUiData.ListFixes("AUD-PADDED-BITS", MediaKind.Audio, "song.flac", library, false, false));
+        Assert.Empty(LiveUiData.ListFixes("AUD-PADDED-BITS", MediaKind.Audio, "song.m4a", library, false, true));
+        Assert.Equal([ActionIds.ShrinkBitDepth], LiveUiData.ListFixes("AUD-PADDED-BITS", MediaKind.Audio, "song.flac", library, false, true));
+        Assert.Empty(LiveUiData.ListFixes("AUD-PADDED-BITS", MediaKind.Audio, "song.flac", library, false, false));
         Assert.Empty(LiveUiData.ListFixes("COR-TRUNCATED", MediaKind.Audio, "song.mp3", backup, false, false));
 
         // The de-clip can be chosen, but it is never the recommended fix.
@@ -132,6 +134,72 @@ public sealed class IssuesDataTests
         Assert.DoesNotContain(ActionIds.RestoreCopy, rows[otherRot].Fixes);
         Assert.Equal([ActionIds.ExtractPreview], rows[zeros].Fixes);
         Assert.Equal(UiFormat.Size(4096), rows[rot].SizeText);
+    }
+
+    /// <summary>
+    /// Restore is offered on every row of a rotted file that has an indexed copy, whatever rows were read with it: its
+    /// decode row offered Restore only when the rot row happened to be read in the same window, and "Save a playable
+    /// copy" otherwise, while the drawer always offered Restore.
+    /// </summary>
+    [Fact]
+    public void Every_row_of_a_rotted_file_offers_restore_whatever_was_read_with_it()
+    {
+        using TestDatabase db = new("issues-restore");
+        long library = IssueFixtures.Root(db.Database, @"Z:\Media", "Media");
+        long backup = IssueFixtures.Root(db.Database, @"Y:\Backup", "Backup", RootRole.Backup);
+        byte[] fingerprint = [.. Enumerable.Range(7, 16).Select(i => (byte)i)];
+        long rotted = IssueFixtures.File(db.Database, library, "Clips", "clip.mp4", MediaKind.Video, hash: fingerprint);
+        _ = IssueFixtures.File(db.Database, backup, "Clips", "clip.mp4", MediaKind.Video, hash: fingerprint, state: FileState.Ok);
+        long rot = IssueFixtures.Finding(db.Database, rotted, "INT-ROT", Severity.Critical);
+        long decode = IssueFixtures.Finding(db.Database, rotted, "COR-DECODE", Severity.High);
+        LiveUiData data = IssueFixtures.Data(db);
+
+        Assert.Equal(ActionIds.RestoreCopy, data.LoadIssueRows([decode]).Single().RecommendedFix);
+        Assert.All(data.LoadIssueRows([decode, rot]), row => Assert.Equal(ActionIds.RestoreCopy, row.RecommendedFix));
+        Assert.Equal(ActionIds.RestoreCopy, Remediator.CommonFixes([.. data.LoadIssueRows([rot]).Concat(data.LoadIssueRows([decode])).Select(r => r.Fixes)])[0]);
+
+        // Scan again, Copy path and Quarantine read only the files: no fixes, same file and path.
+        IssueRow light = data.LoadIssueRows([decode], withFixes: false).Single();
+        Assert.Empty(light.Fixes);
+        Assert.Equal((rotted, @"Z:\Media\Clips\clip.mp4"), (light.FileId, light.FullPath));
+    }
+
+    /// <summary>
+    /// Store as 16-bit decodes and encodes the audio again, as Rewrite FLAC does: on a FLAC whose frames fail their
+    /// checksums it stored the damage under fresh checksums and closed the checksum finding. It is offered only when
+    /// nothing says the audio is damaged, in the list and in the drawer.
+    /// </summary>
+    [Fact]
+    public void Store_as_16_bit_is_offered_only_for_audio_that_decodes_cleanly()
+    {
+        using TestDatabase db = new("issues-shrink");
+        long root = IssueFixtures.Root(db.Database, @"Z:\Music", "Music");
+        long damaged = IssueFixtures.File(db.Database, root, "Album", "damaged.flac", MediaKind.Audio);
+        long clean = IssueFixtures.File(db.Database, root, "Album", "clean.flac", MediaKind.Audio);
+        long damagedPadded = IssueFixtures.Finding(db.Database, damaged, "AUD-PADDED-BITS", Severity.Medium);
+        _ = IssueFixtures.Finding(db.Database, damaged, "COR-CHECKSUM", Severity.High, evidenceJson: """{"md5":"Mismatch","checksumErrors":3}""");
+        long cleanPadded = IssueFixtures.Finding(db.Database, clean, "AUD-PADDED-BITS", Severity.Medium);
+        LiveUiData data = IssueFixtures.Data(db);
+
+        Dictionary<long, IssueRow> rows = data.LoadIssueRows([damagedPadded, cleanPadded]).ToDictionary(r => r.Id);
+        Assert.Empty(rows[damagedPadded].Fixes);
+        Assert.Equal([ActionIds.ShrinkBitDepth], rows[cleanPadded].Fixes);
+        Assert.DoesNotContain(ActionIds.ShrinkBitDepth, data.LoadFileDetail(damaged)!.FixActionIds!);
+        Assert.Equal(ActionIds.ShrinkBitDepth, data.LoadFileDetail(clean)!.RecommendedActionId);
+    }
+
+    /// <summary>
+    /// Scan again on files in nested folders scans the deepest folder that holds them all, once: a scope per file's
+    /// folder listed the nested folders again for each.
+    /// </summary>
+    [Fact]
+    public void Scan_again_scans_the_deepest_folder_holding_the_files()
+    {
+        Assert.Equal(@"Music\Album", DrawerActions.CommonFolder([@"Music\Album", @"Music\Album\Disc 2", @"music\ALBUM"]));
+        Assert.Equal("Music", DrawerActions.CommonFolder([@"Music\Album A", @"Music\Album B"]));
+        Assert.Null(DrawerActions.CommonFolder([@"Music\Album", string.Empty]));
+        Assert.Null(DrawerActions.CommonFolder([@"Music\Album", "Video"]));
+        Assert.Equal(@"Photos\2019", DrawerActions.CommonFolder([@"Photos\2019"]));
     }
 
     /// <summary>Details in the Ignored view show the ignored finding (the drawer said "FINDINGS (0)"), with Stop ignoring.</summary>

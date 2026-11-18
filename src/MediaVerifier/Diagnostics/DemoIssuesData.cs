@@ -60,7 +60,7 @@ internal sealed partial class DemoUiData
             At(16, 3, 12));
     }
 
-    public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids) => [.. ids.Select(id => Rows.First(r => r.Id == id))];
+    public IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids, bool withFixes = true) => [.. ids.Select(id => Rows.First(r => r.Id == id))];
 
     public SeverityCounts CountIssues(FindingFilter filter) => LoadIssues(new IssuesQuery(filter)).TierCounts;
 

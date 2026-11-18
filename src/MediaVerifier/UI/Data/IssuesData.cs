@@ -153,8 +153,12 @@ internal interface IIssuesData
     /// <summary>The tier counts <see cref="LoadIssues"/> gives for <paramref name="filter"/>, without the list (the new-problems pill).</summary>
     SeverityCounts CountIssues(FindingFilter filter);
 
-    /// <summary>The rows of the given findings, in the given order; findings that are gone are left out.</summary>
-    IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids);
+    /// <summary>
+    /// The rows of the given findings, in the given order; findings that are gone are left out. Without
+    /// <paramref name="withFixes"/> the rows carry no fixes and the file facts behind them are not read (Scan again, Copy
+    /// path, Quarantine and a fix already chosen need only the files).
+    /// </summary>
+    IReadOnlyList<IssueRow> LoadIssueRows(IReadOnlyList<long> ids, bool withFixes = true);
 
     /// <summary>Everything the drawer shows about a file and its open findings, healthy copies looked for.</summary>
     FileDetail? LoadFileDetail(long fileId);

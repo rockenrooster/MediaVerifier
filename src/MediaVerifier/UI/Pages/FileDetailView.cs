@@ -57,8 +57,8 @@ internal sealed class FileDetailView : KitControl
     private Rectangle _compareRect;
     private readonly List<(Rectangle Hit, int Index)> _stripHits = [];
 
-    // The breadcrumb's segments as painted, for the links to Library > Browse.
-    private readonly List<(Rectangle Hit, int Index)> _crumbHits = [];
+    // The breadcrumb, whose segments link to Library > Browse.
+    private readonly CrumbStrip _crumbs = new();
     private static readonly System.Drawing.Imaging.ImageAttributes Faded = FadedAttributes();
 
     public FileDetailView()
@@ -88,10 +88,11 @@ internal sealed class FileDetailView : KitControl
                 CopyRequested?.Invoke(this, shown.TechnicalText);
             }
         };
+        _crumbs.SegmentClicked += (_, index) => CrumbClicked?.Invoke(this, index);
         _historyToggle.TabIndex = 1000;
         _technicalToggle.TabIndex = 1001;
         _copyDetails.TabIndex = 1002;
-        Controls.AddRange([_close, _primary, _showInFolder, _more, _historyToggle, _technicalToggle, _copyDetails]);
+        Controls.AddRange([_close, _crumbs, _primary, _showInFolder, _more, _historyToggle, _technicalToggle, _copyDetails]);
     }
 
     public event EventHandler? CloseRequested;
@@ -138,6 +139,7 @@ internal sealed class FileDetailView : KitControl
         _historyOpen = false;
         _technicalOpen = false;
         StartEvidence(detail);
+        _crumbs.Crumbs = detail.Breadcrumb;
         _primary.Text = primaryAction;
         _hasPrimary = primaryAction.Length > 0;
         _primary.Visible = _hasPrimary;
@@ -221,6 +223,9 @@ internal sealed class FileDetailView : KitControl
 
         int width = Width;
         _close.Bounds = new Rectangle(width - S(Pad) - S(32), S(16), S(32), S(32));
+
+        // The breadcrumb line of the header (centred at 53), with room around its text for the focus ring.
+        _crumbs.Bounds = new Rectangle(S(100) - S(CrumbStrip.Inset), S(53) - S(12), Math.Max(0, width - S(100) - S(56)) + S(CrumbStrip.Inset) + S(3), S(24));
         int x = S(Pad);
         int y = S(126);
 
@@ -296,7 +301,6 @@ internal sealed class FileDetailView : KitControl
         int textX = S(100);
         int textWidth = Width - textX - S(56);
         KitPaint.DrawText(g, d.Name, type.Subtitle, t.Text, textX, S(30), textWidth);
-        DrawCrumbs(g, d.Breadcrumb, textX, S(53), textWidth, t, type, _crumbHits);
         KitPaint.DrawText(g, d.FormatLine, type.Caption, t.Text2, textX, S(73), textWidth);
         DrawFingerprint(g, d, t, type);
         KitPaint.HorizontalLine(g, t.Stroke, 0, Width, S(174), SF(1));
@@ -324,15 +328,6 @@ internal sealed class FileDetailView : KitControl
             if (hit.Contains(e.Location))
             {
                 SelectFrame(index);
-                return;
-            }
-        }
-
-        foreach ((Rectangle hit, int index) in _crumbHits)
-        {
-            if (hit.Contains(e.Location))
-            {
-                CrumbClicked?.Invoke(this, index);
                 return;
             }
         }
@@ -409,11 +404,6 @@ internal sealed class FileDetailView : KitControl
             overMark |= hit.Contains(e.Location);
         }
 
-        foreach ((Rectangle hit, _) in _crumbHits)
-        {
-            overMark |= hit.Contains(e.Location);
-        }
-
         Cursor = overMark ? Cursors.Hand : Cursors.Default;
     }
 
@@ -423,26 +413,136 @@ internal sealed class FileDetailView : KitControl
         base.OnThemeChanged();
     }
 
-    /// <summary>The breadcrumb (subplan 09, Detail drawer); each segment's rectangle goes to <paramref name="hits"/> for its link.</summary>
-    private static void DrawCrumbs(Graphics g, IReadOnlyList<string> crumbs, int x, int y, int width, ThemeTokens t, TypeRamp type, List<(Rectangle Hit, int Index)> hits)
+    /// <summary>
+    /// The breadcrumb (subplan 09, Detail drawer): each segment links to Library → Browse at that folder. One tab stop
+    /// (the links were mouse only): Left and Right move between the segments, Enter or Space opens the focused one.
+    /// </summary>
+    private sealed class CrumbStrip : KitControl
     {
-        int dpi = (int)Math.Round(type.Caption.Size * 96 / 11f);
-        int right = x + width;
-        int half = Dpi.Scale(9, dpi);
-        hits.Clear();
-        for (int i = 0; i < crumbs.Count && x < right; i++)
+        /// <summary>Room left of the text for the focus ring.</summary>
+        public const int Inset = 6;
+
+        // The segments that fit, as laid out (text left edge and the width shown).
+        private readonly List<Rectangle> _hits = [];
+        private IReadOnlyList<string> _crumbs = [];
+        private int _focus;
+
+        public CrumbStrip()
         {
-            if (i > 0)
+            TabStop = false;
+            AccessibleRole = AccessibleRole.Link;
+        }
+
+        public event EventHandler<int>? SegmentClicked;
+
+        /// <summary>The segments; the keyboard starts on the last (the file's own folder).</summary>
+        public IReadOnlyList<string> Crumbs
+        {
+            get => _crumbs;
+            set
             {
-                IconRenderer.Draw(g, IconName.ChevronRight, x + Dpi.ScaleF(2, dpi), y - Dpi.ScaleF(6, dpi), 12, dpi, t.Text3);
-                x += Dpi.Scale(16, dpi);
+                _crumbs = value;
+                _focus = value.Count - 1;
+                Measure();
+            }
+        }
+
+        protected override string? FallbackAccessibleName => Current >= 0 ? _crumbs[Current] : null;
+
+        /// <summary>The segment the keyboard is on, among those shown; -1 when none is.</summary>
+        private int Current => Math.Min(_focus, _hits.Count - 1);
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            Measure();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            ThemeTokens t = Tokens;
+            Graphics g = e.Graphics;
+            g.Clear(t.Surface);
+            int centre = Height / 2;
+            for (int i = 0; i < _hits.Count; i++)
+            {
+                Rectangle hit = _hits[i];
+                if (i > 0)
+                {
+                    IconRenderer.Draw(g, IconName.ChevronRight, hit.X - S(16) + SF(2), centre - SF(6), 12, DeviceDpi, t.Text3);
+                }
+
+                KitPaint.DrawText(g, _crumbs[i], Type.Caption, i == _crumbs.Count - 1 ? t.Text : t.Text2, hit.X, centre, hit.Width);
             }
 
-            int w = KitPaint.MeasureWidth(crumbs[i], type.Caption);
-            int shown = Math.Min(w + 1, right - x);
-            KitPaint.DrawText(g, crumbs[i], type.Caption, i == crumbs.Count - 1 ? t.Text : t.Text2, x, y, shown);
-            hits.Add((new Rectangle(x, y - half, Math.Max(0, shown), 2 * half), i));
-            x += w + Dpi.Scale(4, dpi);
+            if (KeyboardFocused && Current >= 0)
+            {
+                KitPaint.DrawFocusRing(g, _hits[Current], SF(2), DeviceDpi);
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            Cursor = HitAt(e.Location) >= 0 ? Cursors.Hand : Cursors.Default;
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (e.Button == MouseButtons.Left && HitAt(e.Location) is int index and >= 0)
+            {
+                SegmentClicked?.Invoke(this, index);
+            }
+        }
+
+        protected override bool IsInputKey(Keys keyData) => keyData is Keys.Left or Keys.Right or Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (Current < 0)
+            {
+                return;
+            }
+
+            switch (e.KeyCode)
+            {
+                case Keys.Left or Keys.Right:
+                    _focus = Math.Clamp(Current + (e.KeyCode == Keys.Left ? -1 : 1), 0, _hits.Count - 1);
+                    Invalidate();
+                    e.Handled = true;
+                    break;
+                case Keys.Enter or Keys.Space:
+                    SegmentClicked?.Invoke(this, Current);
+                    e.Handled = true;
+                    break;
+            }
+        }
+
+        private int HitAt(Point point) => _hits.FindIndex(hit => hit.Contains(point));
+
+        /// <summary>Lays out the segments that fit; a segment cut off at the edge is shown in part.</summary>
+        private void Measure()
+        {
+            _hits.Clear();
+            int x = S(Inset);
+            int right = Width - S(3);
+            for (int i = 0; i < _crumbs.Count; i++)
+            {
+                x += i > 0 ? S(16) : 0;
+                if (x >= right)
+                {
+                    break;
+                }
+
+                int w = KitPaint.MeasureWidth(_crumbs[i], Type.Caption);
+                _hits.Add(new Rectangle(x, (Height / 2) - S(8), Math.Min(w + 1, right - x), S(16)));
+                x += w + S(4);
+            }
+
+            TabStop = _hits.Count > 0;
+            Invalidate();
         }
     }
 

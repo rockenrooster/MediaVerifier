@@ -263,10 +263,17 @@ internal static class Remediator
             return;
         }
 
-        // An undo swaps files back as a repair does: one at a time, never beside a running batch.
+        // An undo swaps files back as a repair does: one at a time, never beside a running batch, nor while a scheduled
+        // scan in another process reads the folder (it cannot be paused from here).
         if (s_running is not null)
         {
             services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Repair.AlreadyRunning, string.Empty));
+            return;
+        }
+
+        if (services.BackgroundRunActive())
+        {
+            services.ShowToast?.Invoke(new ToastContent(Severity.Medium, Strings.Shell.ScheduledRunning, Strings.Repair.TryAfterScan));
             return;
         }
 

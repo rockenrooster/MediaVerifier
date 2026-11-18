@@ -440,6 +440,8 @@ public sealed class IssuesPageTests
     {
         bool loadingAgain = true;
         int gone = 0;
+        bool goneRowLoaded = false;
+        bool loadingAfterPaint = true;
         WithIssues(
             database =>
             {
@@ -464,10 +466,200 @@ public sealed class IssuesPageTests
                 page.RequestRows(250);
                 loadingAgain = Field<bool>(page, "_loadingRows");
                 gone = deleted.Count(Field<HashSet<long>>(page, "_gone").Contains);
+
+                // Painted, a row that went away is an empty row, not a skeleton that asks again.
+                IListSource source = Field<IListSource>(page, "_source");
+                int position = Enumerable.Range(0, source.Count).First(i => source.IdOf(i) == deleted[0]);
+                ListRow painted = new() { Loaded = true };
+                source.Fill(position, painted);
+                goneRowLoaded = painted.Loaded;
+                loadingAfterPaint = Field<bool>(page, "_loadingRows");
             });
 
         Assert.Equal(3, gone);
         Assert.False(loadingAgain, "rows that went away were asked for again");
+        Assert.True(goneRowLoaded, "a row that went away was painted as a skeleton");
+        Assert.False(loadingAfterPaint, "painting a row that went away asked for rows again");
+    }
+
+    /// <summary>
+    /// A read the database cannot answer (locked by a scan's write) says so in a toast; it raised the error dialog from
+    /// a Shift-click (the Fix… state) or Copy path. Fix… stays off.
+    /// </summary>
+    [Fact]
+    public void A_failed_read_says_so_instead_of_raising_the_error_dialog()
+    {
+        List<ToastContent> toasts = [];
+        bool fixEnabled = true;
+        WithIssues(
+            database =>
+            {
+                long root = IssueFixtures.Root(database, @"Q:\Photos", "Photos");
+                Many(database, root, 600, MediaKind.Photo, "GEN-ZEROFILL");
+            },
+            (form, services, page) =>
+            {
+                services.ShowToast = toasts.Add;
+
+                // Reads from here fail as a locked table does: the findings table of the data the page reads is gone.
+                using TestDatabase broken = new("issues-broken");
+                Db(() =>
+                {
+                    broken.Database.Writer.ExecuteAsync(c => c.Command("DROP TABLE findings").ExecuteNonQuery(), ChangeFlags.Findings).GetAwaiter().GetResult();
+                    return true;
+                });
+                IUiData live = services.Data;
+                typeof(UiServices).GetProperty(nameof(UiServices.Data))!.SetValue(services, IssueFixtures.Data(broken));
+                try
+                {
+                    VirtualList list = Field<VirtualList>(page, "_list");
+                    list.SelectAll();
+                    Pump(TimeSpan.FromMilliseconds(500));
+                    fixEnabled = Field<SelectionBar>(page, "_selectionBar").Buttons[0].Enabled;
+                    Task copy = (Task)typeof(IssuesPage).GetMethod("CopyAsync", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(page, [page.TargetIds()])!;
+                    Settle(() => copy.IsCompleted);
+                    list.ClearSelection();
+                }
+                finally
+                {
+                    typeof(UiServices).GetProperty(nameof(UiServices.Data))!.SetValue(services, live);
+                }
+            });
+
+        Assert.False(fixEnabled, "Fix… was on for rows that could not be read");
+        Assert.Equal([Strings.UnhandledError.Title], toasts.Select(t => t.Title));
+    }
+
+    /// <summary>
+    /// After a reload that keeps the selection, Fix… stays as it was until the new answer is in: it went off for every
+    /// reload while every selected row was read again.
+    /// </summary>
+    [Fact]
+    public void Fix_keeps_its_state_through_a_reload()
+    {
+        bool before = false;
+        bool rightAfter = false;
+        WithIssues(
+            database =>
+            {
+                long root = IssueFixtures.Root(database, @"Q:\Photos", "Photos");
+                Many(database, root, 600, MediaKind.Photo, "GEN-ZEROFILL");
+            },
+            (form, services, page) =>
+            {
+                VirtualList list = Field<VirtualList>(page, "_list");
+                KitButton fix = Field<SelectionBar>(page, "_selectionBar").Buttons[0];
+                list.SelectAll();
+                Settle(() => fix.Enabled, TimeSpan.FromSeconds(5));
+                before = fix.Enabled;
+                page.Reload();
+                Settle(() => page.Loading.IsCompleted);
+                rightAfter = fix.Enabled;
+                Settle(() => Field<IReadOnlyList<string>?>(page, "_shared") is not null);
+            });
+
+        Assert.True(before, "Fix… stayed off for photos that share Save a preview");
+        Assert.True(rightAfter, "Fix… went off while the selection was read again after a reload");
+    }
+
+    /// <summary>
+    /// Stop during a batch: the file in hand is put back where it was and its operation reads Cancelled, the files not
+    /// started have no operation, and the toast says they were skipped (subplan 12: Cancel mid-file).
+    /// </summary>
+    [Fact]
+    public void Stop_puts_the_file_in_hand_back_and_starts_no_other()
+    {
+        bool firstBack = false;
+        OperationStatus firstStatus = OperationStatus.Done;
+        int others = -1;
+        List<ToastContent> toasts = [];
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("issues-stop");
+            string library = Directory.CreateDirectory(temp.Combine("Library")).FullName;
+            DateTime written = new(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+            string[] paths = [.. Enumerable.Range(1, 3).Select(i => Write(Path.Combine(library, "Album", $"IMG_{i}.jpg"), written))];
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+            long[] files = Db(() =>
+            {
+                long root = IssueFixtures.Root(services.Database, library, "Library");
+                return paths.Select(p => IssueFixtures.File(services.Database, root, "Album", Path.GetFileName(p), MediaKind.Photo, new FileInfo(p).Length, written.Ticks)).ToArray();
+            });
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = toasts.Add;
+
+            // Stop is pressed while the first file is being moved: after its backup step began.
+            services.Operations!.BeforeStep = step =>
+            {
+                if (step == "backup")
+                {
+                    Remediator.Stop();
+                }
+            };
+            Task<bool>? run = null;
+            Answer<RepairDialog>(() => run = Remediator.RunAsync(services, form, files, ActionIds.Quarantine), dialog => dialog.DialogResult = DialogResult.OK);
+            Settle(() => run?.IsCompleted == true, TimeSpan.FromSeconds(20));
+            firstBack = File.Exists(paths[0]);
+            List<OperationRecord> journal = Db(() => services.Database.Journal.List(10));
+            firstStatus = journal.Single(o => o.FileId == files[0]).Status;
+            others = journal.Count(o => o.FileId != files[0]);
+            form.Close();
+        });
+
+        Assert.True(firstBack, "the file in hand stayed in quarantine");
+        Assert.Equal(OperationStatus.Cancelled, firstStatus);
+        Assert.Equal(0, others);
+        Assert.Equal([string.Format(CultureInfo.CurrentCulture, Strings.Repair.Skipped, string.Format(CultureInfo.CurrentCulture, Strings.Repair.ManyPhotos, "3"))], toasts.Select(t => t.Title));
+    }
+
+    /// <summary>
+    /// The drawer's breadcrumb links are reachable from the keyboard (they were mouse only): one tab stop, Left and
+    /// Right move between the segments, Enter or Space opens the focused one.
+    /// </summary>
+    [Fact]
+    public void Breadcrumb_links_open_from_the_keyboard()
+    {
+        List<int> opened = [];
+        bool tabStop = false;
+        Sta.Run(() =>
+        {
+            using FileDetailView view = new() { Width = 480 };
+            view.CrumbClicked += (_, index) => opened.Add(index);
+            view.Bind(new FileDetail(1, "clip.mp4", @"Z:\Media\Clips\clip.mp4", ["Z:", "Media", "Clips"], MediaKind.Video, "MP4", FingerprintState.None, null, 0, null, [], [], string.Empty, 4096, []), DateTimeOffset.UtcNow, string.Empty);
+            Control crumbs = Field<Control>(view, "_crumbs");
+            tabStop = crumbs.TabStop;
+            foreach (Keys key in new[] { Keys.Enter, Keys.Left, Keys.Enter, Keys.Left, Keys.Left, Keys.Space, Keys.Right })
+            {
+                PressKey(crumbs, key);
+            }
+
+            PressKey(crumbs, Keys.Enter);
+        });
+
+        Assert.True(tabStop, "the breadcrumb could not be reached with Tab");
+        Assert.Equal([2, 1, 0, 1], opened);
+    }
+
+    /// <summary>Undo waits while a scheduled scan in another process reads the folders, as a repair does (it swapped files under it).</summary>
+    [Fact]
+    public void Undo_waits_for_a_scheduled_scan()
+    {
+        List<ToastContent> toasts = [];
+        WithIssues(
+            database => IssueFixtures.Root(database, @"Q:\Media", "Media"),
+            (form, services, page) =>
+            {
+                services.ShowToast = toasts.Add;
+                typeof(UiServices).GetProperty(nameof(UiServices.BackgroundProbe))!.SetValue(services, (Func<bool>)(() => true));
+                Task undo = Remediator.UndoBatchAsync(services, 1, form);
+                Settle(() => undo.IsCompleted);
+            });
+
+        Assert.Equal([Strings.Shell.ScheduledRunning], toasts.Select(t => t.Title));
+        Assert.Equal(Strings.Repair.TryAfterScan, toasts[0].Text);
     }
 
     /// <summary>
