@@ -12,6 +12,7 @@ using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Lists;
 using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -356,56 +357,4 @@ public sealed class ToolsPageTests
         target.GetType().GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(target, [argument]);
         Pump(TimeSpan.FromMilliseconds(100));
     }
-
-    /// <summary>Runs <paramref name="open"/>, answers the first <typeparamref name="T"/> dialog it shows, returns its title.</summary>
-    private static string? Answer<T>(Action open, Action<T> answer)
-        where T : Form
-    {
-        string? title = null;
-        using System.Windows.Forms.Timer timer = new() { Interval = 100 };
-        timer.Tick += (_, _) =>
-        {
-            if (title is null && Application.OpenForms.OfType<T>().FirstOrDefault() is T dialog && dialog.Visible)
-            {
-                title = dialog.Text;
-                answer(dialog);
-            }
-        };
-        timer.Start();
-        open();
-        Settle(() => title is not null && !Application.OpenForms.OfType<T>().Any());
-        timer.Stop();
-        return title;
-    }
-
-    private static T Find<T>(Control root, Func<T, bool> match)
-        where T : Control =>
-        Descendants(root).OfType<T>().FirstOrDefault(match) ?? throw new InvalidOperationException($"No matching {typeof(T).Name} in {root.GetType().Name}.");
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
-
-    /// <summary>An engine mutex of the test's own: a MediaVerifier scanning on this machine does not block the test.</summary>
-    private static string OwnEngine() => @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N");
-
-    private static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    private static void Pump(TimeSpan time) => Settle(() => false, time);
 }

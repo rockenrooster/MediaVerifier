@@ -7,6 +7,7 @@ using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -316,31 +317,4 @@ public sealed class SettingsBehaviourTests
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern nint SendMessageW(nint window, int message, nint wParam, nint lParam);
-
-    internal static T Find<T>(Control root, Func<T, bool> match)
-        where T : Control => Descendants(root).OfType<T>().First(match);
-
-    internal static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control inner in Descendants(child))
-            {
-                yield return inner;
-            }
-        }
-    }
-
-    internal static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    internal static void Pump(TimeSpan time) => Settle(() => false, time);
 }

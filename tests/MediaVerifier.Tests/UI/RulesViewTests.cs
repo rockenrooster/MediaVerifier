@@ -8,7 +8,7 @@ using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
-using static MediaVerifier.Tests.UI.SettingsBehaviourTests;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 

@@ -8,6 +8,7 @@ using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI.Kit.Lists;
 using MediaVerifier.UI.Pages;
 using Xunit.Abstractions;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -104,18 +105,6 @@ public sealed class IssuesApplyPerfTests(ITestOutputHelper output)
     }
 
     private static string Join(IEnumerable<double> values) => string.Join(", ", values.Select(v => v.ToString("0.0", CultureInfo.InvariantCulture)));
-
-    private static void Settle(Func<bool> done, TimeSpan limit)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < limit)
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    private static void Pump(TimeSpan time) => Settle(() => false, time);
 
     private static T Field<T>(object owner, string name) =>
         (T)owner.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(owner)!;

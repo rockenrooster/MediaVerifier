@@ -10,6 +10,7 @@ using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Lists;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -383,42 +384,6 @@ public sealed class LibraryPageTests
 
     private static void Invoke(object owner, string name, params object[] arguments) =>
         owner.GetType().GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(owner, arguments);
-
-    private static T Find<T>(Control root, Func<T, bool>? match = null)
-        where T : Control =>
-        Descendants(root).OfType<T>().FirstOrDefault(match ?? (_ => true)) ?? throw new InvalidOperationException($"No {typeof(T).Name} in {root.GetType().Name}.");
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
-
-    private static void Settle(Func<bool> done)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < TimeSpan.FromSeconds(10))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    private static void Pump(TimeSpan time)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (watch.Elapsed < time)
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);

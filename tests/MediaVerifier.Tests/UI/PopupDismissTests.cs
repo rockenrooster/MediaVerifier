@@ -4,6 +4,7 @@ using MediaVerifier.Diagnostics;
 using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -285,16 +286,6 @@ public sealed class PopupDismissTests
     private const int WmNcHitTest = 0x0084;
 
     private static IntPtr Pack(Point p) => (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
-
-    private static void Pump(TimeSpan time)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (watch.Elapsed < time)
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);

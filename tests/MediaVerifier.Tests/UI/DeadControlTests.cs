@@ -7,6 +7,7 @@ using MediaVerifier.UI;
 using MediaVerifier.UI.Data;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -146,17 +147,5 @@ public sealed class DeadControlTests
         }
 
         return false;
-    }
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
     }
 }

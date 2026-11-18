@@ -9,6 +9,7 @@ using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -156,30 +157,4 @@ public sealed class AddFolderDialogTests
     }
 
     private static T? Field<T>(object target, string name) => (T?)target.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(target);
-
-    private static T Find<T>(Control root, Func<T, bool> match)
-        where T : Control =>
-        Descendants(root).OfType<T>().FirstOrDefault(match) ?? throw new InvalidOperationException($"No matching {typeof(T).Name} in {root.GetType().Name}.");
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
-
-    private static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
 }

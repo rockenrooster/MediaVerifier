@@ -5,6 +5,7 @@ using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -270,26 +271,6 @@ public sealed class AddFolderTests
         catch (InvalidOperationException)
         {
             return null;
-        }
-    }
-
-    private static void Settle(Task task)
-    {
-        Stopwatch limit = Stopwatch.StartNew();
-        while (!task.IsCompleted && limit.Elapsed < TimeSpan.FromSeconds(10))
-        {
-            Application.DoEvents();
-            Thread.Sleep(1);
-        }
-    }
-
-    private static void Pump(TimeSpan time)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (watch.Elapsed < time)
-        {
-            Application.DoEvents();
-            Thread.Sleep(1);
         }
     }
 }

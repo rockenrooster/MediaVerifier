@@ -16,6 +16,7 @@ using MediaVerifier.UI.Kit.Lists;
 using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
 using Microsoft.Data.Sqlite;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -867,53 +868,6 @@ public sealed class IssuesPageTests
     /// <summary>A key on a control, through its own key handling (the keyboard's path).</summary>
     private static void PressKey(Control control, Keys key) =>
         typeof(Control).GetMethod("OnKeyDown", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(control, [new KeyEventArgs(key)]);
-
-    /// <summary>Runs <paramref name="open"/>, answers the first <typeparamref name="T"/> dialog it shows, returns its title.</summary>
-    private static string? Answer<T>(Action open, Action<T> answer)
-        where T : Form
-    {
-        string? title = null;
-        using System.Windows.Forms.Timer timer = new() { Interval = 100 };
-        timer.Tick += (_, _) =>
-        {
-            if (title is null && Application.OpenForms.OfType<T>().FirstOrDefault() is T dialog && dialog.Visible)
-            {
-                title = dialog.Text;
-                answer(dialog);
-            }
-        };
-        timer.Start();
-        open();
-        Settle(() => title is not null && !Application.OpenForms.OfType<T>().Any());
-        timer.Stop();
-        return title;
-    }
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
-
-    private static string OwnEngine() => @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N");
-
-    private static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    private static void Pump(TimeSpan time) => Settle(() => false, time);
 
     /// <summary>Database work made on a pool thread: on the UI thread it would trip the guard that keeps the app off it.</summary>
     private static T Db<T>(Func<T> work) => Task.Run(work).GetAwaiter().GetResult();

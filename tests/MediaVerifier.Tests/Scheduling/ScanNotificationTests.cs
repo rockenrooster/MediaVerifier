@@ -8,6 +8,7 @@ using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Scheduling;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.Tests.TestSupport;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.Scheduling;
 
@@ -121,14 +122,4 @@ public sealed class ScanNotificationTests
 
     private static UiServices Live(AppState state, TempDirectory temp) =>
         UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N"));
-
-    private static void Settle(Func<bool> done, TimeSpan limit)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < limit)
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
 }

@@ -2,6 +2,7 @@ using MediaVerifier.App;
 using MediaVerifier.Diagnostics;
 using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -79,28 +80,6 @@ public sealed class AccessibilityTests
             {
                 problems.Add($"{where}: {control.GetType().Name} \"{name}\" has unnamed rows");
             }
-        }
-    }
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control inner in Descendants(child))
-            {
-                yield return inner;
-            }
-        }
-    }
-
-    private static void Settle(Task task)
-    {
-        System.Diagnostics.Stopwatch limit = System.Diagnostics.Stopwatch.StartNew();
-        while (!task.IsCompleted && limit.Elapsed < TimeSpan.FromSeconds(10))
-        {
-            Application.DoEvents();
-            Thread.Sleep(1);
         }
     }
 }

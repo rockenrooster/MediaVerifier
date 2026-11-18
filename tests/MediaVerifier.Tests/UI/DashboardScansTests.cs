@@ -15,6 +15,7 @@ using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
 using MediaVerifier.UI.Shell;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -597,16 +598,6 @@ public sealed class DashboardScansTests
         }
 
         throw new MissingMethodException(owner.GetType().Name, name);
-    }
-
-    private static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
     }
 
     /// <summary>The test's own database reads, made on a pool thread (the UI thread's guard throws).</summary>

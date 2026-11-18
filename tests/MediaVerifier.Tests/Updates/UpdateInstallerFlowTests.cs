@@ -10,6 +10,7 @@ using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Kit.Popups;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.Updates;
 
@@ -119,16 +120,4 @@ public sealed class UpdateInstallerFlowTests
         Settle(() => answered && !Application.OpenForms.OfType<T>().Any());
         timer.Stop();
     }
-
-    private static void Settle(Func<bool> done, TimeSpan? limit = null)
-    {
-        Stopwatch watch = Stopwatch.StartNew();
-        while (!done() && watch.Elapsed < (limit ?? TimeSpan.FromSeconds(10)))
-        {
-            Application.DoEvents();
-            Thread.Sleep(5);
-        }
-    }
-
-    private static void Pump(TimeSpan time) => Settle(() => false, time);
 }

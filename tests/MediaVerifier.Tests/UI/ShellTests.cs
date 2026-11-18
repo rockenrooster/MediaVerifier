@@ -19,6 +19,7 @@ using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Pages;
 using MediaVerifier.UI.Shell;
 using Microsoft.Data.Sqlite;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -916,18 +917,6 @@ public sealed class ShellTests
 
     private static IReadOnlyList<PopupItem> Items(PopupList list) =>
         (IReadOnlyList<PopupItem>)typeof(PopupList).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(list)!;
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 
     /// <summary>Runs <paramref name="show"/>, answers the first dialog it shows with OK, and returns that dialog's title.</summary>
     private static string? ConfirmNext(Action show)

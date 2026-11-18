@@ -6,6 +6,7 @@ using MediaVerifier.Tests.TestSupport;
 using MediaVerifier.UI.Data;
 using MediaVerifier.UI.Kit;
 using MediaVerifier.UI.Pages;
+using static MediaVerifier.Tests.TestSupport.Ui;
 
 namespace MediaVerifier.Tests.UI;
 
@@ -153,18 +154,6 @@ public sealed class ScreenCensusTests
     /// <summary>The rule row that shows an effect line (the demo opens Clipping and changes it).</summary>
     private static Control OpenRule(Control root) =>
         Descendants(root).Where(c => c.GetType().Name == "RuleRow").Single(r => Descendants(r).OfType<InfoBar>().Any(b => b.Visible));
-
-    private static IEnumerable<Control> Descendants(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (Control nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 
     [Theory]
     [InlineData(960, 600)]
