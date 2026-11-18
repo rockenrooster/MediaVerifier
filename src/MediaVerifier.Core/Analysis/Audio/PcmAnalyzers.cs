@@ -298,7 +298,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
                     long position = _frames + f + i;
                     for (int c = 0; c < _channels; c++)
                     {
-                        _states[c].Next(chunk[(i * _channels) + c], position, this);
+                        _states[c].Next(chunk[(i * _channels) + c], position);
                     }
                 }
             }
@@ -306,7 +306,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
             {
                 for (int c = 0; c < _channels; c++)
                 {
-                    _states[c].Skip(chunk, c, _channels, _frames + f, this);
+                    _states[c].Skip(chunk, c, _channels, _frames + f);
                 }
             }
 
@@ -397,7 +397,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
         int longest = 0;
         foreach (ChannelState state in _states)
         {
-            state.Finish(this);
+            state.Finish();
             state.Sum(out long r, out long s, out int l);
             if (s > worstSamples)
             {
@@ -451,7 +451,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
 
         public List<long> Positions { get; } = new(MaxPositions);
 
-        public void Next(float value, long position, ClippingAnalyzer owner)
+        public void Next(float value, long position)
         {
             double x = value;
             double a = Math.Abs(x);
@@ -496,7 +496,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
         /// The state <see cref="Next"/> would reach over a chunk where no sample continues a run: a pending
         /// run closes at the first sample, and only the last sample can start one.
         /// </summary>
-        public void Skip(ReadOnlySpan<float> chunk, int channel, int channels, long position, ClippingAnalyzer owner)
+        public void Skip(ReadOnlySpan<float> chunk, int channel, int channels, long position)
         {
             int frames = chunk.Length / channels;
             float first = chunk[channel];
@@ -532,7 +532,7 @@ public sealed class ClippingAnalyzer : IPcmAnalyzer
             _previous = last;
         }
 
-        public void Finish(ClippingAnalyzer owner)
+        public void Finish()
         {
             if (_run >= 3)
             {

@@ -46,7 +46,6 @@ internal sealed class IssuesPage : PageBase
     private bool _counting;
     private readonly IssuesSource _source;
     private readonly FileDetailView _detail = new();
-    private readonly DrawerActions _drawer;
     private readonly ScrollPanel _detailScroll;
     private IssuesQuery _query = new(new FindingFilter());
     private IssuesData? _data;
@@ -88,7 +87,8 @@ internal sealed class IssuesPage : PageBase
         _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
         _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
-        _drawer = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
+        // The drawer's buttons; the view's events keep the actions alive.
+        _ = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
         {
             ReloadAll();
             UiTask.Run(LoadDetailAsync(fileId));
@@ -1188,7 +1188,7 @@ internal sealed class IssuesPage : PageBase
         string[] paths = [.. rows.Select(r => r.FullPath).Distinct(StringComparer.OrdinalIgnoreCase)];
         if (paths.Length > 0)
         {
-            DrawerActions.Copy(Services, paths, DrawerActions.PathsCopied(paths.Length));
+            DrawerActions.Copy(paths, DrawerActions.PathsCopied(paths.Length));
         }
     }
 

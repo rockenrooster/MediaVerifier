@@ -40,8 +40,6 @@ internal static class KitPaint
         NativeText.Draw(g, text, font, color, new Rectangle(centreX - (width / 2) - 1, centreY - (lineHeight / 2), width + 2, lineHeight), BaseFlags | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
     }
 
-    public static int MeasureWidth(Graphics g, string text, Font font) => NativeText.Measure(text, font);
-
     public static int MeasureWidth(string text, Font font) => NativeText.Measure(text, font);
 
     public static void FillRoundedRect(Graphics g, RectangleF rect, float radius, Color color)

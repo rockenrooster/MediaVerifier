@@ -167,7 +167,7 @@ public sealed class ListTests
             DataPaint.Donut(g, new PointF(200, 150), 22, 6, 1, ThemeService.Tokens.Ok.Fill);
             DataPaint.Sparkline(g, new RectangleF(300, 120, 200, 40), [3, 5, 4, 8, 6, 7], dpi);
             DataPaint.Timeline(g, new Rectangle(520, 100, 260, 160), [("Scan finished", "03:12"), ("Verified", "Yesterday")], 40, dpi);
-            VirtualList.DrawScrollThumb(g, new Rectangle(780, 10, 6, 40), false, dpi);
+            VirtualList.DrawScrollThumb(g, new Rectangle(780, 10, 6, 40), false);
             Breadcrumb.Draw(g, new Rectangle(10, 260, 400, 32), ["Music", "Night Drive", "Overpass"], 1, -1, dpi);
         }
     }

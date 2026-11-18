@@ -146,7 +146,7 @@ internal sealed class PopupList : TransientPopup
         if (first > 0 || first + visible < items.Count)
         {
             Rectangle thumb = ThumbRect(bounds, items.Count, visible, first, dpi);
-            Lists.VirtualList.DrawScrollThumb(g, thumb, hover: false, dpi);
+            Lists.VirtualList.DrawScrollThumb(g, thumb, hover: false);
         }
     }
 

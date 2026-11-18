@@ -66,7 +66,6 @@ internal sealed class LibraryPage : PageBase
     /// <summary>Per loaded row, the text of each cell (index = column), built once: painting allocates nothing.</summary>
     private readonly Dictionary<long, string?[]> _cells = [];
     private readonly FileDetailView _detail = new();
-    private readonly DrawerActions _drawer;
     private readonly ScrollPanel _detailScroll;
     private LibraryData? _library;
     private BrowseData? _browse;
@@ -89,7 +88,8 @@ internal sealed class LibraryPage : PageBase
         _detail.ThumbnailLoader = (detail, token) => Services.Data.LoadThumbnail(detail, token);
         _detail.StripLoader = (detail, finding, token) => Services.Data.LoadFrameStrip(detail, finding, token);
         _detail.CompareLoader = (detail, finding, time, token) => Services.Data.LoadCompare(detail, finding, time, token);
-        _drawer = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
+        // The drawer's buttons; the view's events keep the actions alive.
+        _ = new DrawerActions(Services, _detail, RunAndReloadAsync, fileId =>
         {
             Reload();
             UiTask.Run(LoadDetailAsync(fileId));

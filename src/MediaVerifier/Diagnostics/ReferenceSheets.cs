@@ -193,8 +193,8 @@ internal static class ReferenceSheets
         NavigationRail.DrawItem(g, Rect(24, 1212, 184, 40, dpi), IconName.Library, "Rest", false, false, null, Severity.None, dpi);
         NavigationRail.DrawItem(g, Rect(224, 1212, 184, 40, dpi), IconName.Library, "Hover", false, true, null, Severity.None, dpi);
         NavigationRail.DrawItem(g, Rect(424, 1212, 184, 40, dpi), IconName.Library, "Selected", true, false, "128", Severity.Critical, dpi);
-        VirtualList.DrawScrollThumb(g, Rect(660, 1212, 6, 40, dpi), false, dpi);
-        VirtualList.DrawScrollThumb(g, Rect(684, 1212, 10, 40, dpi), true, dpi);
+        VirtualList.DrawScrollThumb(g, Rect(660, 1212, 6, 40, dpi), false);
+        VirtualList.DrawScrollThumb(g, Rect(684, 1212, 10, 40, dpi), true);
         Breadcrumb.Draw(g, Rect(740, 1216, 400, 32, dpi), ["Music", "Night Drive", "Overpass"], -1, -1, dpi);
 
         Caption(g, "CARD   ·   LOADING SKELETON   ·   EMPTY STATE", 24, 1276, dpi);

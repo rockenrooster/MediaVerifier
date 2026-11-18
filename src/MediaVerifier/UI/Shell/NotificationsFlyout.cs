@@ -157,7 +157,7 @@ internal sealed class NotificationsFlyout : TransientPopup
 
         if (items.Count > shown)
         {
-            VirtualList.DrawScrollThumb(g, PopupList.ThumbRect(ListBounds(bounds, shown, dpi), items.Count, shown, first, dpi), hover: false, dpi);
+            VirtualList.DrawScrollThumb(g, PopupList.ThumbRect(ListBounds(bounds, shown, dpi), items.Count, shown, first, dpi), hover: false);
         }
 
         Rectangle clear = ClearBounds(bounds, dpi);

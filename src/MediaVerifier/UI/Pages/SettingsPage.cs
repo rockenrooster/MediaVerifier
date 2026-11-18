@@ -327,7 +327,7 @@ internal sealed class SettingsPage : PageBase
 
     private static int SizeIndex(long? limit) => limit switch { null => 0, <= 10L << 30 => 1, <= 50L << 30 => 2, _ => 3 };
 
-    private SettingsSection Section(string title, string intro, IReadOnlyList<SectionRow> rows) => new(this, title, intro, rows);
+    private SettingsSection Section(string title, string intro, IReadOnlyList<SectionRow> rows) => new(title, intro, rows);
 
     private SettingRow Toggle(string label, string? helper, Func<bool> get, Action<bool> set)
     {
@@ -980,7 +980,7 @@ internal sealed class SettingsPage : PageBase
         private readonly Card _card = new();
         private readonly IReadOnlyList<SectionRow> _rows;
 
-        public SettingsSection(SettingsPage page, string title, string intro, IReadOnlyList<SectionRow> rows)
+        public SettingsSection(string title, string intro, IReadOnlyList<SectionRow> rows)
         {
             _title = title;
             _intro = intro;

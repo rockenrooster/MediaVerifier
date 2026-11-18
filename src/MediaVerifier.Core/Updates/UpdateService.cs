@@ -538,19 +538,8 @@ public sealed record UpdateCheckResult(
     /// <summary>The status line of a download or install that failed after this check, shown until the next check.</summary>
     public string? Failure { get; init; }
 
-    public static UpdateCheckResult NotFound(Version currentVersion) => new(
-        currentVersion,
-        null,
-        "No release",
-        false,
-        false,
-        false,
-        null,
-        null,
-        null,
-        0,
-        null,
-        "No GitHub release was found.");
+    public static UpdateCheckResult NotFound(Version currentVersion) =>
+        Error(currentVersion, "No GitHub release was found.") with { LatestVersionText = "No release" };
 
     public static UpdateCheckResult Error(Version currentVersion, string message) => new(
         currentVersion,

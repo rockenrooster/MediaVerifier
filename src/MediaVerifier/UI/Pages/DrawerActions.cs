@@ -42,7 +42,7 @@ internal sealed class DrawerActions
         };
         view.MoreRequested += (_, screen) => ShowMenu(screen);
         view.FindingAction += (_, action) => UiTask.Run(OnFindingActionAsync(action.FindingId, action.Ignore));
-        view.CopyRequested += (_, text) => Copy(services, [text], Strings.Drawer.DetailsCopied);
+        view.CopyRequested += (_, text) => Copy([text], Strings.Drawer.DetailsCopied);
         view.CrumbClicked += (_, index) => UiTask.Run(BrowseFolderAsync(index));
     }
 
@@ -123,7 +123,7 @@ internal sealed class DrawerActions
     /// path seemed to do nothing). While another program holds the clipboard Windows refuses: that is said in a toast
     /// instead of the error dialog.
     /// </summary>
-    public static void Copy(UiServices services, IReadOnlyList<string> lines, string copied)
+    public static void Copy(IReadOnlyList<string> lines, string copied)
     {
         if (!lines.Any(line => line.Length > 0))
         {
@@ -275,7 +275,7 @@ internal sealed class DrawerActions
                     UiTask.Run(RescanAsync(_services, [shown.FileId]));
                     break;
                 case "copy":
-                    Copy(_services, [shown.FullPath], PathsCopied(1));
+                    Copy([shown.FullPath], PathsCopied(1));
                     break;
                 case "quarantine":
                     UiTask.Run(_runFix([shown.FileId], ActionIds.Quarantine));

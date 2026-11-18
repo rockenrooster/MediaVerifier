@@ -594,7 +594,7 @@ internal sealed class VirtualList : KitControl
     }
 
     /// <summary>Paints the scrollbar thumb: 6 px (10 on hover), radius 3, StrokeStrong at 60 % (full on hover).</summary>
-    public static void DrawScrollThumb(Graphics g, Rectangle thumb, bool hover, int dpi)
+    public static void DrawScrollThumb(Graphics g, Rectangle thumb, bool hover)
     {
         Color color = ThemeService.Tokens.StrokeStrong;
         KitPaint.FillRoundedRect(g, thumb, thumb.Width / 2f, hover ? color : Color.FromArgb(153, color));
@@ -876,7 +876,7 @@ internal sealed class VirtualList : KitControl
         g.Restore(saved);
         if (ThumbBounds() is Rectangle thumb)
         {
-            DrawScrollThumb(g, thumb, _scrollHover || _dragging, dpi);
+            DrawScrollThumb(g, thumb, _scrollHover || _dragging);
         }
 
         if (_framed)

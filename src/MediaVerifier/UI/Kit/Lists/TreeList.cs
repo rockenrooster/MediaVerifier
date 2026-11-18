@@ -237,7 +237,7 @@ internal sealed class TreeList : KitControl
 
         if (ThumbBounds() is Rectangle thumb)
         {
-            VirtualList.DrawScrollThumb(e.Graphics, thumb, _scrollHover || _dragging, DeviceDpi);
+            VirtualList.DrawScrollThumb(e.Graphics, thumb, _scrollHover || _dragging);
         }
     }
 

@@ -30,7 +30,6 @@ public sealed class Estimator
     private readonly Lock _gate = new();
     private readonly Dictionary<string, double> _seconds = [];
     private double _bytesPerSecond;
-    private long _samples;
     private double? _lastEstimateSeconds;
     private TimeSpan _lastEstimateAt;
 
@@ -77,7 +76,6 @@ public sealed class Estimator
         string key = EstimateAverages.Key(kind, depth);
         lock (_gate)
         {
-            _samples++;
             double seconds = elapsed.TotalSeconds;
             _seconds[key] = _seconds.TryGetValue(key, out double previous) ? ((1 - Alpha) * previous) + (Alpha * seconds) : seconds;
         }

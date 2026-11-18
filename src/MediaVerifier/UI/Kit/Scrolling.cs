@@ -112,7 +112,7 @@ internal sealed class ScrollThumb : KitControl
         pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
     }
 
-    protected override void OnPaint(PaintEventArgs e) => Lists.VirtualList.DrawScrollThumb(e.Graphics, ClientRectangle, Wide, DeviceDpi);
+    protected override void OnPaint(PaintEventArgs e) => Lists.VirtualList.DrawScrollThumb(e.Graphics, ClientRectangle, Wide);
 
     protected override void OnMouseEnter(EventArgs e)
     {

@@ -375,7 +375,7 @@ internal sealed class NavigationRail : KitControl
     private int PaintBadge(Graphics g, Rectangle item)
     {
         Font font = Type.CaptionStrong;
-        int textWidth = KitPaint.MeasureWidth(g, _issuesText, font);
+        int textWidth = KitPaint.MeasureWidth(_issuesText, font);
         int width = Math.Max(S(20), textWidth + S(14));
         int height = S(20);
         Rectangle pill = new(item.Right - S(10) - width, item.Y + ((item.Height - height) / 2), width, height);
