@@ -39,6 +39,7 @@ internal sealed class SettingsPage : PageBase
     private readonly KitButton _install = new() { Kind = ButtonKind.Primary, Text = Strings.Settings.DownloadInstall };
     private int _current;
     private bool _portable;
+    private bool _saveFailureShown;
 
     public SettingsPage(UiServices services)
         : base(services)
@@ -190,7 +191,28 @@ internal sealed class SettingsPage : PageBase
         PerformLayout();
     }
 
-    internal void Save() => State.SaveSettings();
+    /// <summary>Saves the settings off the UI thread (every change applies at once; there is no Save button).</summary>
+    internal void Save() => UiTask.Run(SaveAsync());
+
+    /// <summary>
+    /// The save's outcome: a change that could not be written would be lost at exit, so a failure says so in a Critical
+    /// toast, once until a save works again (a number typed into a box saves at each key).
+    /// </summary>
+    private async Task SaveAsync()
+    {
+        bool saved = await State.SaveSettings().ConfigureAwait(true);
+        if (saved)
+        {
+            _saveFailureShown = false;
+            return;
+        }
+
+        if (!_saveFailureShown && !IsDisposed)
+        {
+            _saveFailureShown = true;
+            Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.Critical, Strings.Pages.Settings, Strings.Settings.SaveFailed, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)));
+        }
+    }
 
     protected override object? LoadData() => Services.Data.LoadShell();
 

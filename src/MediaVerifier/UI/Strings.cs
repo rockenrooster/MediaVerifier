@@ -824,6 +824,7 @@ internal static class Strings
         public const string Appeared = "{0} findings appeared.";
         public const string NoLongerApply = "{0} findings no longer apply.";
         public const string NoFindingsChanged = "No findings changed.";
+        public const string SaveFailed = "Settings could not be saved. The log has the details.";
     }
 
     public static class Dialogs
