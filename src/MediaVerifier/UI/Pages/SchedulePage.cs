@@ -42,6 +42,7 @@ internal sealed class SchedulePage : PageBase
     private ScheduleData? _data;
     private bool _binding;
     private bool _verificationPending;
+    private bool _adding;
 
     public SchedulePage(UiServices services)
         : base(services)
@@ -557,34 +558,45 @@ internal sealed class SchedulePage : PageBase
     /// </summary>
     private async Task AddPlansAsync(IReadOnlyList<(string Name, PlanDefinition Definition)> plans, bool onlyIntoEmpty = false)
     {
-        if (Services.IsDemo)
+        // One addition at a time: a double click on a preset made the plan twice.
+        if (Services.IsDemo || _adding)
         {
             return;
         }
 
+        _adding = true;
         Database database = Services.Database;
         long now = Services.Clock.UtcNow.UtcTicks;
-        string? refused = await Task.Run(async () =>
+        string? refused;
+        try
         {
-            if (onlyIntoEmpty && database.Plans.List().Count > 0)
+            refused = await Task.Run(async () =>
             {
-                return null;
-            }
+                if (onlyIntoEmpty && database.Plans.List().Count > 0)
+                {
+                    return null;
+                }
 
-            List<long> added = [];
-            foreach ((string name, PlanDefinition definition) in plans)
-            {
-                added.Add(await database.Plans.AddAsync(new PlanRecord { Name = name, Enabled = true, DefinitionJson = definition.ToJson(), CreatedUtc = now, UpdatedUtc = now }).ConfigureAwait(false));
-            }
+                List<long> added = [];
+                foreach ((string name, PlanDefinition definition) in plans)
+                {
+                    added.Add(await database.Plans.AddAsync(new PlanRecord { Name = name, Enabled = true, DefinitionJson = definition.ToJson(), CreatedUtc = now, UpdatedUtc = now }).ConfigureAwait(false));
+                }
 
-            string? message = await RegisterAsync(database).ConfigureAwait(false);
-            if (message is not null)
-            {
-                await SwitchOffAsync(database, added, now).ConfigureAwait(false);
-            }
+                string? message = await RegisterAsync(database).ConfigureAwait(false);
+                if (message is not null)
+                {
+                    await SwitchOffAsync(database, added, now).ConfigureAwait(false);
+                }
 
-            return message;
-        }).ConfigureAwait(true);
+                return message;
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            _adding = false;
+        }
+
         if (refused is not null)
         {
             Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, plans.Count == 1 ? plans[0].Name : Strings.Pages.Schedule, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused)));
