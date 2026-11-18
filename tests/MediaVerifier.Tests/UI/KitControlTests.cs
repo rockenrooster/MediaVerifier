@@ -152,20 +152,17 @@ public sealed class KitControlTests
     }
 
     [Fact]
-    public void Radio_buttons_and_option_rows_exclude_their_group()
+    public void Option_rows_exclude_their_group()
     {
         using Panel panel = new();
-        KitRadioButton a = new() { GroupName = "g", Checked = true };
-        KitRadioButton b = new() { GroupName = "g" };
         OptionRow quick = new() { GroupName = "depth", Checked = true };
         OptionRow deep = new() { GroupName = "depth" };
-        panel.Controls.AddRange([a, b, quick, deep]);
-        Send(b, Keys.Space);
-        Assert.True(b.Checked);
-        Assert.False(a.Checked);
+        OptionRow other = new() { GroupName = "format", Checked = true };
+        panel.Controls.AddRange([quick, deep, other]);
         Send(deep, Keys.Space);
         Assert.True(deep.Checked);
         Assert.False(quick.Checked);
+        Assert.True(other.Checked);
     }
 
     [Fact]
@@ -184,9 +181,12 @@ public sealed class KitControlTests
         Assert.Equal(8 + 32 + 9 + 32, PopupList.MeasureHeight([new PopupItem("A"), PopupItem.Separator, new PopupItem("B")]));
     }
 
+    /// <summary>A whole key press: Space acts when it is released, as on Windows buttons.</summary>
     private static void Send(Control control, Keys key)
     {
         typeof(Control).GetMethod("OnKeyDown", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(control, [new KeyEventArgs(key)]);
+        typeof(Control).GetMethod("OnKeyUp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(control, [new KeyEventArgs(key)]);
     }
 }

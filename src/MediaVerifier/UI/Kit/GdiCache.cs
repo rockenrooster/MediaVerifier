@@ -10,6 +10,7 @@ internal static class GdiCache
 {
     private static readonly Dictionary<int, SolidBrush> Brushes = [];
     private static readonly Dictionary<(int Argb, float Width, bool Round), Pen> Pens = [];
+    private static readonly Dictionary<(int Argb, float Width, float Dash, float Gap), Pen> DashedPens = [];
 
     public static SolidBrush Brush(Color color)
     {
@@ -29,6 +30,29 @@ internal static class GdiCache
     /// <summary>A plain pen with flat caps and miter joins (borders and dividers).</summary>
     public static Pen Pen(Color color, float width) => GetPen(color, width, round: false);
 
+    /// <summary>
+    /// A round-joined pen with flat-capped dashes of <paramref name="dash"/> and <paramref name="gap"/> pen widths (dashed
+    /// icons such as the Pending state, drawn on every never-scanned row).
+    /// </summary>
+    public static Pen DashedRoundPen(Color color, float width, float dash, float gap)
+    {
+        (int, float, float, float) key = (color.ToArgb(), MathF.Round(width, 3), MathF.Round(dash, 3), MathF.Round(gap, 3));
+        if (!DashedPens.TryGetValue(key, out Pen? pen))
+        {
+            pen = new Pen(color, StrokeWidth(width))
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round,
+                DashCap = DashCap.Flat,
+                DashPattern = [dash, gap],
+            };
+            DashedPens[key] = pen;
+        }
+
+        return pen;
+    }
+
     /// <summary>Disposes every cached pen and brush (theme change). Painting re-creates what it needs.</summary>
     public static void Clear()
     {
@@ -42,8 +66,14 @@ internal static class GdiCache
             pen.Dispose();
         }
 
+        foreach (Pen pen in DashedPens.Values)
+        {
+            pen.Dispose();
+        }
+
         Brushes.Clear();
         Pens.Clear();
+        DashedPens.Clear();
     }
 
     /// <summary>
@@ -54,7 +84,7 @@ internal static class GdiCache
     public static float StrokeWidth(float deviceWidth) => deviceWidth is > 1.25f and <= 1.5f ? 1.501f : deviceWidth;
 
     /// <summary>Number of cached GDI+ objects (tests check that theme switches do not grow it).</summary>
-    public static int Count => Brushes.Count + Pens.Count;
+    public static int Count => Brushes.Count + Pens.Count + DashedPens.Count;
 
     private static Pen GetPen(Color color, float width, bool round)
     {

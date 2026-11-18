@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Kit;
@@ -55,26 +56,26 @@ internal static class InputPainter
 }
 
 /// <summary>
-/// A single-line text input (subplan 08, Text box). The frame, text and placeholder are custom-painted;
-/// while the box has focus a borderless native edit control inside it takes the typing, caret and
-/// selection, so editing behaves exactly like Windows.
+/// A single-line text input (subplan 08, Text box): a painted frame around a borderless native edit control, which
+/// stays visible and is the tab stop (as in Disk Monitor 2.0), so clicks place the caret where they land, Shift+Tab
+/// leaves the box, and the focus survives switching to another window and back. The frame shows hover and focus; the
+/// edit paints the placeholder while it is empty and unfocused. A disabled box hides the edit and paints its text.
 /// </summary>
 internal class KitTextBox : KitControl
 {
-    private readonly TextBox _edit;
+    private readonly EditBox _edit;
     private string _placeholder = string.Empty;
     private bool _inset;
 
     public KitTextBox()
     {
-        TabStop = true;
+        TabStop = false;
         Cursor = Cursors.IBeam;
         AccessibleRole = AccessibleRole.Text;
-        _edit = new TextBox
+        _edit = new EditBox(this)
         {
             BorderStyle = BorderStyle.None,
-            Visible = false,
-            TabStop = false,
+            TabStop = true,
         };
         _edit.TextChanged += (_, _) =>
         {
@@ -83,7 +84,10 @@ internal class KitTextBox : KitControl
                 base.Text = _edit.Text;
             }
         };
-        _edit.LostFocus += (_, _) => EndEdit();
+        _edit.GotFocus += (_, _) => OnEditGotFocus();
+        _edit.LostFocus += (_, _) => OnEditLostFocus();
+        _edit.MouseEnter += (_, _) => SetHover(true);
+        _edit.MouseLeave += (_, _) => SetHover(ClientRectangle.Contains(PointToClient(MousePosition)));
         _edit.KeyDown += (_, e) => OnEditKeyDown(e);
         _edit.KeyPress += (_, e) => OnEditKeyPress(e);
         Controls.Add(_edit);
@@ -99,8 +103,22 @@ internal class KitTextBox : KitControl
         set
         {
             _placeholder = value ?? string.Empty;
-            AccessibleDescription = _placeholder;
+            AccessibleDescription = _placeholder.Length > 0 ? _placeholder : null;
+            _edit.AccessibleDescription = AccessibleDescription;
+            NameEdit();
+            _edit.Invalidate();
             Invalidate();
+        }
+    }
+
+    /// <summary>The name Narrator reads when the edit has focus; the edit carries it, since the edit is what is focused.</summary>
+    public new string? AccessibleName
+    {
+        get => base.AccessibleName;
+        set
+        {
+            base.AccessibleName = value;
+            NameEdit();
         }
     }
 
@@ -143,7 +161,13 @@ internal class KitTextBox : KitControl
         }
     }
 
-    protected bool Editing => _edit.Visible;
+    /// <summary>True while the edit has the keyboard focus.</summary>
+    protected bool Editing => _edit.Focused;
+
+    /// <summary>Caret position in the edit (the number box accepts a minus sign only at the start).</summary>
+    protected int SelectionStart => _edit.SelectionStart;
+
+    protected int SelectionLength => _edit.SelectionLength;
 
     /// <summary>Left text inset in logical pixels (the search box moves the text past its icon).</summary>
     protected virtual int TextLeft => InputPainter.TextInset;
@@ -154,6 +178,12 @@ internal class KitTextBox : KitControl
     protected virtual bool RightAligned => false;
 
     protected override bool Interactive => true;
+
+    /// <summary>A box's text is its value, not its name.</summary>
+    protected override string? FallbackAccessibleName => null;
+
+    /// <summary>The edit's name when no AccessibleName is set (a search box's placeholder).</summary>
+    protected virtual string? EditFallbackName => null;
 
     public void SelectAll() => _edit.SelectAll();
 
@@ -170,13 +200,13 @@ internal class KitTextBox : KitControl
     {
         VisualState state = PaintState & ~VisualState.Focused;
         InputPainter.PaintFrame(e.Graphics, ClientRectangle, state, Editing, _inset, DeviceDpi);
-        if (!Editing)
+        if (!_edit.Visible)
         {
+            // Disabled: the edit is hidden and the frame paints the text (or the placeholder).
             ThemeTokens t = Tokens;
             bool empty = string.IsNullOrEmpty(Text);
-            Color color = !Enabled ? t.TextDisabled : empty ? t.Text3 : t.Text;
             int x = S(TextLeft);
-            KitPaint.DrawText(e.Graphics, empty ? _placeholder : Text, Type.Body, color, x, Height / 2, Width - x - S(TextRight), RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
+            KitPaint.DrawText(e.Graphics, empty ? _placeholder : Text, Type.Body, empty ? t.Text3 : t.TextDisabled, x, Height / 2, Width - x - S(TextRight), RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
         }
 
         PaintAdornments(e.Graphics);
@@ -189,18 +219,40 @@ internal class KitTextBox : KitControl
 
     protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
 
+    /// <summary>Focus given to the box (a page's Ctrl+F, a dialog's first field) goes to the edit.</summary>
     protected override void OnGotFocus(EventArgs e)
     {
         base.OnGotFocus(e);
-        BeginEdit();
+        if (_edit.CanFocus)
+        {
+            _edit.Focus();
+        }
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (!Focused && !_edit.Focused)
+        if (e.Button != MouseButtons.Left || !_edit.Visible || _edit.Focused || !InTextArea(e.X))
         {
-            Focus();
+            return;
+        }
+
+        // A click in the padding around the edit: the caret goes to the nearer end of the text.
+        _edit.Focus();
+        _edit.Select(e.X >= _edit.Right ? _edit.TextLength : 0, 0);
+    }
+
+    /// <summary>Whether a click at <paramref name="x"/> belongs to the text (not to an adornment such as the clear icon).</summary>
+    protected virtual bool InTextArea(int x) => true;
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+
+        // Moving onto the edit leaves the frame but stays inside the box.
+        if (ClientRectangle.Contains(PointToClient(MousePosition)))
+        {
+            SetHover(true);
         }
     }
 
@@ -214,6 +266,18 @@ internal class KitTextBox : KitControl
         _edit.Bounds = new Rectangle(x, (Height - lineHeight) / 2, Math.Max(1, Width - x - S(TextRight)), lineHeight);
     }
 
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        PerformLayout();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        NameEdit();
+    }
+
     protected override void OnThemeChanged()
     {
         ApplyColours();
@@ -223,7 +287,8 @@ internal class KitTextBox : KitControl
     protected override void OnEnabledChanged(EventArgs e)
     {
         base.OnEnabledChanged(e);
-        _edit.Enabled = Enabled;
+        _edit.Visible = Enabled;
+        Invalidate();
     }
 
     /// <summary>Lets derived boxes handle Up/Down or Escape inside the edit control.</summary>
@@ -237,6 +302,12 @@ internal class KitTextBox : KitControl
     {
     }
 
+    /// <summary>The edit lost the focus: focus moved on, or the window was left (the number box applies its limits).</summary>
+    protected virtual void OnEditLostFocus()
+    {
+        Invalidate();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -248,6 +319,16 @@ internal class KitTextBox : KitControl
     }
 
     private System.Windows.Forms.Timer? _commitTimer;
+
+    private void OnEditGotFocus()
+    {
+        Invalidate();
+        if (MouseButtons == MouseButtons.None)
+        {
+            // Tab or a shortcut brought the focus: scroll the box into view, as kit controls do.
+            KitScrolling.RevealFocused(this);
+        }
+    }
 
     private void RestartCommitTimer()
     {
@@ -270,44 +351,136 @@ internal class KitTextBox : KitControl
         _commitTimer.Start();
     }
 
-    private void BeginEdit()
+    private void NameEdit()
     {
-        if (!Enabled)
+        string? name = base.AccessibleName ?? EditFallbackName;
+        if (!string.Equals(_edit.AccessibleName, name, StringComparison.Ordinal))
         {
-            return;
+            _edit.AccessibleName = name;
         }
-
-        PerformLayout();
-        _edit.Visible = true;
-        _edit.Focus();
-        _edit.SelectionStart = _edit.TextLength;
-        Invalidate();
-    }
-
-    private void EndEdit()
-    {
-        if (ContainsFocus && _edit.Focused)
-        {
-            return;
-        }
-
-        _edit.Visible = false;
-        Invalidate();
     }
 
     private void ApplyColours()
     {
         _edit.BackColor = _inset ? Tokens.Bg : Tokens.Surface;
         _edit.ForeColor = Tokens.Text;
+        _edit.Invalidate();
+    }
+
+    /// <summary>
+    /// The native edit: no margins (the text starts at the box's text inset, as the reference shows), and it paints the
+    /// placeholder in Text3 while it is empty and unfocused, as Windows' own cue banner does, in the theme's colour.
+    /// </summary>
+    private sealed class EditBox(KitTextBox owner) : TextBox
+    {
+        private const int WmPaint = 0x000F;
+        private const int WmPrintClient = 0x0318;
+        private const int EmSetMargins = 0x00D3;
+        private const int EcLeftAndRightMargin = 0x0003;
+        private bool _showsPlaceholder;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ClearMargins();
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            ClearMargins();
+        }
+
+        protected override void OnGotFocus(EventArgs e)
+        {
+            base.OnGotFocus(e);
+            RepaintPlaceholder();
+        }
+
+        protected override void OnLostFocus(EventArgs e)
+        {
+            base.OnLostFocus(e);
+            RepaintPlaceholder();
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e);
+            RepaintPlaceholder();
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == WmPaint)
+            {
+                _showsPlaceholder = ShouldShowPlaceholder();
+                if (_showsPlaceholder)
+                {
+                    IntPtr dc = GetDC(Handle);
+                    try
+                    {
+                        DrawPlaceholder(dc);
+                    }
+                    finally
+                    {
+                        _ = ReleaseDC(Handle, dc);
+                    }
+                }
+            }
+            else if (m.Msg == WmPrintClient && ShouldShowPlaceholder())
+            {
+                // Printed (the render harness, a dialog's backdrop): the placeholder belongs in the picture too.
+                DrawPlaceholder(m.WParam);
+            }
+        }
+
+        private void DrawPlaceholder(IntPtr dc)
+        {
+            TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis
+                | (TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left);
+            NativeText.Draw(dc, owner._placeholder, Font, ThemeService.Tokens.Text3, ClientRectangle, flags);
+        }
+
+        private bool ShouldShowPlaceholder() => owner._placeholder.Length > 0 && TextLength == 0 && !Focused;
+
+        /// <summary>The edit erases only what it redraws: show or clear the placeholder by repainting it whole.</summary>
+        private void RepaintPlaceholder()
+        {
+            if (IsHandleCreated && _showsPlaceholder != ShouldShowPlaceholder())
+            {
+                Invalidate();
+            }
+        }
+
+        private void ClearMargins()
+        {
+            if (IsHandleCreated)
+            {
+                _ = SendMessage(Handle, EmSetMargins, (IntPtr)EcLeftAndRightMargin, IntPtr.Zero);
+            }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDC(IntPtr hwnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
     }
 }
 
 /// <summary>
 /// The search box (subplan 08): a 16 px search icon at +10, text at +34, and while it has text a 16 px
-/// close icon 10 px from the right that clears it. Filters 200 ms after the last key (<see cref="KitTextBox.TextCommitted"/>).
+/// close icon 10 px from the right that clears it (its 36 px are always kept free of the edit, so the icon is never
+/// covered while typing). Filters 200 ms after the last key (<see cref="KitTextBox.TextCommitted"/>).
 /// </summary>
 internal sealed class SearchBox : KitTextBox
 {
+    private bool _clearHover;
+
     public SearchBox()
     {
         AccessibleRole = AccessibleRole.Text;
@@ -316,24 +489,49 @@ internal sealed class SearchBox : KitTextBox
     /// <summary>A search box is named by its placeholder ("Filter rules", "Search files") unless named otherwise.</summary>
     protected override string? FallbackAccessibleName => string.IsNullOrEmpty(Placeholder) ? null : Placeholder;
 
+    protected override string? EditFallbackName => FallbackAccessibleName;
+
     protected override string? AccessibleValue => Text;
 
     protected override int TextLeft => 34;
 
-    protected override int TextRight => string.IsNullOrEmpty(Text) ? InputPainter.TextInset : 36;
+    protected override int TextRight => 36;
 
     public static void Draw(Graphics g, Rectangle bounds, string text, string placeholder, VisualState state, bool focused, int dpi)
     {
         InputPainter.PaintTextBox(g, bounds, text, placeholder, state, focused, false, dpi, 34);
-        PaintIcons(g, bounds, text, dpi);
+        PaintIcons(g, bounds, text, false, dpi);
     }
 
-    protected override void PaintAdornments(Graphics g) => PaintIcons(g, ClientRectangle, Text, DeviceDpi);
+    protected override void PaintAdornments(Graphics g) => PaintIcons(g, ClientRectangle, Text, _clearHover && Enabled, DeviceDpi);
+
+    protected override bool InTextArea(int x) => string.IsNullOrEmpty(Text) || !InClearZone(x);
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        base.OnTextChanged(e);
+        if (IsHandleCreated)
+        {
+            UpdateClearHover(PointToClient(MousePosition));
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        UpdateClearHover(e.Location);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        UpdateClearHover(new Point(-1, -1));
+    }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        if (!string.IsNullOrEmpty(Text) && e.X >= Width - S(36))
+        if (e.Button == MouseButtons.Left && !string.IsNullOrEmpty(Text) && InClearZone(e.X) && ClientRectangle.Contains(e.Location))
         {
             Text = string.Empty;
             Focus();
@@ -353,19 +551,54 @@ internal sealed class SearchBox : KitTextBox
         base.OnEditKeyDown(e);
     }
 
-    private static void PaintIcons(Graphics g, Rectangle bounds, string text, int dpi)
+    /// <summary>The search icon, and while there is text the clear icon (on a Hover square while the pointer is on it).</summary>
+    private static void PaintIcons(Graphics g, Rectangle bounds, string text, bool clearHover, int dpi)
     {
         ThemeTokens t = ThemeService.Tokens;
         float iconY = bounds.Y + ((bounds.Height - Dpi.ScaleF(16, dpi)) / 2f);
         IconRenderer.Draw(g, IconName.Search, bounds.X + Dpi.ScaleF(10, dpi), iconY, 16, dpi, t.Text3);
         if (!string.IsNullOrEmpty(text))
         {
-            IconRenderer.Draw(g, IconName.Close, bounds.Right - Dpi.ScaleF(26, dpi), iconY, 16, dpi, t.Text2);
+            float iconX = bounds.Right - Dpi.ScaleF(26, dpi);
+            if (clearHover)
+            {
+                // The subtle icon button's hover: a Hover square, or a 2 px Highlight border in a contrast theme.
+                float size = Dpi.ScaleF(24, dpi);
+                RectangleF square = new(iconX + Dpi.ScaleF(8, dpi) - (size / 2f), iconY + Dpi.ScaleF(8, dpi) - (size / 2f), size, size);
+                if (t.IsHighContrast)
+                {
+                    KitPaint.StrokeRoundedRect(g, square, Dpi.ScaleF(4, dpi), t.Accent, Dpi.ScaleF(2, dpi));
+                }
+                else
+                {
+                    KitPaint.FillRoundedRect(g, square, Dpi.ScaleF(4, dpi), t.Hover);
+                }
+            }
+
+            IconRenderer.Draw(g, IconName.Close, iconX, iconY, 16, dpi, clearHover ? t.Text : t.Text2);
+        }
+    }
+
+    private bool InClearZone(int x) => x >= Width - S(36);
+
+    /// <summary>Over the clear icon the pointer is the arrow and the icon shows its hover.</summary>
+    private void UpdateClearHover(Point point)
+    {
+        bool over = !string.IsNullOrEmpty(Text) && InClearZone(point.X) && ClientRectangle.Contains(point);
+        Cursor = over ? Cursors.Default : Cursors.IBeam;
+        if (over != _clearHover)
+        {
+            _clearHover = over;
+            Invalidate();
         }
     }
 }
 
-/// <summary>A number box (subplan 08): right-aligned digits, Up/Down change by one step, non-digits rejected.</summary>
+/// <summary>
+/// A number box (subplan 08): right-aligned digits, Up/Down change by one step, other characters rejected (a minus sign
+/// is accepted at the start when the range allows negative values). A value in range applies as it is typed; when the
+/// edit loses the focus the text is brought within the limits, so what the box shows is always the value in use.
+/// </summary>
 internal sealed class NumberBox : KitTextBox
 {
     private double _value;
@@ -417,6 +650,9 @@ internal sealed class NumberBox : KitTextBox
 
     protected override bool RightAligned => true;
 
+    /// <summary>Applies the limits to what was typed (an empty or out-of-range entry shows the value in use again).</summary>
+    public void Normalize() => Number = TryParse(out double parsed) ? parsed : _value;
+
     protected override void OnTextChanged(EventArgs e)
     {
         base.OnTextChanged(e);
@@ -427,13 +663,11 @@ internal sealed class NumberBox : KitTextBox
         }
     }
 
-    protected override void OnLostFocus(EventArgs e)
+    protected override void OnEditLostFocus()
     {
-        base.OnLostFocus(e);
-        Number = TryParse(out double parsed) ? parsed : _value;
+        base.OnEditLostFocus();
+        Normalize();
     }
-
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down || base.IsInputKey(keyData);
 
     protected override void OnEditKeyDown(KeyEventArgs e)
     {
@@ -451,9 +685,16 @@ internal sealed class NumberBox : KitTextBox
 
     protected override void OnEditKeyPress(KeyPressEventArgs e)
     {
-        string separator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+        NumberFormatInfo format = CultureInfo.CurrentCulture.NumberFormat;
+        string separator = format.NumberDecimalSeparator;
+        string minus = format.NegativeSign;
         bool decimalPoint = Decimals > 0 && separator.Length == 1 && e.KeyChar == separator[0];
-        if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && !decimalPoint)
+
+        // A minus sign only where it can stand: first, when the range has negative values and no sign is typed yet
+        // outside the text it replaces (selecting -60 and typing -70 works).
+        bool sign = Minimum < 0 && minus.Length == 1 && e.KeyChar == minus[0] && SelectionStart == 0
+            && !Text.AsSpan(SelectionLength).Contains(minus[0]);
+        if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && !decimalPoint && !sign)
         {
             e.Handled = true;
         }
@@ -496,6 +737,17 @@ internal sealed class PathBox : Control
         set => _box.Inset = value;
     }
 
+    /// <summary>The name of the path field (the focused edit carries it).</summary>
+    public new string? AccessibleName
+    {
+        get => _box.AccessibleName;
+        set
+        {
+            base.AccessibleName = value;
+            _box.AccessibleName = value;
+        }
+    }
+
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     [System.Diagnostics.CodeAnalysis.AllowNull]
@@ -512,6 +764,20 @@ internal sealed class PathBox : Control
         int gap = Dpi.Scale(8, DeviceDpi);
         _browse.Bounds = new Rectangle(Width - buttonWidth, 0, buttonWidth, Height);
         _box.Bounds = new Rectangle(0, 0, Math.Max(0, Width - buttonWidth - gap), Height);
+    }
+
+    /// <summary>Focus given to the path box (Add folder opens with it) goes to the text field.</summary>
+    protected override void OnGotFocus(EventArgs e)
+    {
+        base.OnGotFocus(e);
+        _box.Focus();
+    }
+
+    /// <summary>The Browse button's focus ring falls partly between the field and the button, on this control.</summary>
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        KitPaint.PaintFocusRings(e.Graphics, this);
     }
 
     /// <summary>

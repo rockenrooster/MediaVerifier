@@ -44,18 +44,10 @@ internal static class IconRenderer
             g.ScaleTransform(scale, scale);
             if (shape.Stroked.PointCount > 0)
             {
-                Pen pen = GdiCache.RoundPen(color, strokeGrid);
-                if (shape.DashPattern is null)
-                {
-                    g.DrawPath(pen, shape.Stroked);
-                }
-                else
-                {
-                    using Pen dashed = (Pen)pen.Clone();
-                    dashed.DashPattern = [shape.DashPattern[0] / strokeGrid, shape.DashPattern[1] / strokeGrid];
-                    dashed.DashCap = DashCap.Flat;
-                    g.DrawPath(dashed, shape.Stroked);
-                }
+                Pen pen = shape.DashPattern is null
+                    ? GdiCache.RoundPen(color, strokeGrid)
+                    : GdiCache.DashedRoundPen(color, strokeGrid, shape.DashPattern[0] / strokeGrid, shape.DashPattern[1] / strokeGrid);
+                g.DrawPath(pen, shape.Stroked);
             }
 
             if (shape.Filled.PointCount > 0)

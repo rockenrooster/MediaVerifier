@@ -134,13 +134,20 @@ public sealed class ListTests
     [Fact]
     public void Severity_bar_segments_hit_test_by_tier()
     {
-        using SeverityBar bar = new() { Size = new Size(320, 16) };
-        bar.SetCounts(1, 2, 10, 20, 60);
+        RectangleF[] segments = new RectangleF[5];
         using Bitmap bitmap = new(320, 16);
-        bar.DrawToBitmap(bitmap, new Rectangle(0, 0, 320, 16));
-        Assert.Equal(Severity.Critical, bar.TierAt(new Point(1, 8)));
-        Assert.Equal(Severity.None, bar.TierAt(new Point(318, 8)));
-        Assert.Contains("Critical: 1", bar.AccessibleName, StringComparison.Ordinal);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            DataPaint.SeverityBar(g, new RectangleF(0, 4, 320, 8), [1, 2, 10, 20, 60], segments, 96);
+        }
+
+        Assert.Equal(Severity.Critical, DataPaint.TierSeverity(DataPaint.SegmentAt(segments, 1, 96)));
+        Assert.Equal(Severity.None, DataPaint.TierSeverity(DataPaint.SegmentAt(segments, 318, 96)));
+
+        // The 2 px gap after a segment belongs to it, so the pointer is never between two segments.
+        Assert.Equal(0, DataPaint.SegmentAt(segments, segments[0].Right + 1, 96));
+        Assert.Equal(-1, DataPaint.SegmentAt(segments, 330, 96));
+        Assert.Equal("Critical: 1", DataPaint.SegmentToolTip(0, 1));
     }
 
     [Fact]

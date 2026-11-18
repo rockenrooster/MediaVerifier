@@ -37,25 +37,52 @@ internal static class NativeText
         return size.Cx;
     }
 
-    /// <summary>Draws text into a rectangle with TextFormatFlags-compatible DT_* flags.</summary>
+    /// <summary>
+    /// Draws text into a rectangle with TextFormatFlags-compatible DT_* flags. The device context GDI+ hands out does not
+    /// carry the Graphics' clip, so a clip that cuts the text (rows scrolled under a list's header) is applied here.
+    /// </summary>
     public static void Draw(Graphics g, string text, Font font, Color color, Rectangle bounds, TextFormatFlags flags)
     {
+        RectangleF clip = g.ClipBounds;
+        bool clipped = !clip.Contains(bounds);
+        if (clipped && !clip.IntersectsWith(bounds))
+        {
+            return;
+        }
+
         IntPtr hdc = g.GetHdc();
         try
         {
-            IntPtr old = SelectObject(hdc, Handle(font).Hfont);
-            int oldMode = SetBkMode(hdc, Transparent);
-            int oldColor = SetTextColor(hdc, color.R | (color.G << 8) | (color.B << 16));
-            NativeRect rect = new(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
-            _ = DrawTextW(hdc, text, text.Length, ref rect, (int)flags);
-            SetTextColor(hdc, oldColor);
-            SetBkMode(hdc, oldMode);
-            SelectObject(hdc, old);
+            int saved = 0;
+            if (clipped)
+            {
+                saved = SaveDC(hdc);
+                _ = IntersectClipRect(hdc, (int)Math.Floor(clip.Left), (int)Math.Floor(clip.Top), (int)Math.Ceiling(clip.Right), (int)Math.Ceiling(clip.Bottom));
+            }
+
+            Draw(hdc, text, font, color, bounds, flags);
+            if (clipped)
+            {
+                _ = RestoreDC(hdc, saved);
+            }
         }
         finally
         {
             g.ReleaseHdc(hdc);
         }
+    }
+
+    /// <summary>Draws text on a device context (the text box's placeholder is drawn on its native edit).</summary>
+    public static void Draw(IntPtr hdc, string text, Font font, Color color, Rectangle bounds, TextFormatFlags flags)
+    {
+        IntPtr old = SelectObject(hdc, Handle(font).Hfont);
+        int oldMode = SetBkMode(hdc, Transparent);
+        int oldColor = SetTextColor(hdc, color.R | (color.G << 8) | (color.B << 16));
+        NativeRect rect = new(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
+        _ = DrawTextW(hdc, text, text.Length, ref rect, (int)flags);
+        SetTextColor(hdc, oldColor);
+        SetBkMode(hdc, oldMode);
+        SelectObject(hdc, old);
     }
 
     private static FontHandle Handle(Font font)
@@ -115,6 +142,15 @@ internal static class NativeText
 
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern int SaveDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool RestoreDC(IntPtr hdc, int saved);
+
+    [DllImport("gdi32.dll")]
+    private static extern int IntersectClipRect(IntPtr hdc, int left, int top, int right, int bottom);
 
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr obj);

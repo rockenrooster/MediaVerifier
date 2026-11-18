@@ -7,7 +7,8 @@ namespace MediaVerifier.UI.Kit;
 /// <summary>
 /// A card (subplan 08): Surface, 1 px Stroke, radius 8, 16 px padding; optional title in CaptionStrong Text3,
 /// upper case, at +16, centred 22 px below the top. A card that acts as a button gets StrokeStrong on hover
-/// (stat tiles also the Hover fill). Children are laid out by the page inside <see cref="ContentBounds"/>.
+/// (stat tiles also the Hover fill), the Pressed fill and an Accent border while pressed, and acts on Enter and
+/// Space. Children are laid out by the page inside <see cref="ContentBounds"/>.
 /// </summary>
 internal class Card : KitControl
 {
@@ -70,13 +71,24 @@ internal class Card : KitControl
 
     protected override bool Interactive => _clickable;
 
+    protected override bool ActsOnEnter => _clickable;
+
+    protected override bool ActsOnSpace => _clickable;
+
+    protected internal override Rectangle FocusRingBounds => _clickable ? ClientRectangle : Rectangle.Empty;
+
+    protected internal override float FocusRingRadius => SF(8);
+
     public static void Draw(Graphics g, Rectangle bounds, string? title, VisualState state, bool tile, int dpi)
     {
         ThemeTokens t = ThemeService.Tokens;
         float radius = Dpi.ScaleF(8, dpi);
         bool hover = state.HasFlag(VisualState.Hover);
-        KitPaint.FillRoundedRect(g, bounds, radius, hover && tile ? t.Hover : t.Surface);
-        KitPaint.StrokeRoundedRect(g, bounds, radius, hover ? (t.IsHighContrast ? t.Accent : t.StrokeStrong) : t.Stroke, Dpi.ScaleF(hover && t.IsHighContrast ? 2 : 1, dpi));
+        bool pressed = state.HasFlag(VisualState.Pressed) && !state.HasFlag(VisualState.Disabled);
+        bool active = hover || pressed;
+        Color border = pressed || (active && t.IsHighContrast) ? t.Accent : hover ? t.StrokeStrong : t.Stroke;
+        KitPaint.FillRoundedRect(g, bounds, radius, pressed ? t.Pressed : hover && tile ? t.Hover : t.Surface);
+        KitPaint.StrokeRoundedRect(g, bounds, radius, border, Dpi.ScaleF(active && t.IsHighContrast ? 2 : 1, dpi));
         if (title is not null)
         {
             KitPaint.DrawText(g, title, TypeRamp.For(dpi).CaptionStrong, t.Text3, bounds.X + Dpi.Scale(16, dpi), bounds.Y + Dpi.Scale(22, dpi), bounds.Width - Dpi.Scale(32, dpi));
@@ -105,18 +117,6 @@ internal class Card : KitControl
     {
         ApplySurface();
         base.OnThemeChanged();
-    }
-
-    protected override bool IsInputKey(Keys keyData) => (_clickable && keyData is Keys.Enter or Keys.Space) || base.IsInputKey(keyData);
-
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        base.OnKeyDown(e);
-        if (_clickable && e.KeyCode is Keys.Enter or Keys.Space)
-        {
-            e.Handled = true;
-            OnClick(EventArgs.Empty);
-        }
     }
 
     private void ApplySurface() => BackColor = Tokens.Surface;
@@ -165,6 +165,31 @@ internal sealed class InfoBar : KitControl
     }
 
     protected override bool Interactive => _action is not null;
+
+    protected override bool ActsOnEnter => _action is not null;
+
+    protected override bool ActsOnSpace => _action is not null;
+
+    /// <summary>The action is read out with the message ("Show"), since Enter runs it.</summary>
+    protected override string? FallbackAccessibleDescription => _action;
+
+    /// <summary>The ring goes around the action link: 20 px high, 2 px either side of it.</summary>
+    protected internal override Rectangle FocusRingBounds
+    {
+        get
+        {
+            if (_action is null)
+            {
+                return Rectangle.Empty;
+            }
+
+            int width = KitPaint.MeasureWidth(_action, Type.BodyStrong);
+            int x = Width - S(16) - width;
+            return new Rectangle(x - S(2), (Height / 2) - S(10), width + S(4), S(20));
+        }
+    }
+
+    protected internal override float FocusRingRadius => SF(2);
 
     public static void Draw(Graphics g, Rectangle bounds, Severity tier, string text, string? action, bool actionHover, VisualState state, int dpi)
     {
@@ -231,14 +256,10 @@ internal sealed class InfoBar : KitControl
         }
     }
 
-    protected override bool IsInputKey(Keys keyData) => (keyData is Keys.Enter or Keys.Space && _action is not null) || base.IsInputKey(keyData);
-
-    protected override void OnKeyDown(KeyEventArgs e)
+    protected override void OnKeyboardAction()
     {
-        base.OnKeyDown(e);
-        if (_action is not null && e.KeyCode is Keys.Enter or Keys.Space)
+        if (_action is not null)
         {
-            e.Handled = true;
             ActionClicked?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -263,6 +284,11 @@ internal sealed class InfoBar : KitControl
 internal sealed class EmptyState : KitControl
 {
     private KitButton? _button;
+    private IconName _icon = IconName.Check;
+    private bool _small;
+    private string _headline = string.Empty;
+    private string _body = string.Empty;
+    private string? _note;
 
     public EmptyState()
     {
@@ -270,16 +296,58 @@ internal sealed class EmptyState : KitControl
         AccessibleRole = AccessibleRole.StaticText;
     }
 
-    public IconName Icon { get; set; } = IconName.Check;
+    public IconName Icon
+    {
+        get => _icon;
+        set
+        {
+            _icon = value;
+            Invalidate();
+        }
+    }
 
     /// <summary>32 px icon instead of 48 (small empty states inside cards).</summary>
-    public bool Small { get; set; }
+    public bool Small
+    {
+        get => _small;
+        set
+        {
+            _small = value;
+            PerformLayout();
+            Invalidate();
+        }
+    }
 
-    public string Headline { get; set; } = string.Empty;
+    public string Headline
+    {
+        get => _headline;
+        set
+        {
+            _headline = value ?? string.Empty;
+            Invalidate();
+        }
+    }
 
-    public string Body { get; set; } = string.Empty;
+    public string Body
+    {
+        get => _body;
+        set
+        {
+            _body = value ?? string.Empty;
+            Invalidate();
+        }
+    }
 
-    public string? Note { get; set; }
+    public string? Note
+    {
+        get => _note;
+        set
+        {
+            _note = value;
+            PerformLayout();
+            Invalidate();
+        }
+    }
 
     /// <summary>Removes the button, and with it every Click handler a page attached.</summary>
     public void ClearButton()
@@ -304,6 +372,7 @@ internal sealed class EmptyState : KitControl
 
         _button.Text = text;
         PerformLayout();
+        Invalidate();
         return _button;
     }
 
@@ -312,10 +381,8 @@ internal sealed class EmptyState : KitControl
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(dpi);
-        // Icon, 6 px, headline (24 px line), body centred 24 px below the headline (docs/design components sheet).
         int iconSize = small ? 32 : 48;
-        int height = iconSize + 6 + 24 + 4 + 20 + (hasButton ? 16 + 32 : 0) + (note is null ? 0 : 12 + 16);
-        int y = bounds.Y + ((bounds.Height - Dpi.Scale(height, dpi)) / 2);
+        int y = ColumnTop(bounds, small, note, hasButton, dpi);
         int centreX = bounds.X + (bounds.Width / 2);
         IconRenderer.Draw(g, icon, centreX - Dpi.ScaleF(iconSize / 2f, dpi), y, iconSize, dpi, t.Text3);
         y += Dpi.Scale(iconSize + 6, dpi);
@@ -337,33 +404,45 @@ internal sealed class EmptyState : KitControl
         return buttonY;
     }
 
-    protected override void OnPaint(PaintEventArgs e)
+    protected override void OnLayout(LayoutEventArgs levent)
     {
-        int buttonY = Draw(e.Graphics, ClientRectangle, Icon, Small, Headline, Body, Note, _button is not null, DeviceDpi);
+        base.OnLayout(levent);
         if (_button is not null)
         {
+            // The same arithmetic as Draw: icon, 6, headline 26, body 20, then the button 16 px below.
+            int iconSize = _small ? 32 : 48;
+            int buttonY = ColumnTop(ClientRectangle, _small, _note, hasButton: true, DeviceDpi) + S(iconSize + 6) + S(26) + S(20) + S(16);
             int width = S(_button.PreferredLogicalWidth);
-            Rectangle target = new((Width - width) / 2, buttonY, width, S(32));
-            if (_button.Bounds != target)
-            {
-                _button.Bounds = target;
-            }
+            _button.Bounds = new Rectangle((Width - width) / 2, buttonY, width, S(32));
         }
     }
 
+    protected override void OnPaint(PaintEventArgs e) => Draw(e.Graphics, ClientRectangle, _icon, _small, _headline, _body, _note, _button is not null, DeviceDpi);
+
     protected override void OnPaintBackground(PaintEventArgs pevent) => pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
+
+    /// <summary>Top of the centred column: icon, 6 px, headline (24 px line), body centred 24 px below (docs/design components sheet).</summary>
+    private static int ColumnTop(Rectangle bounds, bool small, string? note, bool hasButton, int dpi)
+    {
+        int iconSize = small ? 32 : 48;
+        int height = iconSize + 6 + 24 + 4 + 20 + (hasButton ? 16 + 32 : 0) + (note is null ? 0 : 12 + 16);
+        return bounds.Y + ((bounds.Height - Dpi.Scale(height, dpi)) / 2);
+    }
 }
 
 /// <summary>
 /// The floating selection bar (subplan 08): 560 × 48, radius 8, Raised, StrokeStrong border, shadow,
-/// centred in the list 12 px above its bottom edge. Count in BodyStrong at +16, buttons from +104, 8 px
-/// apart, a close icon button at the right.
+/// centred in the list 12 px above its bottom edge. Count in BodyStrong at +16, buttons from +104 (or 16 px after a
+/// longer count), 8 px apart, a close icon button at the right. Buttons that do not fit before the close button show
+/// only their icons, with the label as tooltip and name. Tab reaches the buttons first and the close button last.
 /// </summary>
 internal sealed class SelectionBar : KitControl
 {
     public const int LogicalWidth = 560;
     public const int LogicalHeight = 48;
     private readonly IconButton _close = new() { Icon = IconName.Close, Compact = true };
+    private readonly List<KitButton> _labelTips = [];
+    private string _countText = string.Empty;
 
     public SelectionBar()
     {
@@ -377,7 +456,21 @@ internal sealed class SelectionBar : KitControl
     /// <summary>The close button was used: the page clears the selection.</summary>
     public event EventHandler? Closed;
 
-    public string CountText { get; set; } = string.Empty;
+    /// <summary>"3 selected": a longer count moves the buttons right.</summary>
+    public string CountText
+    {
+        get => _countText;
+        set
+        {
+            value ??= string.Empty;
+            if (!string.Equals(_countText, value, StringComparison.Ordinal))
+            {
+                _countText = value;
+                PerformLayout();
+                Invalidate();
+            }
+        }
+    }
 
     public IReadOnlyList<KitButton> Buttons { get; private set; } = [];
 
@@ -393,13 +486,18 @@ internal sealed class SelectionBar : KitControl
             Controls.Remove(old);
         }
 
+        _labelTips.Clear();
         Buttons = [.. buttons];
-        foreach (KitButton button in Buttons)
+        for (int i = 0; i < Buttons.Count; i++)
         {
+            KitButton button = Buttons[i];
             button.Compact = true;
+            button.TabIndex = i;
             Controls.Add(button);
         }
 
+        // The close button is drawn last (rightmost), so it comes last in the tab order.
+        _close.TabIndex = Buttons.Count;
         PerformLayout();
         Invalidate();
     }
@@ -411,7 +509,9 @@ internal sealed class SelectionBar : KitControl
         float radius = Dpi.ScaleF(8, dpi);
         KitPaint.FillRoundedRect(g, bounds, radius, t.Raised);
         KitPaint.StrokeRoundedRect(g, bounds, radius, t.StrokeStrong, Dpi.ScaleF(1, dpi));
-        KitPaint.DrawText(g, count, TypeRamp.For(dpi).BodyStrong, t.Text, bounds.X + Dpi.Scale(16, dpi), bounds.Y + (bounds.Height / 2), Dpi.Scale(84, dpi));
+        Font font = TypeRamp.For(dpi).BodyStrong;
+        int left = Dpi.Scale(16, dpi);
+        KitPaint.DrawText(g, count, font, t.Text, bounds.X + left, bounds.Y + (bounds.Height / 2), Math.Min(KitPaint.MeasureWidth(count, font) + 2, bounds.Width - (2 * left)));
     }
 
     /// <summary>Where the bar goes inside a list of <paramref name="list"/> bounds (device pixels).</summary>
@@ -425,31 +525,62 @@ internal sealed class SelectionBar : KitControl
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        int x = S(104);
         int buttonHeight = S(28);
         int y = (Height - buttonHeight) / 2;
+        _close.Bounds = new Rectangle(Width - S(10) - buttonHeight, y, buttonHeight, buttonHeight);
+
+        int start = Math.Max(S(104), S(16) + KitPaint.MeasureWidth(_countText, Type.BodyStrong) + S(16));
+        int limit = _close.Left - S(8);
+        int full = 0;
         foreach (KitButton button in Buttons)
         {
+            full += S(button.LabelledLogicalWidth) + S(8);
+        }
+
+        bool iconOnly = start + full - S(8) > limit;
+        int x = start;
+        foreach (KitButton button in Buttons)
+        {
+            SetIconOnly(button, iconOnly && button.Icon is not null);
             int width = S(button.PreferredLogicalWidth);
             button.Bounds = new Rectangle(x, y, width, buttonHeight);
             x += width + S(8);
         }
-
-        _close.Bounds = new Rectangle(Width - S(10) - buttonHeight, y, buttonHeight, buttonHeight);
     }
 
-    protected override void OnPaint(PaintEventArgs e) => Draw(e.Graphics, ClientRectangle, CountText, DeviceDpi);
+    protected override void OnPaint(PaintEventArgs e) => Draw(e.Graphics, ClientRectangle, _countText, DeviceDpi);
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
     {
-        // The list paints the shadow under the bar; outside the rounded corners show the list.
-        pevent.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Surface);
+        // The bar floats over the list: outside its rounded corners the list's Surface shows.
+        pevent.Graphics.Clear(Tokens.Surface);
     }
 
     protected override void OnThemeChanged()
     {
         BackColor = Tokens.Raised;
         base.OnThemeChanged();
+    }
+
+    /// <summary>An icon-only button shows its label as tooltip, unless the page gave it a tooltip of its own.</summary>
+    private void SetIconOnly(KitButton button, bool iconOnly)
+    {
+        button.IconOnly = iconOnly;
+        bool labelTip = _labelTips.Contains(button);
+        if (iconOnly && !labelTip && KitToolTip.Get(button).Length == 0)
+        {
+            KitToolTip.Set(button, button.Text);
+            _labelTips.Add(button);
+        }
+        else if (iconOnly && labelTip)
+        {
+            KitToolTip.Set(button, button.Text);
+        }
+        else if (!iconOnly && labelTip)
+        {
+            KitToolTip.Set(button, string.Empty);
+            _labelTips.Remove(button);
+        }
     }
 }
 
