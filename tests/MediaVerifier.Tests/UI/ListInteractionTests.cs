@@ -614,6 +614,34 @@ public sealed class ListInteractionTests
         });
     }
 
+    /// <summary>
+    /// A deep path in a narrow breadcrumb: leading folders give way to one '…' that goes to the last of them, and the
+    /// current folder stays whole (it ran off the control's right edge).
+    /// </summary>
+    [Fact]
+    public void A_long_breadcrumb_hides_its_leading_folders_behind_an_ellipsis()
+    {
+        string[] path = ["D:", "Media", "Photos", "2024", "Holiday in the mountains", "Day 3"];
+        using Bitmap surface = new(260, 32);
+        using Graphics g = Graphics.FromImage(surface);
+        List<(int Left, int Right)> ranges = [];
+        List<(int Left, int Right)> wide = [];
+
+        bool cut = Breadcrumb.Draw(g, new Rectangle(0, 0, 260, 32), path, -1, -1, 96, ranges);
+        bool fits = Breadcrumb.Draw(g, new Rectangle(0, 0, 2000, 32), path, -1, -1, 96, wide);
+
+        Assert.True(cut);
+        Assert.False(fits);
+        Assert.Equal(path.Length, ranges.Count);
+        Assert.Equal(path.Length, wide.Count);
+        int ellipsis = ranges.FindIndex(r => r.Right > r.Left);
+        Assert.True(ellipsis > 0, "No leading folder was hidden.");
+        Assert.All(ranges.Take(ellipsis), r => Assert.Equal((0, 0), r));
+        Assert.Equal(0, ranges[ellipsis].Left);
+        Assert.True(ranges[^1].Right <= 260, "The current folder runs past the edge.");
+        Assert.Equal(wide[^1].Right - wide[^1].Left, ranges[^1].Right - ranges[^1].Left);
+    }
+
     /// <summary>A selected folder that is no longer in the tree (a search replaced the roots) stops being selected.</summary>
     [Fact]
     public void Rebuilding_the_tree_drops_a_selection_that_left_it()

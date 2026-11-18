@@ -1,4 +1,5 @@
 using MediaVerifier.Core.Model;
+using MediaVerifier.UI.Kit.Popups;
 using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Kit.Lists;
@@ -654,27 +655,55 @@ internal sealed class Breadcrumb : KitControl
         Invalidate();
     }
 
-    /// <summary>Paints a breadcrumb; writes each segment's x range into <paramref name="ranges"/> when given.</summary>
-    public static void Draw(Graphics g, Rectangle bounds, IReadOnlyList<string> segments, int hover, int focused, int dpi, List<(int Left, int Right)>? ranges = null)
+    /// <summary>
+    /// Paints a breadcrumb; writes each segment's x range into <paramref name="ranges"/> when given. When the path is
+    /// wider than <paramref name="bounds"/>, its leading segments give way to one '…' that stands for the last of them
+    /// (subplan 08: text that does not fit is cut with an ellipsis); the current folder stays whole while it fits.
+    /// Returns true when something was cut.
+    /// </summary>
+    public static bool Draw(Graphics g, Rectangle bounds, IReadOnlyList<string> segments, int hover, int focused, int dpi, List<(int Left, int Right)>? ranges = null)
     {
         ThemeTokens t = ThemeService.Tokens;
         Font font = TypeRamp.For(dpi).Body;
         int x = bounds.X;
         int centreY = bounds.Y + (bounds.Height / 2);
+        int separator = Dpi.Scale(4 + 16 + 4, dpi);
         ranges?.Clear();
+
+        // Hide leading segments until the rest fits; 'hidden' of them stand behind the '…', which acts as the last one.
+        int hidden = 0;
+        int total = -separator;
         for (int i = 0; i < segments.Count; i++)
         {
-            if (i > 0)
+            total += separator + KitPaint.MeasureWidth(segments[i], font);
+        }
+
+        if (total > bounds.Width && segments.Count > 1)
+        {
+            int ellipsis = KitPaint.MeasureWidth(Strings.Ellipsis, font);
+            while (hidden < segments.Count - 1 && total > bounds.Width)
+            {
+                total -= KitPaint.MeasureWidth(segments[hidden], font) + separator;
+                hidden++;
+                total = hidden == 1 ? total + ellipsis + separator : total;
+            }
+        }
+
+        for (int i = hidden == 0 ? 0 : hidden - 1; i < segments.Count; i++)
+        {
+            if (i > 0 && i >= hidden)
             {
                 x += Dpi.Scale(4, dpi);
                 IconRenderer.Draw(g, IconName.ChevronRight, x, centreY - Dpi.ScaleF(8, dpi), 16, dpi, t.Text3);
                 x += Dpi.Scale(16 + 4, dpi);
             }
 
-            int width = KitPaint.MeasureWidth(segments[i], font);
+            bool cut = i < hidden;
+            string text = cut ? Strings.Ellipsis : segments[i];
+            int width = Math.Min(KitPaint.MeasureWidth(text, font), Math.Max(0, bounds.Right - x));
             bool last = i == segments.Count - 1;
             Color color = i == hover ? t.Accent : last ? t.Text : t.Text2;
-            KitPaint.DrawText(g, segments[i], font, color, x, centreY, width + 1);
+            KitPaint.DrawText(g, text, font, color, x, centreY, width + 1);
             if (i == hover)
             {
                 KitPaint.HorizontalLine(g, color, x, x + width, centreY + Dpi.ScaleF(8.5f, dpi), Dpi.ScaleF(1, dpi));
@@ -685,17 +714,36 @@ internal sealed class Breadcrumb : KitControl
                 KitPaint.DrawFocusRing(g, new Rectangle(x - Dpi.Scale(2, dpi), centreY - Dpi.Scale(10, dpi), width + Dpi.Scale(4, dpi), Dpi.Scale(20, dpi)), Dpi.ScaleF(2, dpi), dpi);
             }
 
-            ranges?.Add((x, x + width));
+            if (ranges is not null)
+            {
+                // Hidden segments keep their index with an empty range; the '…' is the last hidden one.
+                while (ranges.Count < i)
+                {
+                    ranges.Add((0, 0));
+                }
+
+                ranges.Add((x, x + width));
+            }
+
             x += width;
         }
+
+        return hidden > 0 || total > bounds.Width;
     }
 
     private readonly List<(int Left, int Right)> _ranges = [];
+    private bool _cut;
 
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.Clear(Parent?.BackColor is Color back && back.A == 255 ? back : Tokens.Bg);
-        Draw(e.Graphics, ClientRectangle, _segments, _hover, KeyboardFocused ? _focusIndex : -1, DeviceDpi, _ranges);
+        bool cut = Draw(e.Graphics, ClientRectangle, _segments, _hover, KeyboardFocused ? _focusIndex : -1, DeviceDpi, _ranges);
+        if (cut != _cut)
+        {
+            // The full path as a tooltip whenever part of it is hidden.
+            _cut = cut;
+            KitToolTip.Set(this, cut ? AccessibleName ?? string.Empty : string.Empty);
+        }
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent)

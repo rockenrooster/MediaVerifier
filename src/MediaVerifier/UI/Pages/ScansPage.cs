@@ -647,6 +647,8 @@ internal sealed class ScansPage : PageBase
         {
             if (FindForm() is Form owner && MessageDialog.Confirm(owner, Strings.Shell.StopTitle, Strings.Shell.StopText, Strings.Shell.KeepScanning, Strings.Shell.StopButton, destructive: false))
             {
+                // As the status strip's Stop: scans waiting their turn are withdrawn too, or one would start at once.
+                _page.Services.ClearQueuedScans();
                 _page.Services.Scans.Cancel();
                 _stopping = _page.Services.Scans.Status.IsActive;
                 _updated = false;

@@ -13,6 +13,7 @@ internal static class Strings
     public const string Separator = " · ";
     public const string And = " and ";
     public const string Dash = "—";
+    public const string Ellipsis = "…";
 
     // Tier names (subplan 09, Formats used in strings).
     public const string TierCritical = "Critical";

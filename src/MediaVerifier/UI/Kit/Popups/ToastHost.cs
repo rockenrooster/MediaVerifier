@@ -87,6 +87,19 @@ internal sealed class ToastHost : IDisposable
         }
     }
 
+    /// <summary>Takes the toast that shows <paramref name="content"/> (that same instance) off the screen; nothing if it has gone.</summary>
+    public void Dismiss(ToastContent content)
+    {
+        for (int i = 0; i < _toasts.Count; i++)
+        {
+            if (_toasts[i].Shows(content))
+            {
+                _toasts[i].Dismiss(null);
+                return;
+            }
+        }
+    }
+
     /// <summary>Places the toasts again: call it when the space kept free at the bottom changes (the status strip).</summary>
     public void Reposition()
     {
@@ -340,6 +353,8 @@ internal sealed class ToastHost : IDisposable
                 _timer.Start();
             }
         }
+
+        public bool Shows(ToastContent content) => ReferenceEquals(_content, content);
 
         /// <summary>Closes the toast; <paramref name="then"/> (its button's action) runs afterwards from a posted message.</summary>
         public void Dismiss(Action? then)

@@ -113,8 +113,7 @@ internal sealed class LibraryPage : PageBase
 
         _treeCard.Controls.Add(_tree);
         _tree.SelectionChanged += (_, _) => OnTreeSelection();
-        _tree.KeyDown += OnTreeKey;
-        _tree.MouseUp += OnTreeMouseUp;
+        _tree.ContextMenuRequested += (_, request) => ShowTreeMenu(request.Screen);
         _tableCard.Controls.Add(_table);
         _tableCard.Controls.Add(_empty);
         _empty.BringToFront();
@@ -867,23 +866,6 @@ internal sealed class LibraryPage : PageBase
                 // The list moves its focus once this returns: the drawer follows to the neighbouring file.
                 BeginInvoke(() => OpenDetails(_table.FocusedIndex));
                 break;
-        }
-    }
-
-    private void OnTreeKey(object? sender, KeyEventArgs e)
-    {
-        if (e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && e.Shift))
-        {
-            ShowTreeMenu(_tree.PointToScreen(new Point(S(44), S(32))));
-            e.Handled = true;
-        }
-    }
-
-    private void OnTreeMouseUp(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Right)
-        {
-            ShowTreeMenu(_tree.PointToScreen(e.Location));
         }
     }
 

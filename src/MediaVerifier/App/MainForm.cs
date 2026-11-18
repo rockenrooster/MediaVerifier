@@ -78,6 +78,7 @@ internal sealed class MainForm : Form
 
         // Every toast passes through the services, which keep the newest Undo for Ctrl+Z.
         services.ShowToast = content => _toasts.Show(services.TrackUndo(content));
+        services.DismissToast = _toasts.Dismiss;
         services.RefreshAll = RefreshAll;
         _shellToast = content => services.ShowToast?.Invoke(content);
         UI.ShellActions.Toast = _shellToast;
