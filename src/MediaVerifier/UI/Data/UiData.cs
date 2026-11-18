@@ -3,13 +3,15 @@ using MediaVerifier.Core.Storage;
 
 namespace MediaVerifier.UI.Data;
 
-/// <summary>A run as the Dashboard and Scans pages show it.</summary>
+/// <summary>
+/// A run as the Dashboard and Scans pages show it. <paramref name="Folders"/> is its scope as it reads inside a
+/// sentence (<c>all folders</c>, folder names, <c>{n} files</c>).
+/// </summary>
 internal sealed record RunInfo(
     long Id,
     DateTimeOffset Started,
     DateTimeOffset? Ended,
     RunTrigger Trigger,
-    string? PlanName,
     ScanDepth Depth,
     string Folders,
     long Files,
@@ -32,10 +34,15 @@ internal sealed record RecommendationItem(Severity Tier, string Title, string De
 /// <summary>A Recent activity entry.</summary>
 internal sealed record ActivityItem(string Text, DateTimeOffset When);
 
+/// <summary>
+/// The Dashboard's snapshot. <paramref name="OpenAtLastScan"/> is what was open when the last completed scan began
+/// (the tiles' change), <paramref name="OpenProblemsHistory"/> the open total after each of the last 30 scans, and
+/// <paramref name="FirstScanEstimate"/> how long a first Standard scan of the folders not scanned yet takes (null
+/// when their size is not known).
+/// </summary>
 internal sealed record DashboardData(
     bool HasFolders,
     bool AnyScanned,
-    bool EngineMissing,
     long FilesScanned,
     long FilesHealthy,
     long FilesNeedingAttention,
@@ -49,7 +56,8 @@ internal sealed record DashboardData(
     IReadOnlyList<KindRow> Kinds,
     IReadOnlyList<RecommendationItem> Recommendations,
     IReadOnlyList<ActivityItem> Activity,
-    IReadOnlyList<double> OpenProblemsHistory)
+    IReadOnlyList<double> OpenProblemsHistory,
+    TimeSpan? FirstScanEstimate = null)
 {
     public double HealthyPercent => FilesScanned == 0 ? 0 : 100.0 * FilesHealthy / FilesScanned;
 

@@ -43,7 +43,6 @@ internal sealed partial class DemoUiData : IUiData
     public DashboardData LoadDashboard() => new(
         HasFolders: true,
         AnyScanned: true,
-        EngineMissing: false,
         FilesScanned: 12_507,
         FilesHealthy: 12_345,
         FilesNeedingAttention: 162,
@@ -52,7 +51,7 @@ internal sealed partial class DemoUiData : IUiData
         ScrubDays: 90,
         Open: new SeverityCounts(3, 14, 96, 212),
         OpenAtLastScan: new SeverityCounts(2, 13, 96, 216),
-        LastRun: new RunInfo(41, At(16, 2, 0), At(16, 3, 12), RunTrigger.Scheduled, "Nightly verification", ScanDepth.Standard, "Music, Photos and Videos", 12_507, 2, 1, RunStatus.Completed),
+        LastRun: new RunInfo(41, At(16, 2, 0), At(16, 3, 12), RunTrigger.Scheduled, ScanDepth.Standard, "Music, Photos and Videos", 12_507, 2, 1, RunStatus.Completed),
         NextRun: new NextRunInfo(At(17, 3, 0), "Nightly verification"),
         Kinds:
         [

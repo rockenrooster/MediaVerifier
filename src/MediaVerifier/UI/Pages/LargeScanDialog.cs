@@ -71,15 +71,19 @@ internal sealed class LargeScanDialog : KitDialog
     {
         ThemeTokens t = ThemeService.Tokens;
         TypeRamp type = TypeRamp.For(DeviceDpi);
-        string line = UiFormat.Facts(_estimate.Folders, UiFormat.Size(_estimate.Bytes));
+        string line = UiFormat.Facts(ScansPage.AtLineStart(_estimate.Folders), UiFormat.Size(_estimate.Bytes));
         KitPaint.DrawText(g, line, type.Body, t.Text2, 0, S(6), Body.Width);
         TextWrap.Draw(g, Strings.Scans.LargeNote, type.Caption, t.Text3, 0, S(224), Body.Width, S(16));
     }
 }
 
-/// <summary>Starts a scan of every Library folder, asking first when it is large (header Scan, Scans page).</summary>
+/// <summary>
+/// Starts manual scans and asks first when one is large (subplan 09, Before a large scan): the header Scan and its
+/// menu, the Scans page, the Dashboard and Continue all come through here, so each says why a scan cannot start.
+/// </summary>
 internal static class ScanLauncher
 {
+    /// <summary>A scan of every enabled Library folder.</summary>
     public static async Task StartLibraryScanAsync(Form owner, UiServices services, ScanDepth depth, ScanOptions? options)
     {
         if (services.IsDemo)
@@ -95,30 +99,53 @@ internal static class ScanLauncher
 
         List<RootRecord> roots = await Task.Run(services.Database.Roots.List).ConfigureAwait(true);
         List<RootRecord> library = [.. roots.Where(r => r.Role == RootRole.Library && r.Enabled)];
-        if (library.Count == 0)
+        string scope = library.Count == roots.Count(r => r.Role == RootRole.Library)
+            ? Strings.Scans.AllFolders
+            : UiFormat.JoinNames([.. library.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))]);
+        await StartAsync(owner, services, [.. library.Select(r => new ScanScope(r.Id))], depth, scope, options).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Starts a scan of <paramref name="scopes"/> named <paramref name="scopeText"/> (as it reads in "Scanning {scope}").
+    /// Whole folders in a large scope ask first unless Settings → General, Ask before large scans, is off; a verify-only
+    /// run (<paramref name="options"/>) has no depth to choose and does not ask. False when nothing started: the user
+    /// cancelled, or a toast said why.
+    /// </summary>
+    public static async Task<bool> StartAsync(Form owner, UiServices services, IReadOnlyList<ScanScope> scopes, ScanDepth depth, string scopeText, ScanOptions? options = null)
+    {
+        if (services.IsDemo)
         {
-            services.ShowScanNotStarted(Strings.Shell.AddFolderFirst);
-            return;
+            return false;
         }
 
-        // Settings → General, Ask before large scans: off, a large scan starts without the question.
-        if (options is null && services.State.Settings.Scanning.AskBeforeLargeScans)
+        if (scopes.Count == 0)
         {
-            ScanEstimate estimate = await Task.Run(() => services.Data.LoadScanEstimate([.. library.Select(r => r.Id)])).ConfigureAwait(true);
+            // No enabled Library folder (or none of the run's folders is watched any more): said, not silently ignored.
+            services.ShowScanNotStarted(Strings.Shell.AddFolderFirst);
+            return false;
+        }
+
+        if (services.CannotScanReason(true) is string reason)
+        {
+            services.ShowScanNotStarted(reason);
+            return false;
+        }
+
+        // A subfolder or a file list is estimated as its whole folder, which would ask before small scans.
+        if (options is null && services.State.Settings.Scanning.AskBeforeLargeScans && scopes.All(s => s.RelativeDirectory is null && s.FileIds is null))
+        {
+            ScanEstimate estimate = await Task.Run(() => services.Data.LoadScanEstimate([.. scopes.Select(s => s.RootId).Distinct()])).ConfigureAwait(true);
             if (estimate.IsLarge)
             {
                 if (LargeScanDialog.Ask(owner, estimate, depth) is not ScanDepth chosen)
                 {
-                    return;
+                    return false;
                 }
 
                 depth = chosen;
             }
         }
 
-        string scope = library.Count == roots.Count(r => r.Role == RootRole.Library)
-            ? Strings.Scans.AllFolders
-            : UiFormat.JoinNames([.. library.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))]);
-        await services.StartScanAsync([.. library.Select(r => new ScanScope(r.Id))], depth, scope, options).ConfigureAwait(true);
+        return await services.StartScanAsync(scopes, depth, scopeText, options).ConfigureAwait(true);
     }
 }
