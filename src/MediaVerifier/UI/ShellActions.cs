@@ -109,8 +109,11 @@ internal static class ShellActions
     /// <summary>
     /// Copies the lines to the clipboard (UI thread) and says so in a one-line toast. When another program holds the
     /// clipboard, Windows Forms retries for about a second and then throws: that is a toast too, not the error dialog.
+    /// Callers say what was copied through <paramref name="copied"/> instead of a toast of their own, which doubled the
+    /// toast and also claimed success when the copy had failed.
     /// </summary>
-    public static void CopyText(IEnumerable<string> lines)
+    /// <param name="copied">The success toast's line ("Path copied"); "Copied to the clipboard" when null.</param>
+    public static void CopyText(IEnumerable<string> lines, string? copied = null)
     {
         string text = string.Join(Environment.NewLine, lines);
         if (text.Length == 0)
@@ -129,7 +132,7 @@ internal static class ShellActions
             return;
         }
 
-        Toast?.Invoke(new Kit.Popups.ToastContent(Core.Model.Severity.None, Strings.Shell.Copied, string.Empty));
+        Toast?.Invoke(new Kit.Popups.ToastContent(Core.Model.Severity.None, copied ?? Strings.Shell.Copied, string.Empty));
     }
 
     /// <summary>Shows a toast on the UI thread the hand-off was started from (nothing when there is none).</summary>
