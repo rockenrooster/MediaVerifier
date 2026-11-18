@@ -350,7 +350,7 @@ public sealed class DashboardScansTests
         List<string?> rows = [];
         bool pauseEnabled = true, stopEnabled = true;
         string heading = string.Empty, speed = string.Empty;
-        int idlePoll = 0, activePoll = 0;
+        int idlePoll = 0, activePoll = 0, endedHeight = 0, idleHeight = 0;
         Sta.Run(() =>
         {
             using TempDirectory temp = new("scans-card");
@@ -392,6 +392,12 @@ public sealed class DashboardScansTests
             scans.Status = DemoScanControl.Running with { Phase = EnginePhase.Paused, InFlight = [] };
             Call(card, "UpdateStatus");
             speed = Field<string[]>(card, "_values")[2];
+
+            // The run ends: the card goes back to its idle height, and History moves up with it.
+            scans.Status = EngineStatus.Idle;
+            Call(card, "UpdateStatus");
+            endedHeight = ((Control)card).Height;
+            idleHeight = Dpi.Scale(176, page.DeviceDpi);
             form.Close();
         });
 
@@ -405,6 +411,7 @@ public sealed class DashboardScansTests
         Assert.False(stopEnabled);
         Assert.Equal(Strings.Shell.Finishing, heading);
         Assert.Equal(Strings.Dash, speed);
+        Assert.Equal(idleHeight, endedHeight);
     }
 
     /// <summary>

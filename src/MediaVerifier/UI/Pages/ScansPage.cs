@@ -423,6 +423,7 @@ internal sealed class ScansPage : PageBase
             }
 
             _updated = true;
+            int height = LogicalHeight;
             if (!status.IsActive || status.RunId != _status.RunId)
             {
                 Array.Clear(_slots);
@@ -430,7 +431,6 @@ internal sealed class ScansPage : PageBase
                 _stopping = false;
             }
 
-            int height = LogicalHeight;
             PlaceInFlight(status.InFlight);
             _status = status;
             _background = background;
