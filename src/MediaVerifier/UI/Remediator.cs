@@ -242,7 +242,18 @@ internal static class Remediator
     /// Undoes every done operation of a batch (newest first) and reports. Every one is tried: one that fails (a file
     /// open in a player) no longer stops the rest. A running scan pauses meanwhile, as for a repair.
     /// </summary>
-    public static async Task UndoBatchAsync(UiServices services, long batch, Control? owner = null)
+    public static Task UndoBatchAsync(UiServices services, long batch, Control? owner = null) =>
+        UndoAsync(services, () => [.. services.Database.Journal.List(int.MaxValue, batch).Where(o => o.Status == OperationStatus.Done).OrderByDescending(o => o.Id).Select(o => o.Id)], owner);
+
+    /// <summary>
+    /// Undoes the given operations in order (Tools, Quarantine: Restore), as <see cref="UndoBatchAsync"/> does: every
+    /// one is tried, a running scan pauses, the result is one toast (two when some failed) and the shell refreshes.
+    /// </summary>
+    public static Task UndoOperationsAsync(UiServices services, IReadOnlyList<long> operationIds, Control? owner = null) =>
+        UndoAsync(services, () => operationIds, owner);
+
+    /// <param name="operations">The operations to undo, read on a pool thread.</param>
+    private static async Task UndoAsync(UiServices services, Func<IReadOnlyList<long>> operations, Control? owner)
     {
         if (services.Operations is not OperationRunner runner)
         {
@@ -269,9 +280,9 @@ internal static class Remediator
                 int failed = 0;
                 string? first = null;
                 long undoBatch = services.Clock.UtcNow.UtcTicks;
-                foreach (OperationRecord operation in services.Database.Journal.List(int.MaxValue, batch).Where(o => o.Status == OperationStatus.Done).OrderByDescending(o => o.Id))
+                foreach (long operation in operations())
                 {
-                    string? failure = await runner.UndoAsync(operation.Id, undoBatch, CancellationToken.None).ConfigureAwait(false);
+                    string? failure = await runner.UndoAsync(operation, undoBatch, CancellationToken.None).ConfigureAwait(false);
                     if (failure is null)
                     {
                         undone++;
