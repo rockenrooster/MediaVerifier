@@ -1115,11 +1115,14 @@ internal sealed class ToolsPage : PageBase
 /// <summary>Tools → Create report (subplan 09): what, format and where; a toast offers to open the file.</summary>
 internal sealed class CreateReportDialog : KitDialog
 {
+    private const int FormHeight = 276;
     private readonly UiServices _services;
     private readonly DropDown _what = new() { TabIndex = 0 };
     private readonly OptionRow[] _formats;
     private readonly PathBox _folder = new() { Inset = true, TabIndex = 4 };
+    private readonly InfoBar _reaching = new() { Tier = Severity.Low, Text = Strings.Library.Reaching, Visible = false, TabIndex = 5 };
     private readonly KitButton _create;
+    private bool _reachingShown;
 
     private CreateReportDialog(UiServices services)
         : base(Strings.Tools.CreateReport, DialogWidth.Confirmation)
@@ -1138,6 +1141,7 @@ internal sealed class CreateReportDialog : KitDialog
         Body.Controls.Add(_what);
         Body.Controls.AddRange(_formats);
         Body.Controls.Add(_folder);
+        Body.Controls.Add(_reaching);
         Body.Paint += (_, e) =>
         {
             ThemeTokens t = ThemeService.Tokens;
@@ -1151,8 +1155,14 @@ internal sealed class CreateReportDialog : KitDialog
 
         // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
         _create.Click += async (_, _) => await CreateAsync().ConfigureAwait(true);
-        BodyHeight = 276;
+        BodyHeight = FormHeight;
     }
+
+    /// <summary>Whether a folder exists; asked off the UI thread (tests make it slow).</summary>
+    internal static Func<string, bool> FolderExists { get; set; } = Directory.Exists;
+
+    /// <summary>True while the "Trying to reach this folder…" bar shows (tests).</summary>
+    internal bool Reaching => _reachingShown;
 
     public static void Show(Form owner, UiServices services)
     {
@@ -1171,6 +1181,7 @@ internal sealed class CreateReportDialog : KitDialog
         }
 
         _folder.Bounds = new Rectangle(x, S(244), width, S(32));
+        _reaching.Bounds = new Rectangle(0, S(FormHeight + 16), Body.Width, S(40));
     }
 
     private async Task CreateAsync()
@@ -1183,7 +1194,8 @@ internal sealed class CreateReportDialog : KitDialog
         // Seconds in the name: two reports saved in the same minute replaced each other.
         string path = Path.Combine(folder, "MediaVerifier report " + now.ToLocalTime().ToString("yyyy-MM-dd HHmmss", CultureInfo.InvariantCulture) + ReportWriter.Extension(format));
 
-        // The dialog stays open until the report is written; one report at a time.
+        // The dialog stays open until the report is written; one report at a time. Cancel still closes it (an offline
+        // folder takes a while to give up on): the report is then saved, or not, without a word but its toast.
         _create.Enabled = false;
         string? problem;
         try
@@ -1192,36 +1204,62 @@ internal sealed class CreateReportDialog : KitDialog
         }
         finally
         {
-            _create.Enabled = true;
+            if (!IsDisposed)
+            {
+                _create.Enabled = true;
+            }
         }
 
+        bool open = !IsDisposed && Visible;
         if (problem is not null)
         {
-            // Said over the dialog, which stays open to pick another folder: the error handler showed a generic
-            // message once per session and nothing after that.
-            MessageDialog.Show(this, string.Format(CultureInfo.CurrentCulture, Strings.Tools.ActionFailed, Strings.Tools.CreateReport), problem, Strings.Kit.Close);
+            if (open)
+            {
+                // Said over the dialog, which stays open to pick another folder: the error handler showed a generic
+                // message once per session and nothing after that.
+                MessageDialog.Show(this, string.Format(CultureInfo.CurrentCulture, Strings.Tools.ActionFailed, Strings.Tools.CreateReport), problem, Strings.Kit.Close);
+            }
+
             return;
         }
 
-        Finish(DialogResult.OK);
+        if (open)
+        {
+            Finish(DialogResult.OK);
+        }
+
         _services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Tools.ReportSaved, Path.GetFileName(path), Strings.Tools.Open, () => ShellActions.ShowInFolder(path)));
     }
 
     /// <summary>
     /// Checks the folder (an offline network folder counts as unreachable after the Add folder limit instead of
-    /// keeping Create disabled for minutes) and writes the report, off the UI thread; the reason when it could not.
+    /// keeping Create disabled for minutes, and after 2 s a bar says it is being reached, as Add folder does) and writes
+    /// the report, off the UI thread; the reason when it could not.
     /// </summary>
     private async Task<string?> WriteAsync(string folder, string path, ReportFormat format, bool lastScan, DateTimeOffset now)
     {
-        Task<bool> probe = Task.Run(() => Directory.Exists(folder));
-        if (await Task.WhenAny(probe, Task.Delay(AddFolderDialog.ReachLimit)).ConfigureAwait(true) != probe)
+        Func<string, bool> exists = FolderExists;
+        Task<bool> probe = Task.Run(() => exists(folder));
+        if (await Task.WhenAny(probe, Task.Delay(AddFolderDialog.ReachNotice)).ConfigureAwait(true) != probe)
         {
-            return Strings.Library.ErrorUnreachable;
+            ShowReaching(true);
+            bool answered = await Task.WhenAny(probe, Task.Delay(AddFolderDialog.ReachLimit - AddFolderDialog.ReachNotice)).ConfigureAwait(true) == probe;
+            ShowReaching(false);
+            if (!answered)
+            {
+                return Strings.Library.ErrorUnreachable;
+            }
         }
 
         if (!probe.Result)
         {
             return Strings.Library.ErrorMissing;
+        }
+
+        if (IsDisposed || !Visible)
+        {
+            // Cancelled while the folder was being reached: nothing is written.
+            return string.Empty;
         }
 
         if (_services.IsDemo)
@@ -1255,5 +1293,19 @@ internal sealed class CreateReportDialog : KitDialog
             _services.State.Log.Warning("The report could not be written", ex);
             return ex.Message;
         }
+    }
+
+    /// <summary>The Low bar under Save to while its folder has not answered; the body grows by it (Add folder's notice).</summary>
+    private void ShowReaching(bool show)
+    {
+        // What the code decided, not Visible, which reads false while the dialog itself is hidden.
+        if (IsDisposed || _reachingShown == show)
+        {
+            return;
+        }
+
+        _reachingShown = show;
+        _reaching.Visible = show;
+        BodyHeight = show ? FormHeight + 16 + 40 : FormHeight;
     }
 }

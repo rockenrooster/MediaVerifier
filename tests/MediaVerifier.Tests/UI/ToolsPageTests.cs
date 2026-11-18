@@ -150,6 +150,65 @@ public sealed class ToolsPageTests
     }
 
     /// <summary>
+    /// Create report says so while its folder has not answered (an offline network folder kept Create disabled with
+    /// nothing shown), and writes the report once the folder answers.
+    /// </summary>
+    [Fact]
+    public void Create_report_says_while_its_folder_is_being_reached()
+    {
+        bool sawNotice = false;
+        bool noticeGone = false;
+        bool written = false;
+        List<ToastContent> toasts = [];
+        TimeSpan notice = AddFolderDialog.ReachNotice;
+        Func<string, bool> exists = CreateReportDialog.FolderExists;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("tools-report");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: OwnEngine());
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.ShowToast = toasts.Add;
+            string folder = Directory.CreateDirectory(temp.Combine("Reports")).FullName;
+            AddFolderDialog.ReachNotice = TimeSpan.FromMilliseconds(100);
+            CreateReportDialog.FolderExists = path =>
+            {
+                Thread.Sleep(800);
+                return Directory.Exists(path);
+            };
+            try
+            {
+                ToolsPage tools = OpenView(form, -1);
+                _ = Answer<CreateReportDialog>(() => Find<KitButton>(tools, b => b.Text == Strings.Tools.CreateReport).PerformClick(), dialog =>
+                {
+                    Find<PathBox>(dialog, _ => true).Text = folder;
+                    Find<KitButton>(dialog, b => b.Text == Strings.Tools.Create).PerformClick();
+                    Settle(() => dialog.Reaching, TimeSpan.FromSeconds(3));
+                    sawNotice = dialog.Reaching;
+                    Settle(() => !dialog.Reaching, TimeSpan.FromSeconds(5));
+                    noticeGone = !dialog.Reaching;
+                });
+                Settle(() => toasts.Count > 0, TimeSpan.FromSeconds(10));
+            }
+            finally
+            {
+                AddFolderDialog.ReachNotice = notice;
+                CreateReportDialog.FolderExists = exists;
+            }
+
+            written = Directory.EnumerateFiles(folder, "MediaVerifier report *").Any();
+            form.Close();
+        });
+
+        Assert.True(sawNotice, "Nothing said the folder was being reached.");
+        Assert.True(noticeGone, "The notice stayed after the folder answered.");
+        Assert.True(written, "The report was not written.");
+        Assert.Contains(toasts, t => t.Title == Strings.Tools.ReportSaved);
+    }
+
+    /// <summary>
     /// An original moved to quarantine: the file in the root's quarantine folder and its Done journal row (as
     /// ACT-QUARANTINE writes them). Returns the kept file's path.
     /// </summary>

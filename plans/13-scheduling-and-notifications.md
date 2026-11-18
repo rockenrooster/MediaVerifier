@@ -131,7 +131,9 @@ checking conditions), never by probing the engine mutex, which would briefly own
 One toast per run. All run toasts share one tag (`scan`, group `runs`) so a newer run replaces an
 unread older one; the run id travels in the launch link. Every notification is also written to the
 `notifications` table (the in-app bell). Manual runs with the window focused use in-app toasts
-instead of system toasts.
+instead of system toasts. A manual run (or the Continue of one) follows the default plan rules
+(`NewFindings`, `Medium`, made stricter by `Notify about`) and its titles name it a scan, not a
+scheduled one: `Scan could not run`, `Scan finished`.
 
 Text: title states the outcome ("3 new problems found", "Scheduled scan could not run"); body gives
 counts and context ("1 critical, 2 high in Music. Scan finished 03:12."). No file names in system

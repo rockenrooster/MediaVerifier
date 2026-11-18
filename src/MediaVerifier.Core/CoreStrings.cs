@@ -18,6 +18,10 @@ public static class CoreStrings
         public const string NewProblem = "{0} new problem found";
         public const string NewProblems = "{0} new problems found";
         public const string NothingNew = "Scheduled scan finished";
+
+        /// <summary>The titles of a scan the user started (subplan 09, activity wording).</summary>
+        public const string ScanCouldNotRun = "Scan could not run";
+        public const string ScanFinished = "Scan finished";
         public const string Skipped = "Scheduled scan skipped";
         public const string OnBattery = "The computer was running on battery.";
         public const string FullScreen = "A full-screen program was running.";

@@ -258,8 +258,18 @@ internal static class PlanHost
 /// </summary>
 internal sealed record PlanJob(PlanRecord Plan, PlanDefinition Definition, IReadOnlyList<RootRecord> Roots)
 {
-    /// <summary>The scan request: the plan's folders at its depth, linked to the plan, within its time limit.</summary>
-    public ScanRequest Request => new([.. Roots.Select(r => new ScanScope(r.Id))], Definition.Depth, RunTrigger.Scheduled, Plan.Id, Definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null);
+    /// <summary>
+    /// The scan request: the plan's folders at its depth, linked to the plan, within its time limit. A plan without
+    /// verification (<c>includeVerification</c> false, subplan 13) gets no time for it, so no file is re-read only to
+    /// compare its fingerprint; the setting was stored and never read.
+    /// </summary>
+    public ScanRequest Request => new(
+        [.. Roots.Select(r => new ScanScope(r.Id))],
+        Definition.Depth,
+        RunTrigger.Scheduled,
+        Plan.Id,
+        Definition.BudgetMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null,
+        Definition.IncludeVerification ? null : new ScanOptions { ScrubBudget = TimeSpan.Zero });
 
     /// <summary>The folders for the Scans heading: all folders, or the plan's folders by name.</summary>
     public string FoldersText => Definition.Roots is { Length: > 0 }
@@ -284,7 +294,8 @@ internal sealed record PlanJob(PlanRecord Plan, PlanDefinition Definition, IRead
 /// <summary>
 /// A plan forwarded by a scheduled launch while the window is open (subplan 13, Headless run, step 1): it runs in
 /// the window's own engine, which shows its progress. Afterwards the notification goes to the bell and, unless the
-/// window is focused, to the system channel; a focused window shows it as an in-app toast.
+/// window is focused, to the system channel; a focused window shows it as an in-app toast. Manual runs of the window
+/// are told the same way (<see cref="WatchManualRuns"/>).
 /// </summary>
 internal static class GuiPlanRunner
 {
@@ -343,15 +354,45 @@ internal static class GuiPlanRunner
         }
     }
 
-    private static async Task FinishAsync(UiServices services, PlanDefinition definition, RunSummary summary, Func<bool> windowFocused, Action<RunNotification> showInApp)
+    /// <summary>
+    /// The notifications of the window's own scans (subplan 13: every notification goes to the bell; a manual run with
+    /// the window focused shows an in-app toast instead of a system one). Only scheduled runs notified, so a long scan
+    /// ended in a hidden window without a word whatever Settings → Notifications said. Disposing the result stops it.
+    /// </summary>
+    public static IDisposable WatchManualRuns(UiServices services, Func<bool> windowFocused, Action<RunNotification> showInApp)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        void Completed(RunSummary summary)
+        {
+            // Started here by the user: a scan, or the Continue of an interrupted one. A forwarded plan tells its own.
+            if (summary.Trigger != RunTrigger.Scheduled && !services.IsDemo)
+            {
+                _ = Task.Run(() => NotifyAsync(services, new PlanNotify(), summary, windowFocused, showInApp));
+            }
+        }
+
+        services.Scans.RunCompleted += Completed;
+        return new Subscription(() => services.Scans.RunCompleted -= Completed);
+    }
+
+    private static Task FinishAsync(UiServices services, PlanDefinition definition, RunSummary summary, Func<bool> windowFocused, Action<RunNotification> showInApp)
+    {
+        // The run row links itself to the plan (RunStore.BeginAsync); the plan record is not written back, which
+        // undid the user's changes made during the run. Only scheduled runs post to the webhook (task N-06).
+        _ = Task.Run(() => WebhookDispatch.SendAsync(services.State, services.Database, summary));
+        return NotifyAsync(services, definition.Notify, summary, windowFocused, showInApp);
+    }
+
+    /// <summary>
+    /// A run's notification, decided by the plan's (or a manual run's default) rules and Settings → Notifications: to
+    /// the bell, and as a system toast when the window is not focused, otherwise as an in-app toast. Never throws.
+    /// </summary>
+    internal static async Task NotifyAsync(UiServices services, PlanNotify plan, RunSummary summary, Func<bool> windowFocused, Action<RunNotification> showInApp)
     {
         try
         {
-            // The run row links itself to the plan (RunStore.BeginAsync); the plan record is not written back, which
-            // undid the user's changes made during the run.
-            _ = Task.Run(() => WebhookDispatch.SendAsync(services.State, services.Database, summary));
             Core.Settings.ScanSettings settings = services.State.Settings.Scanning;
-            PlanNotify notify = NotificationPolicy.WithThreshold(definition.Notify, settings.NotifyAbout);
+            PlanNotify notify = NotificationPolicy.WithThreshold(plan, settings.NotifyAbout);
             if (NotificationPolicy.Decide(summary, notify, new Dictionary<long, DateTimeOffset>(), DateTimeOffset.UtcNow, PlanHost.InQuietHours(settings), PlanHost.FinishedText()) is not RunNotification notification)
             {
                 return;
@@ -374,10 +415,17 @@ internal static class GuiPlanRunner
                 showInApp(notification);
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException)
         {
-            services.State.Log.Warning("The notification of a forwarded plan run failed", ex);
+            services.State.Log.Warning("The notification of a scan failed", ex);
         }
+    }
+
+    private sealed class Subscription(Action remove) : IDisposable
+    {
+        private Action? _remove = remove;
+
+        public void Dispose() => Interlocked.Exchange(ref _remove, null)?.Invoke();
     }
 }
 

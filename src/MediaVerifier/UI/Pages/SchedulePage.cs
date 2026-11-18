@@ -11,6 +11,9 @@ using MediaVerifier.UI.Theme;
 
 namespace MediaVerifier.UI.Pages;
 
+/// <summary>The Dashboard's <c>Create schedule</c> (subplan 13): adds the first two templates when there is no plan yet.</summary>
+internal sealed record CreateScheduleRequest;
+
 /// <summary>
 /// Schedule (subplan 09, Schedule; tasks UI-08 and SCH-07): the plans with their switch, next run and last
 /// result, Run now, Edit and more; the verification card. Geometry from docs/design/schedule-dark.svg with the
@@ -47,8 +50,8 @@ internal sealed class SchedulePage : PageBase
         _empty.SetButton(Strings.Schedule.NewSchedule).Click += (_, _) => UiTask.Run(EditAsync(null));
 
         // Subplan 09, Schedule: the empty state's presets create those plans (subplan 13 templates).
-        _nightly.Click += (_, _) => UiTask.Run(AddPlanAsync(Strings.Schedule.Nightly, PlanDefinition.Templates[0].Definition));
-        _weekly.Click += (_, _) => UiTask.Run(AddPlanAsync(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition));
+        _nightly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Nightly, PlanDefinition.Templates[0].Definition)]));
+        _weekly.Click += (_, _) => UiTask.Run(AddPlansAsync([(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition)]));
 
         // The boxes save once the typing stops or focus leaves them: each save flushes settings.json to disk, and it
         // ran on every key and every arrow step.
@@ -62,6 +65,18 @@ internal sealed class SchedulePage : PageBase
     }
 
     public override PageId Id => PageId.Schedule;
+
+    /// <summary>
+    /// <see cref="CreateScheduleRequest"/>: the Dashboard's Create schedule adds the first two templates (subplan 13); it
+    /// only opened this page. Pressed again, or with plans already there, it adds nothing.
+    /// </summary>
+    public override void HandleRequest(object request)
+    {
+        if (request is CreateScheduleRequest)
+        {
+            UiTask.Run(AddPlansAsync([(Strings.Schedule.Nightly, PlanDefinition.Templates[0].Definition), (Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition)], onlyIntoEmpty: true));
+        }
+    }
 
     /// <summary>The page scrolls when its plans and the verification card do not fit (they were cut off).</summary>
     public override int MeasureContentHeight(int width) => VerificationTop(width) + S(VerificationHeight(width)) + S(24);
@@ -414,12 +429,23 @@ internal sealed class SchedulePage : PageBase
 
         // The next run counts from the plan's first day, as the task and the row do (a new plan's is today).
         DateOnly anchor = plan?.Anchor ?? DateOnly.FromDateTime(DateTime.Now);
-        _ = ScheduleEditorDialog.Ask(owner, plan?.Name ?? Strings.Schedule.Weekly, start, roots, anchor, plan is not null, async (name, edited) =>
-        {
-            (long id, string? refused) = await StorePlanAsync(planId, name, edited, enabled).ConfigureAwait(true);
-            planId = id;
-            return refused;
-        });
+
+        // The other plans: the editor warns when one of them fires at the same minute (only one scan runs at a time).
+        List<PlanRow> others = [.. (_data?.Plans ?? []).Where(p => p.Id != plan?.Id)];
+        _ = ScheduleEditorDialog.Ask(
+            owner,
+            plan?.Name ?? Strings.Schedule.Weekly,
+            start,
+            roots,
+            anchor,
+            plan is not null,
+            async (name, edited) =>
+            {
+                (long id, string? refused) = await StorePlanAsync(planId, name, edited, enabled).ConfigureAwait(true);
+                planId = id;
+                return refused;
+            },
+            others);
         Reload();
     }
 
@@ -447,7 +473,7 @@ internal sealed class SchedulePage : PageBase
             string? refused = await RegisterAsync(database).ConfigureAwait(false);
             if (refused is not null && enabled)
             {
-                await SwitchOffAsync(database, planId, now).ConfigureAwait(false);
+                await SwitchOffAsync(database, [planId], now).ConfigureAwait(false);
             }
 
             return (planId, refused);
@@ -473,12 +499,21 @@ internal sealed class SchedulePage : PageBase
         }
     }
 
-    /// <summary>A plan whose task Windows refused stays switched off; its task, if one is left, goes.</summary>
-    private async Task SwitchOffAsync(Database database, long planId, long now)
+    /// <summary>Plans whose tasks Windows refused stay switched off; their tasks, if any are left, go.</summary>
+    private async Task SwitchOffAsync(Database database, IReadOnlyList<long> planIds, long now)
     {
-        if (database.Plans.Get(planId) is PlanRecord record)
+        bool changed = false;
+        foreach (long planId in planIds)
         {
-            await database.Plans.UpdateAsync(record with { Enabled = false, UpdatedUtc = now }).ConfigureAwait(false);
+            if (database.Plans.Get(planId) is PlanRecord record)
+            {
+                await database.Plans.UpdateAsync(record with { Enabled = false, UpdatedUtc = now }).ConfigureAwait(false);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
             _ = await RegisterAsync(database).ConfigureAwait(false);
         }
     }
@@ -515,8 +550,48 @@ internal sealed class SchedulePage : PageBase
         Reload();
     }
 
-    private Task AddPlanAsync(string name, PlanDefinition definition) =>
-        ChangePlansAsync(db => db.Plans.AddAsync(new PlanRecord { Name = name, Enabled = true, DefinitionJson = definition.ToJson(), CreatedUtc = Services.Clock.UtcNow.UtcTicks, UpdatedUtc = Services.Clock.UtcNow.UtcTicks }));
+    /// <summary>
+    /// Adds plans switched on and registers their tasks. When Windows refuses, they stay switched off and a toast says
+    /// why (a preset stayed on without a task, and nothing was said). <paramref name="onlyIntoEmpty"/> adds them only
+    /// while there is no plan at all.
+    /// </summary>
+    private async Task AddPlansAsync(IReadOnlyList<(string Name, PlanDefinition Definition)> plans, bool onlyIntoEmpty = false)
+    {
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
+        Database database = Services.Database;
+        long now = Services.Clock.UtcNow.UtcTicks;
+        string? refused = await Task.Run(async () =>
+        {
+            if (onlyIntoEmpty && database.Plans.List().Count > 0)
+            {
+                return null;
+            }
+
+            List<long> added = [];
+            foreach ((string name, PlanDefinition definition) in plans)
+            {
+                added.Add(await database.Plans.AddAsync(new PlanRecord { Name = name, Enabled = true, DefinitionJson = definition.ToJson(), CreatedUtc = now, UpdatedUtc = now }).ConfigureAwait(false));
+            }
+
+            string? message = await RegisterAsync(database).ConfigureAwait(false);
+            if (message is not null)
+            {
+                await SwitchOffAsync(database, added, now).ConfigureAwait(false);
+            }
+
+            return message;
+        }).ConfigureAwait(true);
+        if (refused is not null)
+        {
+            Services.ShowToast?.Invoke(new ToastContent(Severity.Critical, plans.Count == 1 ? plans[0].Name : Strings.Pages.Schedule, string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused)));
+        }
+
+        Reload();
+    }
 
     /// <summary>
     /// The plan's switch; when Windows refuses the task, the plan stays switched off and a toast says why. The switch
@@ -552,7 +627,7 @@ internal sealed class SchedulePage : PageBase
                     return null;
                 }
 
-                await SwitchOffAsync(database, plan.Id, now).ConfigureAwait(false);
+                await SwitchOffAsync(database, [plan.Id], now).ConfigureAwait(false);
                 return message;
             }).ConfigureAwait(true);
         }

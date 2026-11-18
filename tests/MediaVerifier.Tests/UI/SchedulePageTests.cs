@@ -194,6 +194,74 @@ public sealed class SchedulePageTests
         Assert.Equal(4, (data with { ReadRate = ScheduleData.AssumedReadRate / 2 }).FullPassDays(120));
     }
 
+    /// <summary>
+    /// The Dashboard's Create schedule adds the first two templates and registers their tasks (it only opened the page);
+    /// asked again, with plans there, it adds nothing more.
+    /// </summary>
+    [Fact]
+    public void Create_schedule_adds_the_first_two_templates_once()
+    {
+        List<PlanRecord> plans = [];
+        bool registered = false;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("schedule-create");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.CheckForUpdatesOnStartup = false;
+            using UiServices services = Live(state, temp);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            services.Navigate!(PageId.Schedule, new CreateScheduleRequest());
+            Settle(() => Db(services.Database.Plans.List) is { Count: 2 } two && two.All(p => p.TaskName is not null));
+            SchedulePage page = (SchedulePage)form.CurrentPageControl!;
+            Settle(() => page.Loading.IsCompleted);
+            page.HandleRequest(new CreateScheduleRequest());
+            Pump(TimeSpan.FromMilliseconds(300));
+            Settle(() => page.Loading.IsCompleted);
+            plans = Db(services.Database.Plans.List);
+            registered = plans.All(p => TestScheduler.Backend.Tasks.ContainsKey(p.TaskName ?? string.Empty));
+            form.Close();
+        });
+
+        Assert.Equal([Strings.Schedule.Nightly, Strings.Schedule.Weekly], plans.OrderBy(p => p.Id).Select(p => p.Name));
+        Assert.All(plans, p => Assert.True(p.Enabled));
+        Assert.True(registered, "A template's task was not registered.");
+    }
+
+    /// <summary>
+    /// The editor warns when a switched-on plan fires at the same minute (only one scan runs at a time, so one of them was
+    /// skipped); another time, or that plan switched off, clears it. Save stays enabled: it is a warning.
+    /// </summary>
+    [Fact]
+    public void The_editor_warns_about_a_plan_at_the_same_minute()
+    {
+        string? atThree = null;
+        string? atFive = null;
+        string? otherOff = null;
+        bool saveEnabled = false;
+        Sta.Run(() =>
+        {
+            DateOnly anchor = new(2026, 11, 1);
+            PlanDefinition nightly = PlanDefinition.Templates[0].Definition;
+            PlanRow on = new(1, Strings.Schedule.Nightly, true, string.Empty, string.Empty, string.Empty, null, nightly, anchor);
+            using (ScheduleEditorDialog editor = ScheduleEditorDialog.Create(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition, [], anchor, [on]))
+            {
+                atThree = editor.SameTimeWarning;
+                saveEnabled = Find<KitButton>(editor, b => b.Text == Strings.Kit.Save).Enabled;
+                Find<KitTextBox>(editor, b => b.Text == "03:00").Text = "05:00";
+                atFive = editor.SameTimeWarning;
+            }
+
+            using ScheduleEditorDialog off = ScheduleEditorDialog.Create(Strings.Schedule.Weekly, PlanDefinition.Templates[1].Definition, [], anchor, [on with { Enabled = false }]);
+            otherOff = off.SameTimeWarning;
+        });
+
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Schedule.SameTime, Strings.Schedule.Nightly), atThree);
+        Assert.True(saveEnabled, "The warning disabled Save.");
+        Assert.Null(atFive);
+        Assert.Null(otherOff);
+    }
+
     private static UiServices Live(AppState state, TempDirectory temp) =>
         UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: @"Local\MediaVerifier.Engine.Test." + Guid.NewGuid().ToString("N"));
 

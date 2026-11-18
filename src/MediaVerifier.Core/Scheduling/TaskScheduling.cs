@@ -304,9 +304,12 @@ public static class NotificationPolicy
         ArgumentNullException.ThrowIfNull(notify);
         ArgumentNullException.ThrowIfNull(offlineNotified);
         bool toast = notify.When != NotifyWhen.Never;
+
+        // A scan the user started is not a scheduled one (subplan 09's activity wording).
+        bool scheduled = run.Trigger == RunTrigger.Scheduled;
         if (run.Status == RunStatus.Failed)
         {
-            return new RunNotification(Severity.High, CoreStrings.Notify.CouldNotRun, run.Error ?? string.Empty, toast);
+            return new RunNotification(Severity.High, scheduled ? CoreStrings.Notify.CouldNotRun : CoreStrings.Notify.ScanCouldNotRun, run.Error ?? string.Empty, toast);
         }
 
         SeverityCounts n = run.NewFindings;
@@ -337,7 +340,7 @@ public static class NotificationPolicy
         }
 
         return notify.When == NotifyWhen.Always
-            ? new RunNotification(Severity.None, CoreStrings.Notify.NothingNew, finishedText, toast)
+            ? new RunNotification(Severity.None, scheduled ? CoreStrings.Notify.NothingNew : CoreStrings.Notify.ScanFinished, finishedText, toast)
             : null;
     }
 
