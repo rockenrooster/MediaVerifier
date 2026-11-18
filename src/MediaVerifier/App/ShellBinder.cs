@@ -190,13 +190,14 @@ internal sealed class ShellBinder : IDisposable
             else if (!active && !background)
             {
                 // A scan of this window ended: the page on show reloads too, or Issues and the Dashboard kept
-                // showing what was there before the scan until the user went to another page. Then a request that
-                // waited for it starts.
+                // showing what was there before the scan until the user went to another page.
                 _form.RefreshAll();
-                if (_services.QueuedScanCount > 0)
-                {
-                    UiTask.Run(_services.StartQueuedScanAsync());
-                }
+            }
+
+            if (!active && !background && _services.QueuedScanCount > 0)
+            {
+                // No scan runs any more, here or in the background: a request that waited for one starts.
+                UiTask.Run(_services.StartQueuedScanAsync());
             }
         }
     }

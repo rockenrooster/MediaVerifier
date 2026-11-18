@@ -93,6 +93,7 @@ internal sealed class UiServices : IDisposable
     private readonly List<IDisposable> _owned = [];
     private readonly Queue<QueuedScan> _queuedScans = new();
     private Action? _lastUndo;
+    private RuleSettings _rules = RuleSettings.Defaults;
 
     public required AppState State { get; init; }
 
@@ -107,8 +108,16 @@ internal sealed class UiServices : IDisposable
     /// <summary>Page snapshots (the database, or the mockups' data in the render harness).</summary>
     public required UI.Data.IUiData Data { get; init; }
 
-    /// <summary>The rule overlay (enabled, caps, limits) as stored in the database.</summary>
-    public RuleSettings Rules { get; set; } = RuleSettings.Defaults;
+    /// <summary>
+    /// The rule overlay (enabled, caps, limits) as stored in the database. Scan workers read it on their own threads
+    /// while Settings → Rules changes it, so a change is published as a new instance here (copy on write), never made
+    /// to the instance already published.
+    /// </summary>
+    public RuleSettings Rules
+    {
+        get => Volatile.Read(ref _rules);
+        set => Volatile.Write(ref _rules, value ?? throw new ArgumentNullException(nameof(value)));
+    }
 
     /// <summary>Opens a page, optionally with a request for it (a filter, a dialog to open); set by the main window.</summary>
     public Action<UI.Pages.PageId, object?>? Navigate { get; set; }
@@ -388,7 +397,13 @@ internal sealed class UiServices : IDisposable
         {
             if (MediaEngine.ScanningAllowed && Scans.Status.IsActive)
             {
-                _queuedScans.Enqueue(new QueuedScan(scopes, depth, scopeText, options));
+                // The same request twice (Scan again pressed twice) waits once.
+                QueuedScan request = new(scopes, depth, scopeText, options);
+                if (!_queuedScans.Any(request.SameAs))
+                {
+                    _queuedScans.Enqueue(request);
+                }
+
                 ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.None, UI.Strings.Shell.ScanQueued, UI.Strings.Shell.ScanQueuedText));
                 return true;
             }
@@ -415,10 +430,14 @@ internal sealed class UiServices : IDisposable
     /// <summary>Requests waiting for this window's scan to end.</summary>
     public int QueuedScanCount => _queuedScans.Count;
 
-    /// <summary>Starts the oldest queued request once no scan runs here (the shell calls it when a scan ends).</summary>
+    /// <summary>
+    /// Starts the oldest queued request once a scan can start (the shell calls it whenever scanning stops: this window's
+    /// scan, or a scheduled one in another process). While none can start, the requests keep waiting, instead of being
+    /// refused one by one.
+    /// </summary>
     public async Task StartQueuedScanAsync()
     {
-        if (_queuedScans.Count == 0 || Scans.Status.IsActive)
+        if (_queuedScans.Count == 0 || CannotScanReason(true) is not null)
         {
             return;
         }
@@ -427,7 +446,20 @@ internal sealed class UiServices : IDisposable
         _ = await StartScanAsync(next.Scopes, next.Depth, next.ScopeText, next.Options).ConfigureAwait(true);
     }
 
-    private sealed record QueuedScan(IReadOnlyList<ScanScope> Scopes, ScanDepth Depth, string ScopeText, ScanOptions? Options);
+    private sealed record QueuedScan(IReadOnlyList<ScanScope> Scopes, ScanDepth Depth, string ScopeText, ScanOptions? Options)
+    {
+        /// <summary>The same scopes at the same depth with the same options (file lists compared item by item).</summary>
+        public bool SameAs(QueuedScan other) =>
+            Depth == other.Depth
+            && Equals(Options, other.Options)
+            && Scopes.Count == other.Scopes.Count
+            && Scopes.Zip(other.Scopes).All(pair => SameScope(pair.First, pair.Second));
+
+        private static bool SameScope(ScanScope a, ScanScope b) =>
+            a.RootId == b.RootId
+            && string.Equals(a.RelativeDirectory, b.RelativeDirectory, StringComparison.OrdinalIgnoreCase)
+            && (a.FileIds is null ? b.FileIds is null : b.FileIds is not null && a.FileIds.SequenceEqual(b.FileIds));
+    }
 
     public void Dispose()
     {

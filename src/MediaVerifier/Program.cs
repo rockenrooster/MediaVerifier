@@ -78,6 +78,7 @@ internal static class Program
         }
         catch (Exception ex) when (IsLibraryOpenFailure(ex))
         {
+            state.Log.Error("The library database could not be opened", ex);
             ErrorLog.Write("Library database", ex);
             ReportStartupFailure(ex);
             return 1;

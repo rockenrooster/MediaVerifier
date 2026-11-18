@@ -169,6 +169,7 @@ public sealed class ShellTests
         FakeScans scans = new() { Status = DemoScanControl.Running };
         List<string> toasts = [];
         bool accepted = false;
+        int queued = -1;
         int startedWhileBusy = -1;
         Sta.Run(() =>
         {
@@ -187,6 +188,10 @@ public sealed class ShellTests
             Task<bool> start = services.StartScanAsync([new ScanScope(7, null, [42])], ScanDepth.Standard, "1 file");
             ScreenRenderer.WaitFor(start);
             accepted = start.Result;
+
+            // The same request again (Scan again pressed twice) waits once.
+            ScreenRenderer.WaitFor(services.StartScanAsync([new ScanScope(7, null, [42])], ScanDepth.Standard, "1 file"));
+            queued = services.QueuedScanCount;
             startedWhileBusy = scans.Started.Count;
             form.PollScan();
             scans.Status = EngineStatus.Idle;
@@ -196,11 +201,59 @@ public sealed class ShellTests
         });
 
         Assert.True(accepted);
+        Assert.Equal(1, queued);
         Assert.Equal(0, startedWhileBusy);
-        Assert.Equal([Strings.Shell.ScanQueued], toasts);
+        Assert.Equal([Strings.Shell.ScanQueued, Strings.Shell.ScanQueued], toasts);
         ScanRequest request = Assert.Single(scans.Started);
         Assert.Equal(new long[] { 42 }, Assert.Single(request.Scopes).FileIds);
         Assert.Equal(ScanDepth.Standard, request.Depth);
+    }
+
+    /// <summary>
+    /// A request that waited for this window's scan, when a scheduled scan in another process takes over as it ends,
+    /// keeps waiting and starts once that one ends too. It used to wait for the next scan of this window, which might
+    /// never come.
+    /// </summary>
+    [Fact]
+    public void A_queued_scan_waits_for_a_scheduled_scan_that_follows_and_then_starts()
+    {
+        FakeScans scans = new() { Status = DemoScanControl.Running };
+        bool background = false;
+        List<string> toasts = [];
+        int startedDuringBackground = -1;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("shell-queue-background");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = Live(state, temp, scans, background: () => background);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            Action<ToastContent> show = services.ShowToast!;
+            services.ShowToast = content =>
+            {
+                toasts.Add(content.Title);
+                show(content);
+            };
+
+            ScreenRenderer.WaitFor(services.StartScanAsync([new ScanScope(7)], ScanDepth.Quick, "Music"));
+            form.PollScan();
+
+            // This window's scan ends as a scheduled scan starts in another process.
+            scans.Status = EngineStatus.Idle;
+            background = true;
+            form.PollScan();
+            Settle(() => false, TimeSpan.FromMilliseconds(200));
+            startedDuringBackground = scans.Started.Count;
+
+            background = false;
+            form.PollScan();
+            Settle(() => scans.Started.Count > 0);
+            form.Close();
+        });
+
+        Assert.Equal(0, startedDuringBackground);
+        Assert.Equal([Strings.Shell.ScanQueued], toasts);
+        Assert.Equal(7, Assert.Single(Assert.Single(scans.Started).Scopes).RootId);
     }
 
     /// <summary>
@@ -277,7 +330,7 @@ public sealed class ShellTests
     [Fact]
     public void A_page_applies_only_its_newest_reload()
     {
-        List<int> applied = [];
+        List<object> applied = [];
         Sta.Run(() =>
         {
             using TempDirectory temp = new("shell-reload");
@@ -302,7 +355,52 @@ public sealed class ShellTests
             ScreenRenderer.WaitFor(older);
         });
 
-        Assert.Equal([2], applied);
+        Assert.Equal(new object[] { 2 }, applied);
+    }
+
+    /// <summary>
+    /// Library loads its folder cards and its Browse view separately, and Browse takes the folders' paths from the
+    /// cards. When the header search opens Library, the cards' load starts, then Browse's: the cards still apply when
+    /// they finish last, while the older Browse load does not.
+    /// </summary>
+    [Fact]
+    public void A_page_still_applies_an_older_load_of_another_kind()
+    {
+        List<object> applied = [];
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("shell-reload-kinds");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = DemoUiData.CreateServices(state, temp.Path);
+            using SlowPage page = new(services);
+            TaskCompletionSource cards = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource browse = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource search = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            page.Gates.Enqueue(("cards", cards.Task));
+            page.Gates.Enqueue((2, browse.Task));
+            page.Gates.Enqueue((3, search.Task));
+            page.Applied = applied;
+
+            // Each load takes its gate before the next starts.
+            page.Reload();
+            Task cardsLoad = page.Loading;
+            Settle(() => page.GateCount == 2);
+            page.Reload();
+            Task browseLoad = page.Loading;
+            Settle(() => page.GateCount == 1);
+            page.Reload();
+            Task searchLoad = page.Loading;
+            Settle(() => page.GateCount == 0);
+
+            search.SetResult();
+            ScreenRenderer.WaitFor(searchLoad);
+            cards.SetResult();
+            ScreenRenderer.WaitFor(cardsLoad);
+            browse.SetResult();
+            ScreenRenderer.WaitFor(browseLoad);
+        });
+
+        Assert.Equal(new object[] { 3, "cards" }, applied);
     }
 
     /// <summary>A load that fails for a reason the page does not handle reaches the error handler instead of an unobserved task.</summary>
@@ -606,7 +704,7 @@ public sealed class ShellTests
         Assert.True(shownWhenOpened);
     }
 
-    private static UiServices Live(AppState state, TempDirectory temp, FakeScans scans, bool live = false, UpdateService? updates = null)
+    private static UiServices Live(AppState state, TempDirectory temp, FakeScans scans, bool live = false, UpdateService? updates = null, Func<bool>? background = null)
     {
         Database database = Database.Open(temp.Combine("shell.db"));
         UiServices services = new()
@@ -618,7 +716,7 @@ public sealed class ShellTests
             MediaEngine = new MediaEngineInfo(new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), new BundleCheck(BundleState.Ok, null, [], [], null)),
             Data = live ? new LiveUiData(database, () => state.Settings.Scanning, SystemClock.Instance) : new DemoUiData(),
             Updates = updates,
-            BackgroundProbe = static () => false,
+            BackgroundProbe = background ?? (static () => false),
         };
         services.Own(database);
         return services;
@@ -696,10 +794,10 @@ public sealed class ShellTests
         public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => Task.FromResult(new ReevaluationResult(0, 0, 0));
     }
 
-    /// <summary>A page whose loads wait for the test, so they can finish in any order.</summary>
+    /// <summary>A page whose loads wait for the test, so they can finish in any order; a value's type is its kind of data.</summary>
     private sealed class SlowPage(UiServices services) : PageBase(services)
     {
-        public Queue<(int Value, Task Gate)> Gates { get; } = new();
+        public Queue<(object Value, Task Gate)> Gates { get; } = new();
 
         public int GateCount
         {
@@ -713,7 +811,7 @@ public sealed class ShellTests
         }
 
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public List<int>? Applied { get; set; }
+        public List<object>? Applied { get; set; }
 
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public Exception? Failure { get; init; }
@@ -727,14 +825,14 @@ public sealed class ShellTests
                 throw Failure;
             }
 
-            (int value, Task gate) = Dequeue();
+            (object value, Task gate) = Dequeue();
             gate.GetAwaiter().GetResult();
             return value;
         }
 
-        protected override void ApplyData(object data) => Applied?.Add((int)data);
+        protected override void ApplyData(object data) => Applied?.Add(data);
 
-        private (int, Task) Dequeue()
+        private (object, Task) Dequeue()
         {
             lock (Gates)
             {

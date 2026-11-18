@@ -22,7 +22,9 @@ internal enum PageId
 internal abstract class PageBase : KitControl
 {
     private readonly List<System.Windows.Forms.Timer> _timers = [];
+    private readonly Dictionary<Type, int> _appliedGenerations = [];
     private int _reloadGeneration;
+    private Type? _lastAppliedKind;
 
     protected PageBase(UiServices services)
     {
@@ -39,10 +41,10 @@ internal abstract class PageBase : KitControl
     public Task Loading { get; private set; } = Task.CompletedTask;
 
     /// <summary>
-    /// Reloads the page's data off the UI thread, then applies it on the UI thread. Only the newest reload is applied:
-    /// loads run side by side on the database's reader pool, and an older, slower one (the folder before the one just
-    /// chosen, the filter before the last click) overwrote the newer one. A failure the load does not handle reaches
-    /// the app's error handler instead of being lost in an unobserved task.
+    /// Reloads the page's data off the UI thread, then applies it on the UI thread. A load that a newer one replaces is
+    /// not applied (<see cref="IsSuperseded"/>): loads run side by side on the database's reader pool, and an older,
+    /// slower one (the folder before the one just chosen, the filter before the last click) overwrote the newer one. A
+    /// failure the load does not handle reaches the app's error handler instead of being lost in an unobserved task.
     /// </summary>
     public void Reload()
     {
@@ -83,25 +85,34 @@ internal abstract class PageBase : KitControl
             return;
         }
 
-        if (generation != _reloadGeneration)
+        if (data is null || IsDisposed || IsSuperseded(generation, data.GetType()))
         {
-            // A newer reload started while this one ran: its result is the one to show.
             return;
         }
 
-        if (data is not null && !IsDisposed)
+        _appliedGenerations[data.GetType()] = generation;
+        _lastAppliedKind = data.GetType();
+        Diagnostics.UiWatchdog.Mark("Apply " + Id);
+        ApplyData(data);
+        if (Parent is Shell.PageViewport viewport)
         {
-            Diagnostics.UiWatchdog.Mark("Apply " + Id);
-            ApplyData(data);
-            if (Parent is Shell.PageViewport viewport)
-            {
-                viewport.LayoutPage();
-            }
-
-            PerformLayout();
-            Invalidate(true);
+            viewport.LayoutPage();
         }
+
+        PerformLayout();
+        Invalidate(true);
     }
+
+    /// <summary>
+    /// Whether a finished load is out of date. One that finished after a newer reload started is dropped when a load of
+    /// the same kind (the type of its data) replaces it: the last load applied is of its kind, so the newer one is too
+    /// (the next folder, the next filter), or a newer load of its kind was applied already. One of another kind still
+    /// applies: Library loads its folder cards and its Browse view separately, and Browse needs the cards' folder paths
+    /// (dropping the cards' load when the header search opened Browse left every result without its folder).
+    /// </summary>
+    private bool IsSuperseded(int generation, Type kind) =>
+        generation != _reloadGeneration
+        && (kind == _lastAppliedKind || generation < _appliedGenerations.GetValueOrDefault(kind));
 
     /// <summary>
     /// A load that failed for a reason the page survives (the database busy or closing, a disk error), also when it
