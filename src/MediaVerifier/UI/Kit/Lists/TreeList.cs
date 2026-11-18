@@ -44,7 +44,9 @@ internal sealed class TreeItem(string text, object? tag = null)
 /// The folder tree (subplan 08, task UK-08): 32 px rows inset 4 px with radius 4, 18 px per level, chevron
 /// at +14, folder icon at +32, label at +56, roll-up severity icon 14 px at 16 px from the right. Lazy
 /// children; Left collapses (or moves to the parent), Right expands (or moves to the first child), Enter
-/// and a chevron click toggle.
+/// and a chevron click toggle. A right-click selects the folder under the pointer, like a left click, and asks for its
+/// menu on release (<see cref="ContextMenuRequested"/>); so does the context-menu key for the selected folder. A tree
+/// taller than its view shows the lists' scroll thumb.
 /// </summary>
 internal sealed class TreeList : KitControl
 {
@@ -52,21 +54,35 @@ internal sealed class TreeList : KitControl
     private const int Indent = 18;
     private readonly List<TreeItem> _roots = [];
     private readonly List<TreeItem> _visible = [];
+    private readonly DeactivateHook _deactivation;
     private int _scroll;
     private int _hover = -1;
+    private int _focusRow = -1;
     private TreeItem? _selected;
+    private TreeItem? _menuNode;
+    private bool _scrollHover;
+    private bool _dragging;
+    private int _dragOffset;
+    private bool _keyNavigation;
 
     public TreeList()
     {
         TabStop = true;
         AccessibleRole = AccessibleRole.Outline;
         BackColor = Tokens.Surface;
+        _deactivation = new DeactivateHook(this, ClearHover);
     }
 
     /// <summary>Asked for a node's children the first time it expands.</summary>
     public event EventHandler<TreeItem>? LoadChildren;
 
     public event EventHandler? SelectionChanged;
+
+    /// <summary>
+    /// A right-click released on a folder (selected by the press), or the context-menu key (Apps, Shift+F10) on the
+    /// selected one: the folder and the screen point for its menu's top-left corner. Empty space asks for nothing.
+    /// </summary>
+    public event EventHandler<(TreeItem Node, Point Screen)>? ContextMenuRequested;
 
     public IList<TreeItem> Roots => _roots;
 
@@ -94,7 +110,15 @@ internal sealed class TreeList : KitControl
 
     protected override bool Interactive => true;
 
-    /// <summary>Rebuilds the visible rows after nodes were added, removed or changed.</summary>
+    /// <summary>The focus ring shows for keyboard focus, and also once keys moved in the tree after a click.</summary>
+    private bool ShowFocus => Focused && (KeyboardFocused || _keyNavigation);
+
+    private int ContentHeight => S(8) + (_visible.Count * S(RowHeight));
+
+    /// <summary>
+    /// Rebuilds the visible rows after nodes were added, removed or changed. A selected node that is no longer in the
+    /// tree (the roots were replaced) stops being selected, with <see cref="SelectionChanged"/>.
+    /// </summary>
     public void Rebuild()
     {
         _visible.Clear();
@@ -103,9 +127,34 @@ internal sealed class TreeList : KitControl
             AddVisible(root);
         }
 
-        ClampScroll();
+        bool dropped = _selected is not null && !InTree(_selected);
+        if (dropped)
+        {
+            _selected = null;
+        }
+
+        _focusRow = -1;
+        for (TreeItem? node = _selected; node is not null && _focusRow < 0; node = node.Parent)
+        {
+            _focusRow = _visible.IndexOf(node);
+        }
+
+        if (_menuNode is not null && !_visible.Contains(_menuNode))
+        {
+            _menuNode = null;
+        }
+
+        SetScroll(_scroll);
+        _hover = Math.Min(_hover, _visible.Count - 1);
         Invalidate();
+        if (dropped)
+        {
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
+
+    /// <summary>The node under a client point, or null (empty space, the scrollbar).</summary>
+    public TreeItem? NodeAt(Point point) => !InScrollZone(point) && IndexAt(point.Y) is int index && index >= 0 ? _visible[index] : null;
 
     public void Toggle(TreeItem node)
     {
@@ -168,6 +217,10 @@ internal sealed class TreeList : KitControl
         int height = S(RowHeight);
         int top = S(4);
         int first = Math.Max(0, (_scroll - top) / height);
+
+        // The ring marks where keys act: the selected folder, its shown ancestor while a collapsed folder hides it, or
+        // the first row in view when nothing is selected.
+        int ring = !ShowFocus ? -1 : _focusRow >= 0 ? _focusRow : TopRow();
         for (int i = first; i < _visible.Count; i++)
         {
             int y = top + (i * height) - _scroll;
@@ -178,7 +231,12 @@ internal sealed class TreeList : KitControl
 
             TreeItem node = _visible[i];
             bool selected = ReferenceEquals(node, _selected);
-            DrawRow(e.Graphics, new Rectangle(0, y, Width, height), node, selected, i == _hover, selected && KeyboardFocused, DeviceDpi);
+            DrawRow(e.Graphics, new Rectangle(0, y, Width, height), node, selected, i == _hover && !_dragging, i == ring, DeviceDpi);
+        }
+
+        if (ThumbBounds() is Rectangle thumb)
+        {
+            VirtualList.DrawScrollThumb(e.Graphics, thumb, _scrollHover || _dragging, DeviceDpi);
         }
     }
 
@@ -186,37 +244,93 @@ internal sealed class TreeList : KitControl
     {
     }
 
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        _deactivation.Attach();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        _deactivation.Attach();
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        _keyNavigation = false;
+        base.OnLostFocus(e);
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        int index = IndexAt(e.Y);
-        if (index != _hover)
+        if (_dragging)
         {
-            _hover = index;
+            SetScroll(ListScrollbar.OffsetAt(e.Y - _dragOffset, 0, Height, ContentHeight, DeviceDpi));
+            Invalidate();
+            return;
+        }
+
+        bool overScroll = InScrollZone(e.Location);
+        if (overScroll != _scrollHover)
+        {
+            _scrollHover = overScroll;
             Invalidate();
         }
+
+        UpdateHover(e.Location);
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        _hover = -1;
-        Invalidate();
+        ClearHover();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        _keyNavigation = false;
         Focus();
-        int index = IndexAt(e.Y);
-        if (index < 0 || e.Button != MouseButtons.Left)
+        if (e.Button == MouseButtons.Left && ThumbBounds() is Rectangle thumb && InScrollZone(e.Location))
+        {
+            if (thumb.Contains(e.Location))
+            {
+                _dragging = true;
+                _dragOffset = e.Y - thumb.Y;
+                Capture = true;
+            }
+            else
+            {
+                SetScroll(_scroll + ((e.Y < thumb.Y ? -1 : 1) * Math.Max(S(RowHeight), Height - S(RowHeight))));
+            }
+
+            Invalidate();
+            return;
+        }
+
+        _menuNode = null;
+        TreeItem? node = NodeAt(e.Location);
+        if (node is null)
         {
             return;
         }
 
-        TreeItem node = _visible[index];
-        int chevronLeft = S(14 + (node.Depth * Indent));
-        if (node.HasChildren && e.X >= chevronLeft - S(4) && e.X < chevronLeft + S(20))
+        if (e.Button == MouseButtons.Right)
+        {
+            // The menu acts on the folder right-clicked: it becomes the selection, as with a left click.
+            _menuNode = node;
+            SelectedNode = node;
+            return;
+        }
+
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        if (OnChevron(node, e.X))
         {
             Toggle(node);
             return;
@@ -225,22 +339,55 @@ internal sealed class TreeList : KitControl
         SelectedNode = node;
     }
 
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (_dragging)
+        {
+            _dragging = false;
+            Capture = false;
+            Invalidate();
+            return;
+        }
+
+        if (e.Button == MouseButtons.Right && _menuNode is TreeItem node)
+        {
+            _menuNode = null;
+            if (ReferenceEquals(NodeAt(e.Location), node))
+            {
+                ContextMenuRequested?.Invoke(this, (node, PointToScreen(e.Location)));
+            }
+        }
+    }
+
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
-        int index = IndexAt(e.Y);
-        if (index >= 0)
+
+        // A double-click on the label toggles; on the chevron each press already toggled. Other buttons do nothing.
+        if (e.Button == MouseButtons.Left && NodeAt(e.Location) is TreeItem node && !OnChevron(node, e.X))
         {
-            Toggle(_visible[index]);
+            Toggle(node);
+        }
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        base.OnMouseCaptureChanged(e);
+        if (!Capture && _dragging)
+        {
+            // Another window took the mouse mid-drag: without the release, plain mouse moves kept dragging.
+            _dragging = false;
+            Invalidate();
         }
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        _scroll -= e.Delta * Math.Max(1, SystemInformation.MouseWheelScrollLines) * S(RowHeight) / 120;
-        ClampScroll();
+        SetScroll(_scroll - (e.Delta * Math.Max(1, SystemInformation.MouseWheelScrollLines) * S(RowHeight) / 120));
         KitScrolling.MarkHandled(e);
+        UpdateHover(e.Location);
         Invalidate();
     }
 
@@ -249,19 +396,27 @@ internal sealed class TreeList : KitControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (_visible.Count == 0)
+        if (!_keyNavigation)
+        {
+            _keyNavigation = true;
+            Invalidate();
+        }
+
+        // A key the page handled is not also handled here.
+        if (e.Handled || _visible.Count == 0)
         {
             return;
         }
 
-        int index = _selected is null ? -1 : _visible.IndexOf(_selected);
+        // Keys act where the ring is: the selected folder, or its shown ancestor while a collapsed folder hides it.
+        TreeItem? current = _focusRow >= 0 ? _visible[_focusRow] : null;
         switch (e.KeyCode)
         {
             case Keys.Up:
-                SelectedNode = _visible[Math.Max(0, index - 1)];
+                SelectedNode = _visible[_focusRow < 0 ? TopRow() : Math.Max(0, _focusRow - 1)];
                 break;
             case Keys.Down:
-                SelectedNode = _visible[Math.Min(_visible.Count - 1, index + 1)];
+                SelectedNode = _visible[_focusRow < 0 ? TopRow() : Math.Min(_visible.Count - 1, _focusRow + 1)];
                 break;
             case Keys.Home:
                 SelectedNode = _visible[0];
@@ -269,30 +424,42 @@ internal sealed class TreeList : KitControl
             case Keys.End:
                 SelectedNode = _visible[^1];
                 break;
-            case Keys.Left when _selected is not null:
-                if (_selected.Expanded && _selected.HasChildren)
+            case Keys.Left when current is not null:
+                if (current.Expanded && current.HasChildren)
                 {
-                    Toggle(_selected);
+                    Toggle(current);
                 }
-                else if (_selected.Parent is not null)
+                else if (current.Parent is not null)
                 {
-                    SelectedNode = _selected.Parent;
+                    SelectedNode = current.Parent;
+                }
+                else
+                {
+                    SelectedNode = current;
                 }
 
                 break;
-            case Keys.Right when _selected is not null:
-                if (!_selected.Expanded && _selected.HasChildren)
+            case Keys.Right when current is not null:
+                if (!current.Expanded && current.HasChildren)
                 {
-                    Toggle(_selected);
+                    Toggle(current);
                 }
-                else if (_selected.Expanded && _selected.LoadedChildren is { Count: > 0 } children)
+                else if (current.Expanded && current.LoadedChildren is { Count: > 0 } children)
                 {
                     SelectedNode = children[0];
                 }
 
                 break;
-            case Keys.Enter when _selected is not null:
-                Toggle(_selected);
+            case Keys.Enter when current is not null:
+                Toggle(current);
+                break;
+            case Keys.Apps when current is not null:
+            case Keys.F10 when e.Shift && current is not null:
+                SelectedNode = current;
+                EnsureVisible(current);
+                int row = _visible.IndexOf(current);
+                int bottom = S(4) + ((row + 1) * S(RowHeight)) - _scroll;
+                ContextMenuRequested?.Invoke(this, (current, PointToScreen(new Point(S(44), bottom))));
                 break;
             default:
                 return;
@@ -304,7 +471,17 @@ internal sealed class TreeList : KitControl
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
-        ClampScroll();
+        SetScroll(_scroll);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _deactivation.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private void AddVisible(TreeItem node)
@@ -319,10 +496,70 @@ internal sealed class TreeList : KitControl
         }
     }
 
+    /// <summary>Whether a node still hangs in this tree (each level is in its parent's children, the top one in the roots).</summary>
+    private bool InTree(TreeItem node)
+    {
+        for (TreeItem item = node; ; item = item.Parent)
+        {
+            if (item.Parent is null)
+            {
+                return _roots.Contains(item);
+            }
+
+            if (item.Parent.LoadedChildren is not { } siblings || !siblings.Contains(item))
+            {
+                return false;
+            }
+        }
+    }
+
+    private bool OnChevron(TreeItem node, int x)
+    {
+        int chevronLeft = S(14 + (node.Depth * Indent));
+        return node.HasChildren && x >= chevronLeft - S(4) && x < chevronLeft + S(20);
+    }
+
     private int IndexAt(int y)
     {
         int index = (y + _scroll - S(4)) / S(RowHeight);
-        return y + _scroll - S(4) >= 0 && index < _visible.Count ? index : -1;
+        return y >= 0 && y < Height && y + _scroll - S(4) >= 0 && index < _visible.Count ? index : -1;
+    }
+
+    /// <summary>The first row in view.</summary>
+    private int TopRow() => Math.Clamp((_scroll - S(4) + S(RowHeight) - 1) / S(RowHeight), 0, Math.Max(0, _visible.Count - 1));
+
+    private void UpdateHover(Point point)
+    {
+        int index = InScrollZone(point) ? -1 : IndexAt(point.Y);
+        if (index != _hover)
+        {
+            _hover = index;
+            Invalidate();
+        }
+    }
+
+    private void ClearHover()
+    {
+        if (_hover >= 0 || _scrollHover)
+        {
+            _hover = -1;
+            _scrollHover = false;
+            Invalidate();
+        }
+    }
+
+    /// <summary>The hover follows the rows that moved under a still pointer (keyboard scrolling).</summary>
+    private void RefreshHover()
+    {
+        Point point = IsHandleCreated ? PointToClient(MousePosition) : new Point(-1, -1);
+        if (ClientRectangle.Contains(point))
+        {
+            UpdateHover(point);
+        }
+        else
+        {
+            ClearHover();
+        }
     }
 
     private void EnsureVisible(TreeItem? node)
@@ -341,22 +578,23 @@ internal sealed class TreeList : KitControl
         int top = S(4) + (index * S(RowHeight));
         if (top < _scroll)
         {
-            _scroll = top;
+            SetScroll(top);
         }
         else if (top + S(RowHeight) > _scroll + Height)
         {
-            _scroll = top + S(RowHeight) - Height;
+            SetScroll(top + S(RowHeight) - Height);
         }
 
-        ClampScroll();
+        RefreshHover();
         Invalidate();
     }
 
-    private void ClampScroll()
-    {
-        int content = S(8) + (_visible.Count * S(RowHeight));
-        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, content - Height));
-    }
+    private void SetScroll(int value) => _scroll = Math.Clamp(value, 0, Math.Max(0, ContentHeight - Height));
+
+    private Rectangle? ThumbBounds() => ListScrollbar.Thumb(Width, 0, Height, ContentHeight, _scroll, _scrollHover || _dragging, DeviceDpi);
+
+    /// <summary>The scrollbar's pointer zone, only while there is a thumb.</summary>
+    private bool InScrollZone(Point point) => ThumbBounds() is not null && ListScrollbar.Zone(Width, 0, Height, DeviceDpi).Contains(point);
 
     private sealed class TreeAccessibleObject(TreeList owner) : ControlAccessibleObject(owner)
     {
