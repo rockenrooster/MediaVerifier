@@ -821,6 +821,8 @@ internal static class Strings
         public const string NoLongerApply = "{0} findings no longer apply.";
         public const string NoFindingsChanged = "No findings changed.";
         public const string SaveFailed = "Settings could not be saved. The log has the details.";
+        public const string SelfCheckRunning = "The self-check is running.";
+        public const string WebhookSending = "A test is being sent.";
     }
 
     public static class Dialogs

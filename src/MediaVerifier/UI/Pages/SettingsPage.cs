@@ -40,6 +40,7 @@ internal sealed class SettingsPage : PageBase
     private int _current;
     private bool _portable;
     private bool _saveFailureShown;
+    private KitTextBox? _webhookBox;
 
     public SettingsPage(UiServices services)
         : base(services)
@@ -93,8 +94,8 @@ internal sealed class SettingsPage : PageBase
                 Number(Strings.Settings.ReadersHdd, null, null, 1, 16, () => scan.ReadersPerHdd, v => scan.ReadersPerHdd = v),
                 Number(Strings.Settings.ReadersSsd, null, null, 1, 32, () => scan.ReadersPerSsd, v => scan.ReadersPerSsd = v),
                 Number(Strings.Settings.ReadersNetwork, null, null, 1, 16, () => scan.ReadersPerNetwork, v => scan.ReadersPerNetwork = v),
-                Button(Strings.Settings.FileTypes, null, Strings.Settings.EditEllipsis, () => EditFileTypes(scan)),
-                Button(Strings.Settings.AlwaysSkip, null, Strings.Settings.EditEllipsis, () => EditAlwaysSkip(scan)),
+                Button(Strings.Settings.FileTypes, null, Strings.Settings.EditEllipsis, _ => EditFileTypes(scan)),
+                Button(Strings.Settings.AlwaysSkip, null, Strings.Settings.EditEllipsis, _ => EditAlwaysSkip(scan)),
                 Toggle(Strings.Settings.CloudFiles, Strings.Settings.CloudFilesHelper, () => scan.ScanCloudFiles, v => scan.ScanCloudFiles = v),
                 Drop(Strings.Settings.SkipLarger, null, [Strings.Settings.NoLimit, Strings.Settings.Gb10, Strings.Settings.Gb50, Strings.Settings.Gb100], () => SizeIndex(scan.SkipFilesLargerThan), i => scan.SkipFilesLargerThan = i switch { 1 => 10L << 30, 2 => 50L << 30, 3 => 100L << 30, _ => null }),
                 Number(Strings.Settings.StallSeconds, null, Strings.Units.SecondsUnit, 10, 3600, () => scan.StallSeconds, v => scan.StallSeconds = v),
@@ -121,12 +122,13 @@ internal sealed class SettingsPage : PageBase
                     scan.QuietHours = v;
                     quietFrom.Collapsed = quietTo.Collapsed = !v;
                     quietFrom.Parent?.Parent?.PerformLayout();
+                    RelayoutPage();
                 }),
                 quietFrom,
                 quietTo,
-                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.TestNotification, () => UiTask.Run(SendTestNotificationAsync())),
+                Button(Strings.Settings.TestNotificationLabel, null, Strings.Settings.TestNotification, _ => UiTask.Run(SendTestNotificationAsync())),
                 Webhook(scan),
-                Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, () => UiTask.Run(SendWebhookTestAsync())),
+                Button(Strings.Settings.WebhookTestLabel, null, Strings.Settings.SendTest, b => UiTask.Run(WhileBusyAsync(b, Strings.Settings.WebhookSending, SendWebhookTestAsync))),
             ]),
             Section(Strings.Settings.Updates, Strings.Settings.UpdatesIntro,
             [
@@ -137,12 +139,12 @@ internal sealed class SettingsPage : PageBase
             [
                 // Change… led to Tools, where the database cannot be moved yet (Move… waits for phase 16): the button
                 // shows where it is instead.
-                Button(Strings.Settings.DatabaseLocation, State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath), Strings.Tools.OpenFolder, () => ShellActions.ShowInFolder(State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath))),
-                Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, () => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
+                Button(Strings.Settings.DatabaseLocation, State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath), Strings.Tools.OpenFolder, _ => ShellActions.ShowInFolder(State.Paths.ResolveDatabaseFile(State.Settings.DatabasePath))),
+                Button(Strings.Settings.Logs, null, Strings.Settings.OpenLogs, _ => ShellActions.OpenFolder(State.Paths.LogsDirectory)),
                 Buttons(Strings.Settings.Diagnostics, null,
                 [
-                    (Strings.Settings.RunSelfCheck, () => UiTask.Run(RunSelfCheckAsync())),
-                    (Strings.Settings.CopyReport, () => UiTask.Run(CopySystemReportAsync())),
+                    (Strings.Settings.RunSelfCheck, b => UiTask.Run(WhileBusyAsync(b, Strings.Settings.SelfCheckRunning, RunSelfCheckAsync))),
+                    (Strings.Settings.CopyReport, _ => UiTask.Run(CopySystemReportAsync())),
                 ]),
             ]),
             Section(Strings.Settings.About, string.Empty, [new AboutRow(this)]),
@@ -190,6 +192,24 @@ internal sealed class SettingsPage : PageBase
 
         _nav.Invalidate();
         _nav.AnnounceSelection();
+        if (Parent is Shell.PageViewport viewport)
+        {
+            viewport.ScrollOffset = 0;
+        }
+
+        RelayoutPage();
+    }
+
+    /// <summary>
+    /// A section taller than the content area scrolls with the page (Scanning has 11 rows): the page is as tall as the
+    /// shown section. Rules fills the area and scrolls its own list.
+    /// </summary>
+    public override int MeasureContentHeight(int width) => _sections[_current] is SettingsSection section ? section.ContentHeight : 0;
+
+    /// <summary>Sizes the page to the shown section again (another section, quiet-hours rows shown or hidden).</summary>
+    private void RelayoutPage()
+    {
+        (Parent as Shell.PageViewport)?.LayoutPage();
         PerformLayout();
     }
 
@@ -418,8 +438,23 @@ internal sealed class SettingsPage : PageBase
             System.Diagnostics.ProcessStartInfo start = new(Environment.ProcessPath ?? Application.ExecutablePath) { UseShellExecute = false, CreateNoWindow = true };
             start.ArgumentList.Add("--self-check");
             using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(start);
-            if (process is null || !process.WaitForExit(TimeSpan.FromMinutes(2)))
+            if (process is null)
             {
+                return -1;
+            }
+
+            if (!process.WaitForExit(TimeSpan.FromMinutes(2)))
+            {
+                // Disposing the handle leaves the process running: a hung self-check is stopped.
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+                {
+                    State.Log.Warning("The timed-out self-check could not be stopped", ex);
+                }
+
                 return -1;
             }
 
@@ -493,13 +528,23 @@ internal sealed class SettingsPage : PageBase
     }
 
     /// <summary>
-    /// The webhook address (task N-06), checked when the box loses focus: HTTPS is taken as it is, plain HTTP to a
-    /// private address after a confirmation, anything else is put back with a message. Empty turns the webhook off.
+    /// The webhook address (task N-06), checked when the box loses focus and before <c>Send test</c> (kit buttons take no
+    /// focus, so a click there never left the box): HTTPS is taken as it is, plain HTTP to a private address after a
+    /// confirmation, anything else is put back with a message. Empty turns the webhook off. An HTTPS address is also
+    /// taken quietly once typing pauses, so closing the window from the box keeps it.
     /// </summary>
     private SettingRow Webhook(ScanSettings scan)
     {
         KitTextBox box = new() { Text = scan.WebhookUrl ?? string.Empty, AccessibleName = Strings.Settings.Webhook, Placeholder = Strings.Settings.WebhookPlaceholder, Inset = true, MaxLength = 2048 };
         box.Leave += (_, _) => BeginInvoke(() => CommitWebhook(box, scan));
+        box.TextCommitted += (_, _) =>
+        {
+            if (WebhookAddress.Check(box.Text.Trim(), out _) == WebhookAddressVerdict.Ok)
+            {
+                CommitWebhook(box, scan);
+            }
+        };
+        _webhookBox = box;
         return new SettingRow(Strings.Settings.Webhook, Strings.Settings.WebhookHelper, box, null, width: 280);
     }
 
@@ -537,12 +582,31 @@ internal sealed class SettingsPage : PageBase
         Save();
     }
 
-    /// <summary><c>Send test</c>: posts the test payload to the saved address and says whether it arrived.</summary>
+    /// <summary>
+    /// <c>Send test</c>: takes the address in the box first (it used to test the previously saved one and call a valid
+    /// https address invalid), then posts the test payload and says whether it arrived.
+    /// </summary>
     private async Task SendWebhookTestAsync()
     {
         ScanSettings scan = State.Settings.Scanning;
+        if (_webhookBox is KitTextBox box)
+        {
+            string typed = box.Text.Trim();
+            CommitWebhook(box, scan);
+            if (!string.Equals(typed, scan.WebhookUrl ?? string.Empty, StringComparison.Ordinal))
+            {
+                // Not taken: CommitWebhook said why, or plain HTTP was declined.
+                return;
+            }
+        }
+
+        if (Services.IsDemo)
+        {
+            return;
+        }
+
         WebhookAddressVerdict verdict = WebhookAddress.Check(scan.WebhookUrl, out Uri? address);
-        if (Services.IsDemo || address is null || (verdict == WebhookAddressVerdict.NeedsConfirmation && !scan.WebhookAllowHttp))
+        if (address is null || (verdict == WebhookAddressVerdict.NeedsConfirmation && !scan.WebhookAllowHttp))
         {
             Services.ShowToast?.Invoke(new Kit.Popups.ToastContent(Severity.Medium, Strings.Settings.Webhook, Strings.Settings.WebhookInvalid));
             return;
@@ -588,25 +652,52 @@ internal sealed class SettingsPage : PageBase
         }
     }
 
-    private static SettingRow Buttons(string label, string? helper, IReadOnlyList<(string Text, Action Click)> buttons)
+    private static SettingRow Buttons(string label, string? helper, IReadOnlyList<(string Text, Action<KitButton> Click)> buttons)
     {
         Control[] controls = new Control[buttons.Count];
         for (int i = 0; i < buttons.Count; i++)
         {
-            (string text, Action click) = buttons[i];
+            (string text, Action<KitButton> click) = buttons[i];
             KitButton button = new() { Kind = ButtonKind.Secondary, Text = text };
-            button.Click += (_, _) => click();
+            button.Click += (_, _) => click(button);
             controls[i] = button;
         }
 
         return new SettingRow(label, helper, controls);
     }
 
-    private static SettingRow Button(string label, string? helper, string text, Action click)
+    private static SettingRow Button(string label, string? helper, string text, Action<KitButton> click)
     {
         KitButton button = new() { Kind = ButtonKind.Secondary, Text = text };
-        button.Click += (_, _) => click();
+        button.Click += (_, _) => click(button);
         return new SettingRow(label, helper, button, null);
+    }
+
+    /// <summary>
+    /// Runs a button's slow work (the self-check, a webhook test) with the button disabled and a tooltip saying why, so
+    /// the click shows it was taken and a second click cannot start the work again.
+    /// </summary>
+    internal static async Task WhileBusyAsync(KitButton button, string reason, Func<Task> work)
+    {
+        if (!button.Enabled)
+        {
+            return;
+        }
+
+        button.Enabled = false;
+        KitToolTip.Set(button, reason);
+        try
+        {
+            await work().ConfigureAwait(true);
+        }
+        finally
+        {
+            if (!button.IsDisposed)
+            {
+                button.Enabled = true;
+                KitToolTip.Set(button, string.Empty);
+            }
+        }
     }
 
     /// <summary>The section list at the left (168 px), drawn like the navigation rail's items.</summary>
@@ -783,6 +874,24 @@ internal sealed class SettingsPage : PageBase
 
             _card.Visible = rows.Count > 0;
             Controls.Add(_card);
+        }
+
+        /// <summary>Height of the heading and the card with every row shown, as <see cref="OnLayout"/> places them.</summary>
+        public int ContentHeight
+        {
+            get
+            {
+                int height = S(64) + S(1) + S(1);
+                foreach (SectionRow row in _rows)
+                {
+                    if (!row.Collapsed)
+                    {
+                        height += S(row.LogicalHeight);
+                    }
+                }
+
+                return height;
+            }
         }
 
         protected override void OnLayout(LayoutEventArgs levent)
