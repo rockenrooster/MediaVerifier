@@ -202,11 +202,12 @@ internal class KitTextBox : KitControl
         InputPainter.PaintFrame(e.Graphics, ClientRectangle, state, Editing, _inset, DeviceDpi);
         if (!_edit.Visible)
         {
-            // Disabled: the edit is hidden and the frame paints the text (or the placeholder).
+            // Disabled (or not shown yet): the edit is hidden and the frame paints the text (or the placeholder).
             ThemeTokens t = Tokens;
             bool empty = string.IsNullOrEmpty(Text);
+            Color color = !Enabled ? t.TextDisabled : empty ? t.Text3 : t.Text;
             int x = S(TextLeft);
-            KitPaint.DrawText(e.Graphics, empty ? _placeholder : Text, Type.Body, empty ? t.Text3 : t.TextDisabled, x, Height / 2, Width - x - S(TextRight), RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
+            KitPaint.DrawText(e.Graphics, empty ? _placeholder : Text, Type.Body, color, x, Height / 2, Width - x - S(TextRight), RightAligned ? TextFormatFlags.Right : TextFormatFlags.Default);
         }
 
         PaintAdornments(e.Graphics);
