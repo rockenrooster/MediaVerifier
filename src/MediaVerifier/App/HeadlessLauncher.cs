@@ -13,9 +13,6 @@ internal static class HeadlessLauncher
     public const int ExitFailure = 1;
     public const int ExitForwarded = 3;
 
-    /// <summary>Runs the plan in this process; replaced by the scheduling subplan's runner.</summary>
-    internal static Func<AppState, long, int>? PlanRunner { get; set; }
-
     public static int Run(long planId) => Run(planId, AppPaths.Default, IpcNames.PipeNameForCurrentSession());
 
     internal static int Run(long planId, AppPaths paths, string pipeName)
@@ -28,30 +25,34 @@ internal static class HeadlessLauncher
             return ExitForwarded;
         }
 
-        using NamedMutexLock? engine = NamedMutexLock.TryAcquire(NamedMutexLock.EngineName, TimeSpan.Zero);
+        return RunHere(state, planId, NamedMutexLock.EngineName, PlanHost.Run);
+    }
+
+    /// <summary>
+    /// Subplan 13, Headless run, steps 2 to 6: holds the engine mutex for the whole run (conditions, scan, notification),
+    /// so a window opened meanwhile cannot start a scan of its own; <paramref name="run"/> runs the plan. When another
+    /// run holds the mutex this one leaves it alone (exit 3), and the bell says the plan was skipped: two plans due
+    /// at the same minute lost one of them without a trace.
+    /// </summary>
+    internal static int RunHere(AppState state, long planId, string engineMutexName, Func<AppState, long, int> run)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(run);
+        using NamedMutexLock? engine = NamedMutexLock.TryAcquire(engineMutexName, TimeSpan.Zero);
         if (engine is null)
         {
-            // Subplan 13, Headless run, step 2: another run holds the engine; this one leaves it alone.
             state.Log.Warning($"Plan {planId} not started: another MediaVerifier process is scanning");
+            PlanHost.RecordSkipped(state, CoreStrings.Notify.AnotherScan);
             return ExitForwarded;
         }
 
-        if (PlanRunner is null)
-        {
-            state.Log.Warning($"Plan {planId} not started: this build cannot run plans");
-            return ExitFailure;
-        }
-
-        return PlanRunner(state, planId);
+        return run(state, planId);
     }
 }
 
 /// <summary><c>--cleanup</c>: removes per-user registrations; called by the uninstaller.</summary>
 internal static class CleanupCommand
 {
-    /// <summary>Further cleanup steps registered by later phases (scheduled tasks, toast registration).</summary>
-    internal static List<Action> Steps { get; } = [];
-
     public static int Run()
     {
         bool ok = true;
@@ -65,7 +66,8 @@ internal static class CleanupCommand
             Core.Logging.ErrorLog.Write("Cleanup startup entry", ex);
         }
 
-        foreach (Action step in Steps)
+        // The scheduled tasks and the notification registration (subplan 13); each step runs even when one fails.
+        foreach (Action step in new Action[] { PlanHost.RemoveScheduledTasks, PlanHost.RemoveToastRegistration })
         {
             try
             {

@@ -32,6 +32,31 @@ public static class ScheduleCalculator
         return null;
     }
 
+    /// <summary>
+    /// Whether two plans fire at the same minute on some day of the year from <paramref name="from"/>. Only one scan
+    /// runs at a time, so one of the two is then skipped (subplan 13, Headless run, step 2).
+    /// </summary>
+    public static bool FireTogether(PlanTrigger a, DateOnly anchorA, PlanTrigger b, DateOnly anchorB, DateOnly from)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        if (a.TimeOfDay != b.TimeOfDay)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < 366; i++)
+        {
+            DateOnly day = from.AddDays(i);
+            if (Fires(a, day, anchorA) && Fires(b, day, anchorB))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Whether the plan fires on a day.</summary>
     public static bool Fires(PlanTrigger trigger, DateOnly day, DateOnly anchor)
     {

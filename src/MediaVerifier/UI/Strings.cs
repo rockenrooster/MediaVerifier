@@ -435,6 +435,7 @@ internal static class Strings
         public const string Reaching = "Trying to reach this folder…";
         public const string ErrorWatched = "This folder is already being watched";
         public const string ErrorInside = "This folder is inside {0}, which is already being watched";
+        public const string ErrorContains = "This folder contains {0}, which is already being watched";
         public const string AddedToast = "{0} added";
         public const string WaitingToast = "{0} files are waiting to be scanned";
         public const string ScanNow = "Scan now";
@@ -562,7 +563,6 @@ internal static class Strings
         public const string Standard = "Standard";
         public const string Deep = "Deep";
         public const string Running = "Running";
-        public const string Failed = "Failed";
         public const string Weekly = "Weekly check";
         public const string Verification = "VERIFICATION";
         public const string VerificationLine1 = "Every file should be re-read and compared with its fingerprint regularly.";
@@ -600,14 +600,16 @@ internal static class Strings
         public const string Wake = "Wake the computer to run";
         public const string Summary = "{0}, {1} scan of {2}.";
         public const string NextRunLine = "Next run: {0}";
-        public const string SummaryNext = "Next run: {0}";
-        public const string DayN = "Day {0}";
-        public const string LastDay = "Last day";
+        public const string Day = "Day";
         public const string ErrorName = "Give the schedule a name";
         public const string ErrorDays = "Choose at least one day";
-        public const string ErrorFolders = "Choose at least one folder";
         public const string ErrorTime = "Enter a time such as 03:00 or 21:30";
         public const string ErrorWindows = "Windows would not accept this schedule: {0}";
+        public const string FullPassOneDay = "At {0} per night a full pass takes 1 day.";
+        public const string Duplicate = "Duplicate";
+        public const string DeleteEllipsis = "Delete…";
+        public const string CopyName = "{0} (copy)";
+        public const string SameTime = "{0} also runs at this time. Only one scan runs at a time, so choose another time.";
     }
 
     public static class Tools
@@ -709,6 +711,18 @@ internal static class Strings
         public const string Create = "Create";
         public const string ReportSaved = "Report saved";
         public const string Open = "Open";
+        public const string DeleteOneTitle = "Delete {0} for good?";
+        public const string DeleteOneText = "This is the original kept in quarantine, {0}. This cannot be undone.";
+        public const string KeepIt = "Keep it";
+        public const string DeletedForGood = "Deleted for good";
+        public const string SelectOriginal = "Select an original first";
+        public const string SelectOperation = "Select an operation that can be undone";
+        public const string Running = "Running";
+        public const string Working = "Working…";
+        public const string OneDay = "1 day";
+        public const string FileReason = "{0}: {1}";
+        public const string NoLastScan = "No scan has finished yet.";
+        public const string ColMessage = "Message";
     }
 
     public static class Settings

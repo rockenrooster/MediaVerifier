@@ -96,12 +96,15 @@ not read back from Task Scheduler.
 
 1. If a GUI instance answers on the IPC pipe, forward `run-plan` and exit with code 3. The GUI runs
    the plan in its own engine and shows progress.
-2. Otherwise acquire the engine mutex. If another headless run holds it, log and exit 3.
+2. Otherwise acquire the engine mutex. If another headless run holds it, log, record the skip in the
+   notification centre (reason `Another scan was running.`) and exit 3.
 3. Load the plan. Missing or disabled → remove the orphan task, exit 1.
 4. Check conditions. On battery with `onlyOnAcPower` → skip. Full-screen or presentation
    (`SHQueryUserNotificationState` returns busy, D3D full screen or presentation mode) with
    `skipWhenFullScreen` → re-check every 5 minutes for up to an hour, then skip. A skip is recorded
-   in the runs table and the notification centre, not toasted.
+   in the runs table and the notification centre, not toasted: `Scheduled scan skipped` with the
+   reason `The computer was running on battery.`, `A full-screen program was running.` or `It was
+   stopped before it started.`
 5. Run the engine at below-normal process priority with the plan's depth, scope and budget.
 6. Persist the run summary, apply the notification policy, exit 0 (1 on failure).
 
@@ -131,7 +134,9 @@ checking conditions), never by probing the engine mutex, which would briefly own
 One toast per run. All run toasts share one tag (`scan`, group `runs`) so a newer run replaces an
 unread older one; the run id travels in the launch link. Every notification is also written to the
 `notifications` table (the in-app bell). Manual runs with the window focused use in-app toasts
-instead of system toasts.
+instead of system toasts. A manual run (or the Continue of one) follows the default plan rules
+(`NewFindings`, `Medium`, made stricter by `Notify about`) and its titles name it a scan, not a
+scheduled one: `Scan could not run`, `Scan finished`.
 
 Text: title states the outcome ("3 new problems found", "Scheduled scan could not run"); body gives
 counts and context ("1 critical, 2 high in Music. Scan finished 03:12."). No file names in system

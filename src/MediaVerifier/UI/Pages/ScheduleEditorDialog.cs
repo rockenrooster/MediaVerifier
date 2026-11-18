@@ -32,19 +32,32 @@ internal sealed class ScheduleEditorDialog : KitDialog
     private readonly KitCheckBox _fullScreen = new() { Text = Strings.Schedule.WaitFullScreen, TabIndex = 15 };
     private readonly KitCheckBox _wake = new() { Text = Strings.Schedule.Wake, TabIndex = 16 };
     private readonly InfoBar _refused = new() { Tier = Severity.Critical, Visible = false, TabIndex = 17 };
+    private readonly InfoBar _sameTime = new() { Tier = Severity.Medium, Visible = false, TabIndex = 18 };
     private readonly KitButton _save;
+    private readonly KitButton _cancel;
     private readonly DateOnly _anchor;
     private readonly Func<string, PlanDefinition, Task<string?>>? _store;
+
+    /// <summary>The other plans, for the warning when one fires at the same minute.</summary>
+    private readonly IReadOnlyList<PlanRow> _others;
 
     /// <summary>Why Save is disabled, shown in the summary box; null when the form is valid.</summary>
     private string? _problem;
 
-    private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>>? store)
+    /// <summary>While Save stores the plan and registers it, the editor cannot be closed (Esc closed it and the save went on unseen).</summary>
+    private bool _saving;
+
+    /// <summary>Which bar shows above the buttons: Windows' refusal, or else the same-minute warning.</summary>
+    private bool _refusedShown;
+    private bool _warningShown;
+
+    private ScheduleEditorDialog(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>>? store, IReadOnlyList<PlanRow>? others)
         : base(editing ? Strings.Schedule.EditSchedule : Strings.Schedule.NewSchedule, DialogWidth.Form, closeButton: true)
     {
         _roots = roots;
         _anchor = anchor;
         _store = store;
+        _others = others ?? [];
         CloseToolTip = Strings.Kit.CloseEsc;
         _name.Text = name;
         foreach (string folder in new[] { Strings.Schedule.AllFolders }.Concat(roots.Select(r => r.Label ?? Path.GetFileName(r.Path.TrimEnd('\\')))))
@@ -107,9 +120,9 @@ internal sealed class ScheduleEditorDialog : KitDialog
             }
         };
         _limit.SelectedIndexChanged += (_, _) => Changed();
-        Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake, _refused]);
+        Body.Controls.AddRange([_name, _folders, _depth, _repeat, .. _days, _number, _time, _limit, _plugged, _fullScreen, _wake, _refused, _sameTime]);
         Body.Paint += (_, e) => PaintBody(e.Graphics);
-        AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
+        _cancel = AddButton(Strings.Kit.Cancel, ButtonKind.Secondary, DialogResult.Cancel);
         _save = AddButton(Strings.Kit.Save, ButtonKind.Primary, DialogResult.None);
 
         // An async void handler: a failure reaches the app's error handler (logged and shown), never a dead button.
@@ -127,17 +140,39 @@ internal sealed class ScheduleEditorDialog : KitDialog
     /// Shows the editor. Save calls <paramref name="store"/> with the name and definition; it stores the plan, registers
     /// it with Windows and returns null, or Windows' message when the task was refused (the plan is then stored
     /// switched off), which keeps the editor open with the message. True when the plan was stored and registered.
+    /// <paramref name="others"/> are the other plans: a Medium bar warns when a switched-on one fires at the same minute.
     /// </summary>
-    public static bool Ask(Form owner, string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>> store)
+    public static bool Ask(Form owner, string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, bool editing, Func<string, PlanDefinition, Task<string?>> store, IReadOnlyList<PlanRow>? others = null)
     {
-        using ScheduleEditorDialog dialog = new(name, plan, roots, anchor, editing, store);
+        using ScheduleEditorDialog dialog = new(name, plan, roots, anchor, editing, store, others);
         return dialog.ShowOver(owner) == DialogResult.OK;
     }
 
     /// <summary>The dialog without showing it (render tests).</summary>
-    internal static ScheduleEditorDialog Create(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor) => new(name, plan, roots, anchor, true, null);
+    internal static ScheduleEditorDialog Create(string name, PlanDefinition plan, IReadOnlyList<RootRecord> roots, DateOnly anchor, IReadOnlyList<PlanRow>? others = null) => new(name, plan, roots, anchor, true, null, others);
+
+    /// <summary>The same-minute warning shown, or null (tests).</summary>
+    internal string? SameTimeWarning => _warningShown ? _sameTime.Text : null;
 
     protected override Control? InitialFocus() => _name;
+
+    protected override void Cancel()
+    {
+        if (!_saving)
+        {
+            base.Cancel();
+        }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_saving && e.CloseReason == CloseReason.UserClosing && DialogResult != DialogResult.OK)
+        {
+            e.Cancel = true;
+        }
+
+        base.OnFormClosing(e);
+    }
 
     protected override void LayoutBody()
     {
@@ -157,7 +192,9 @@ internal sealed class ScheduleEditorDialog : KitDialog
             dx += w + S(8);
         }
 
-        _number.Bounds = new Rectangle(x, S(217), S(80), S(32));
+        // Monthly reads "Day [n]", Every … days "[n] days" (subplan 09: the box has its unit).
+        int dayLabel = KitPaint.MeasureWidth(Strings.Schedule.Day, TypeRamp.For(DeviceDpi).Body) + S(8);
+        _number.Bounds = new Rectangle(kind == 2 ? x + dayLabel : x, S(217), S(80), S(32));
         _number.Visible = kind is 2 or 3;
         _time.Bounds = new Rectangle(x, S(261), S(80), S(32));
         _limit.Bounds = new Rectangle(x, S(305), S(160), S(32));
@@ -165,6 +202,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         _fullScreen.Bounds = new Rectangle(new Point(x, S(396)), _fullScreen.GetPreferredSize(Size.Empty));
         _wake.Bounds = new Rectangle(new Point(x, S(426)), _wake.GetPreferredSize(Size.Empty));
         _refused.Bounds = new Rectangle(0, S(FormHeight + 16), Body.Width, S(40));
+        _sameTime.Bounds = _refused.Bounds;
     }
 
     private async Task SaveAsync()
@@ -177,6 +215,8 @@ internal sealed class ScheduleEditorDialog : KitDialog
 
         // One save at a time; Save comes back afterwards when the form is still valid.
         _save.Enabled = false;
+        _cancel.Enabled = false;
+        _saving = true;
         string? refused;
         try
         {
@@ -184,6 +224,8 @@ internal sealed class ScheduleEditorDialog : KitDialog
         }
         finally
         {
+            _saving = false;
+            _cancel.Enabled = true;
             Changed();
         }
 
@@ -194,8 +236,35 @@ internal sealed class ScheduleEditorDialog : KitDialog
         }
 
         _refused.Text = string.Format(CultureInfo.CurrentCulture, Strings.Schedule.ErrorWindows, refused);
-        _refused.Visible = true;
-        BodyHeight = FormHeight + 16 + 40;
+        _refusedShown = true;
+        ShowBars();
+    }
+
+    /// <summary>
+    /// The bar above the buttons: Windows' refusal, else the same-minute warning; the body grows by the bar while one
+    /// shows (the refusal's place, subplan 09 deviation of 2026-11-17).
+    /// </summary>
+    private void ShowBars()
+    {
+        // What the code decided, not Visible, which reads false while the dialog itself is hidden.
+        _warningShown = _sameTime.Text.Length > 0 && !_refusedShown;
+        _sameTime.Visible = _warningShown;
+        _refused.Visible = _refusedShown;
+        int height = _refusedShown || _warningShown ? FormHeight + 16 + 40 : FormHeight;
+        if (BodyHeight != height)
+        {
+            BodyHeight = height;
+        }
+    }
+
+    /// <summary>
+    /// The first switched-on other plan that fires at the same minute as <paramref name="plan"/>, or null: only one scan
+    /// runs at a time, so one of the two was skipped without a word in the editor (both default to 03:00).
+    /// </summary>
+    private string? SameTimeAs(PlanDefinition plan)
+    {
+        DateOnly today = DateOnly.FromDateTime(DateTime.Now);
+        return _others.FirstOrDefault(o => o.Enabled && ScheduleCalculator.FireTogether(plan.Trigger, _anchor, o.Definition.Trigger, o.Anchor, today))?.Name;
     }
 
     private PlanDefinition Build()
@@ -240,7 +309,11 @@ internal sealed class ScheduleEditorDialog : KitDialog
             Result = plan;
         }
 
-        _save.Enabled = valid;
+        // A warning, not a problem: Save stays enabled (the templates themselves share 03:00 on Sundays).
+        string? other = valid ? SameTimeAs(plan) : null;
+        _sameTime.Text = other is null ? string.Empty : string.Format(CultureInfo.CurrentCulture, Strings.Schedule.SameTime, other);
+        ShowBars();
+        _save.Enabled = valid && !_saving;
         Body.Invalidate();
     }
 
@@ -273,6 +346,15 @@ internal sealed class ScheduleEditorDialog : KitDialog
             KitPaint.DrawText(g, label, type.Body, t.Text, 0, S(y), S(112));
         }
 
+        if (_repeat.SelectedIndex == 2)
+        {
+            KitPaint.DrawText(g, Strings.Schedule.Day, type.Body, t.Text, S(120), S(233), S(60));
+        }
+        else if (_repeat.SelectedIndex == 3)
+        {
+            KitPaint.DrawText(g, Strings.Schedule.Days, type.Body, t.Text, _number.Right + S(8), S(233), S(80));
+        }
+
         string helper = _depth.SelectedIndex switch { 0 => Strings.Schedule.QuickHelper, 2 => Strings.Schedule.DeepHelper, _ => Strings.Schedule.StandardHelper };
         KitPaint.DrawText(g, helper, type.Caption, t.Text2, S(120), S(136), Body.Width - S(120));
         KitPaint.HorizontalLine(g, t.Stroke, 0, Body.Width, S(156), SF(1));
@@ -296,7 +378,7 @@ internal sealed class ScheduleEditorDialog : KitDialog
         string scope = plan.Roots is { Length: 1 } one && _roots.FirstOrDefault(r => r.Id == one[0]) is RootRecord root
             ? root.Label ?? Path.GetFileName(root.Path.TrimEnd('\\'))
             : Strings.Schedule.AllFoldersLower;
-        string when = ScheduleText.Summary(plan, new Dictionary<long, string>()).Split(Strings.Separator)[0];
+        string when = ScheduleText.When(plan.Trigger);
         string line = string.Format(CultureInfo.CurrentCulture, Strings.Schedule.Summary, when, UiFormat.DepthName(plan.Depth), scope);
         KitPaint.DrawText(g, line, type.Body, t.Text, S(36), S(477), Body.Width - S(48));
         if (ScheduleCalculator.Next(plan.Trigger, DateTime.Now, _anchor) is DateTime next)

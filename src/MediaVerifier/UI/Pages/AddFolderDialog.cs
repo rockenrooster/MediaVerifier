@@ -80,8 +80,15 @@ internal sealed class AddFolderDialog : KitDialog
         _name.TextChanged += (_, _) => _nameEdited = _name.Text != _autoName;
         foreach (KitCheckBox box in new[] { _photos, _videos, _music })
         {
-            box.CheckedChanged += (_, _) => ValidateForm();
+            box.CheckedChanged += (_, _) =>
+            {
+                ValidateForm();
+                Recount();
+            };
         }
+
+        // The count follows what will be scanned: the kinds ticked and the patterns skipped.
+        _skip.TextChanged += (_, _) => Recount();
 
         _debounce.Tick += (_, _) =>
         {
@@ -207,7 +214,12 @@ internal sealed class AddFolderDialog : KitDialog
         string path = _folder.Text.Trim();
         string? error = null;
         bool known = true;
-        if (path.Length > 0)
+        if (path.Length > 0 && IsUnchangedEdit(path))
+        {
+            // Editing a folder that is not connected (an unplugged drive, a NAS that is off): its path stays as it is,
+            // so it needs no answer from the folder. Its name, use and kinds could not be changed until it came back.
+        }
+        else if (path.Length > 0)
         {
             string full = Normalize(path);
             if (_existsFor != full)
@@ -236,9 +248,16 @@ internal sealed class AddFolderDialog : KitDialog
                         break;
                     }
 
-                    if (full.StartsWith(watched + "\\", StringComparison.OrdinalIgnoreCase))
+                    if (full.StartsWith(WithSeparator(watched), StringComparison.OrdinalIgnoreCase))
                     {
                         error = string.Format(CultureInfo.CurrentCulture, Strings.Library.ErrorInside, root.Label ?? Path.GetFileName(watched));
+                        break;
+                    }
+
+                    // The other way round, the watched folder's files were indexed and scanned twice.
+                    if (watched.StartsWith(WithSeparator(full), StringComparison.OrdinalIgnoreCase))
+                    {
+                        error = string.Format(CultureInfo.CurrentCulture, Strings.Library.ErrorContains, root.Label ?? Path.GetFileName(watched));
                         break;
                     }
                 }
@@ -315,8 +334,11 @@ internal sealed class AddFolderDialog : KitDialog
         _exists = exists;
         _unreachable = unreachable;
         ValidateForm();
-        _count.Visible = _error is null;
-        if (_error is null)
+
+        // An unchanged folder being edited while it is not connected: nothing to count, and nothing wrong.
+        bool count = _error is null && (exists || !IsUnchangedEdit(_folder.Text.Trim()));
+        _count.Visible = count;
+        if (count)
         {
             StartCount();
         }
@@ -328,16 +350,45 @@ internal sealed class AddFolderDialog : KitDialog
     /// <summary>When a folder that has not answered counts as unreachable (tests shorten it).</summary>
     internal static TimeSpan ReachLimit { get; set; } = TimeSpan.FromSeconds(15);
 
-    private static string Normalize(string path)
+    /// <summary>
+    /// The full path without a trailing separator, except a drive's root, which keeps it: "E:" means the current folder
+    /// on drive E, so a whole-drive library stored so scanned the app's working folder instead (a stored "E:" from an
+    /// earlier version reads as the root too).
+    /// </summary>
+    internal static string Normalize(string path)
     {
+        string candidate = path.Length == 2 && path[1] == ':' && char.IsAsciiLetter(path[0]) ? path + "\\" : path;
         try
         {
-            return Path.GetFullPath(path).TrimEnd('\\');
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            return path.TrimEnd('\\');
+            return Path.TrimEndingDirectorySeparator(candidate);
         }
+    }
+
+    private static string WithSeparator(string path) => path.EndsWith('\\') ? path : path + "\\";
+
+    /// <summary>Editing a folder whose path is left as it was.</summary>
+    private bool IsUnchangedEdit(string path) => _editing is not null && string.Equals(Normalize(path), Normalize(_editing.Path), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Counts again after a pause, when the folder is known to be there.</summary>
+    private void Recount()
+    {
+        string full = Normalize(_folder.Text.Trim());
+        if (full.Length == 0 || _existsFor != full || !_exists || _error is not null)
+        {
+            return;
+        }
+
+        _counting?.Cancel();
+        _counted = null;
+        _count.Tier = Severity.Low;
+        _count.Text = Strings.Library.Counting;
+        _count.Visible = true;
+        _debounce.Stop();
+        _debounce.Start();
     }
 
     private void StartCount()
@@ -348,7 +399,8 @@ internal sealed class AddFolderDialog : KitDialog
         _counting = cancel;
         Core.Settings.ScanSettings settings = _services.State.Settings.Scanning;
         IReadOnlyList<string> skip = SkipPatterns();
-        _ = Task.Run(() => Count(path, settings, skip, cancel.Token), cancel.Token).ContinueWith(
+        MediaClassifier kinds = new(_photos.Checked ? settings.PhotoExtensions : [], _videos.Checked ? settings.VideoExtensions : [], _music.Checked ? settings.AudioExtensions : []);
+        _ = Task.Run(() => Count(path, kinds, settings, skip, cancel.Token), cancel.Token).ContinueWith(
             task =>
             {
                 if (task.IsCompletedSuccessfully && !cancel.IsCancellationRequested && !IsDisposed)
@@ -364,11 +416,12 @@ internal sealed class AddFolderDialog : KitDialog
             TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private static (long Files, long Bytes) Count(string path, Core.Settings.ScanSettings settings, IReadOnlyList<string> skip, CancellationToken cancel)
+    /// <summary>The media files the scan will read: of the kinds ticked, outside the skipped folders and patterns.</summary>
+    private static (long Files, long Bytes) Count(string path, MediaClassifier kinds, Core.Settings.ScanSettings settings, IReadOnlyList<string> skip, CancellationToken cancel)
     {
         TreeEnumerator enumerator = new(
             WindowsFileSystem.Instance,
-            new MediaClassifier(settings.PhotoExtensions, settings.VideoExtensions, settings.AudioExtensions),
+            kinds,
             new EnumerationRules { ExcludedDirectories = settings.AlwaysSkip, ExcludeGlobs = skip.Count == 0 ? null : skip },
             Core.SystemClock.Instance);
         long files = 0;
@@ -433,9 +486,12 @@ internal sealed class AddFolderDialog : KitDialog
         }
 
         Finish(DialogResult.OK);
-        if (_editing is null && role == RootRole.Library && _counted is long counted && counted > 0)
+
+        // Subplan 09: "{name} added" with Scan now, also when Add was pressed before the count finished (a large or
+        // network folder); the waiting line only when the count is known.
+        if (_editing is null && role == RootRole.Library)
         {
-            string waiting = string.Format(CultureInfo.CurrentCulture, Strings.Library.WaitingToast, UiFormat.Count(counted));
+            string waiting = _counted is long counted && counted > 0 ? string.Format(CultureInfo.CurrentCulture, Strings.Library.WaitingToast, UiFormat.Count(counted)) : string.Empty;
             _services.ShowToast?.Invoke(new ToastContent(
                 Severity.None,
                 string.Format(CultureInfo.CurrentCulture, Strings.Library.AddedToast, name),
