@@ -44,7 +44,8 @@ internal sealed record BrowseFolder(long RootId, long DirId, string Name, string
 
 /// <summary>
 /// Library → Browse: the tree, the shown folder's path, its files in order, the chip counts and every watched folder's
-/// path (file actions build full paths from it, so a folder added while browsing works at once).
+/// path (file actions build full paths from it, so a folder added while browsing works at once). <paramref name="NotScanned"/>:
+/// the watched folder shown has nothing indexed because no scan has reached it yet.
 /// </summary>
 internal sealed record BrowseData(
     BrowseQuery Query,
@@ -52,7 +53,8 @@ internal sealed record BrowseData(
     IReadOnlyList<string> Crumbs,
     long[] Ids,
     FolderStateCounts Counts,
-    IReadOnlyDictionary<long, string> RootPaths);
+    IReadOnlyDictionary<long, string> RootPaths,
+    bool NotScanned = false);
 
 /// <summary>Library data (separate interface so pages depend only on what they read).</summary>
 internal interface ILibraryData

@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Scheduling;
 using MediaVerifier.Core.Settings;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.Tests.TestSupport;
+using MediaVerifier.UI;
 using MediaVerifier.UI.Data;
 using MediaVerifier.UI.Pages;
 
@@ -10,7 +12,8 @@ namespace MediaVerifier.Tests.UI;
 
 /// <summary>
 /// Library → Folders and Browse from a real database: the folder a card opens, the chips against their lists, the
-/// header's search, the name order, the tree, the card's severity bar and the schedules of a removed folder.
+/// header's search, the name order, the tree, the card's severity bar, the empty-table message, the folder checks,
+/// dropped paths and the schedules of a removed folder.
 /// </summary>
 public sealed class LibraryBrowseDataTests
 {
@@ -57,6 +60,50 @@ public sealed class LibraryBrowseDataTests
         Assert.Equal(["New"], shown.Crumbs);
         Assert.Empty(shown.Ids);
         Assert.Equal(new FolderStateCounts(0, 0, 0), shown.Counts);
+        Assert.True(shown.NotScanned);
+    }
+
+    [Fact]
+    public async Task Without_files_anywhere_Browse_names_the_first_watched_folder_and_whether_a_scan_reached_it()
+    {
+        using TestDatabase db = new();
+        long music = await db.Database.Roots.AddAsync(new RootRecord { Path = @"D:\Music", Label = "Music" });
+        await db.Database.Roots.AddAsync(new RootRecord { Path = @"D:\Photos", Label = "Photos" });
+        LiveUiData data = Data(db);
+
+        // The view switch asks for no folder: the first watched one, never "Add a folder" while folders are watched.
+        BrowseData fresh = data.LoadBrowse(new BrowseQuery(null, null));
+
+        // Scanned, but it holds no media: no folder rows are written, and it is not "Not scanned yet".
+        await db.Database.Roots.MarkOnlineAsync(music, db.Clock.UtcNow, null, StorageClass.Ssd);
+        BrowseData scanned = data.LoadBrowse(new BrowseQuery(null, null));
+
+        Assert.Equal(music, fresh.Query.RootId);
+        Assert.Equal(["Music"], fresh.Crumbs);
+        Assert.Equal(Strings.Library.NotScannedYet, LibraryPage.EmptyMessage(fresh).Headline);
+        Assert.Equal(["Music"], scanned.Crumbs);
+        Assert.Equal(Strings.Library.NoFilesHere, LibraryPage.EmptyMessage(scanned).Headline);
+
+        using TestDatabase none = new();
+        Assert.Equal(Strings.Issues.NoFoldersHeadline, LibraryPage.EmptyMessage(Data(none).LoadBrowse(new BrowseQuery(null, null))).Headline);
+    }
+
+    [Fact]
+    public void The_empty_table_says_why_it_is_empty()
+    {
+        Dictionary<long, string> watched = new() { [1] = @"D:\Music" };
+        string Why(BrowseQuery query, int all = 0, bool notScanned = false, Dictionary<long, string>? roots = null) =>
+            LibraryPage.EmptyMessage(new BrowseData(query, [], [], [], new FolderStateCounts(all, 0, 0), roots ?? watched, notScanned)).Headline;
+
+        // Names match (or the folder has files), and the chip leaves them out.
+        Assert.Equal(Strings.Issues.FilteredHeadline, Why(new BrowseQuery(null, null, BrowseState.Ok, Search: "beach"), all: 3));
+        Assert.Equal(Strings.Issues.FilteredHeadline, Why(new BrowseQuery(1, 10, BrowseState.Problems), all: 2));
+
+        // Nothing there for any chip.
+        Assert.Equal("No file names match \u201Cbeach\u201D", Why(new BrowseQuery(null, null, BrowseState.Ok, Search: "beach")));
+        Assert.Equal(Strings.Library.NoFilesHere, Why(new BrowseQuery(1, 10, BrowseState.Problems)));
+        Assert.Equal(Strings.Library.NotScannedYet, Why(new BrowseQuery(1, null), notScanned: true));
+        Assert.Equal(Strings.Issues.NoFoldersHeadline, Why(new BrowseQuery(null, null), roots: new Dictionary<long, string>()));
     }
 
     [Fact]
@@ -224,6 +271,61 @@ public sealed class LibraryBrowseDataTests
         Assert.True(connected[here.Path]);
         Assert.False(connected[gone]);
         Assert.Equal(2, connected.Count);
+    }
+
+    /// <summary>
+    /// Folders that do not answer cost one wait together, not one each. Asked again before they answer, their checks
+    /// are taken over (a check that would answer at once is not started) and not waited for again. Once they have
+    /// answered, the next load asks afresh instead of taking that answer, however old it is.
+    /// </summary>
+    [Fact]
+    public void Folders_that_do_not_answer_share_one_wait_and_are_asked_afresh_once_answered()
+    {
+        TimeSpan wait = TimeSpan.FromSeconds(1);
+        using ManualResetEventSlim gate = new();
+        using CountdownEvent answered = new(2);
+        string[] shares = [$@"\\offline-{Guid.NewGuid():N}\a", $@"\\offline-{Guid.NewGuid():N}\b"];
+        bool Offline(string path)
+        {
+            gate.Wait(TimeSpan.FromSeconds(30));
+            answered.Signal();
+            return false;
+        }
+
+        Stopwatch first = Stopwatch.StartNew();
+        Dictionary<string, bool> waited = LiveUiData.AreConnected(shares, Offline, wait);
+        first.Stop();
+        Stopwatch second = Stopwatch.StartNew();
+        Dictionary<string, bool> taken = LiveUiData.AreConnected(shares, _ => true, wait);
+        second.Stop();
+
+        // They answer "not there"; later the shares are back.
+        gate.Set();
+        Assert.True(answered.Wait(TimeSpan.FromSeconds(10)));
+        Thread.Sleep(200);
+        Dictionary<string, bool> fresh = LiveUiData.AreConnected(shares, _ => true, TimeSpan.FromSeconds(10));
+
+        Assert.Equal([false, false], waited.Values);
+        Assert.InRange(first.ElapsedMilliseconds, 900, 1900);
+        Assert.Equal([false, false], taken.Values);
+        Assert.InRange(second.ElapsedMilliseconds, 0, 500);
+        Assert.Equal([true, true], fresh.Values);
+    }
+
+    [Fact]
+    public async Task Dropped_files_are_left_out_unless_nothing_dropped_is_a_folder()
+    {
+        using TempDirectory temp = new("library-drop");
+        string album = Directory.CreateDirectory(temp.Combine("Album")).FullName;
+        string photo = temp.Combine("photo.jpg");
+        string notes = temp.Combine("notes.txt");
+        await File.WriteAllTextAsync(photo, "x");
+        await File.WriteAllTextAsync(notes, "x");
+
+        Assert.Equal([album], await LibraryPage.FoldersAmongAsync([photo, album, notes]));
+
+        // Nothing but files: the first, so its dialog says it is not a folder.
+        Assert.Equal([photo], await LibraryPage.FoldersAmongAsync([photo, notes]));
     }
 
     [Fact]

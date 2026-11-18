@@ -16,7 +16,7 @@ namespace MediaVerifier.Tests.UI;
 /// <summary>
 /// Library → Browse in the real window (off-screen, never activated) on a library database: the folder a card opens,
 /// the tree keeping what the user opened, a new folder starting at its top, the drawer following Up and Down, the
-/// selection's files and the empty-table message.
+/// selection's files, the empty-table message and a drop of several folders.
 /// </summary>
 [Collection(UiCollection.Name)]
 public sealed class LibraryPageTests
@@ -274,6 +274,66 @@ public sealed class LibraryPageTests
         Assert.True(emptyShown, "An empty folder showed a blank table.");
         Assert.Equal(Strings.Library.NoFilesHere, headline);
         Assert.True(rootOpen, "The watched folder opened by a card stayed collapsed.");
+    }
+
+    /// <summary>
+    /// Folders and a file dropped together: the file is left out, the first folder's dialog adds it, the second one is
+    /// cancelled and the third is never asked about (each dialog is modal, so a long drop was a long row of them).
+    /// </summary>
+    [Fact]
+    public void A_drop_leaves_out_files_and_ends_at_the_first_cancelled_dialog()
+    {
+        string[] dropped = [];
+        List<string> asked = [];
+        Exception? failure = null;
+        Run(
+            (db, folder) =>
+            {
+                string drop = Directory.CreateDirectory(Path.Combine(folder, "Drop")).FullName;
+                string photo = Path.Combine(drop, "photo.jpg");
+                File.WriteAllText(photo, "x");
+                dropped = [photo, .. new[] { "A", "B", "C" }.Select(name => Directory.CreateDirectory(Path.Combine(drop, name)).FullName)];
+                return Task.CompletedTask;
+            },
+            (form, page) =>
+            {
+                AddFolderDialog? last = null;
+                Stopwatch open = new();
+                using System.Windows.Forms.Timer timer = new() { Interval = 50 };
+                timer.Tick += (_, _) =>
+                {
+                    if (Application.OpenForms.OfType<AddFolderDialog>().FirstOrDefault() is not AddFolderDialog dialog)
+                    {
+                        return;
+                    }
+
+                    if (!ReferenceEquals(dialog, last))
+                    {
+                        last = dialog;
+                        asked.Add(Find<PathBox>(dialog).Text);
+                        open.Restart();
+                    }
+
+                    // The first dialog adds its folder once it has been checked; the next one is cancelled.
+                    KitButton add = Find<KitButton>(dialog, b => b.Text == Strings.Library.AddFolder);
+                    if (asked.Count == 1 && add.Enabled)
+                    {
+                        add.PerformClick();
+                    }
+                    else if (asked.Count > 1 || open.Elapsed > TimeSpan.FromSeconds(8))
+                    {
+                        dialog.Close();
+                    }
+                };
+                timer.Start();
+                Task drop = (Task)typeof(LibraryPage).GetMethod("AddFoldersAsync", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(page, [form, dropped])!;
+                Settle(() => drop.IsCompleted);
+                timer.Stop();
+                failure = drop.Exception?.GetBaseException();
+            });
+
+        Assert.Null(failure);
+        Assert.Equal(dropped[1..3], asked);
     }
 
     /// <summary>A library database seeded off the UI thread, the window off-screen on Library → Folders.</summary>

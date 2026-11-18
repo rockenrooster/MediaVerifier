@@ -74,9 +74,10 @@ internal sealed partial class LiveUiData
             BrowseFolder? top = asked is null ? tree.FirstOrDefault() : tree.Find(t => t.RootId == asked.Id);
             if (top is null)
             {
-                // A watched folder with nothing indexed yet (never scanned): its name and no files, never another
-                // folder's files under its name.
-                return new BrowseData(query with { RootId = asked?.Id, DirId = null }, tree, asked is null ? [] : [RootName(asked)], [], new FolderStateCounts(0, 0, 0), rootPaths);
+                // A watched folder with nothing indexed (never scanned, or no media in it), else the first one: its name
+                // and no files, never another folder's files under its name. A scan marks a folder it reaches online.
+                asked ??= roots.FirstOrDefault();
+                return new BrowseData(query with { RootId = asked?.Id, DirId = null }, tree, asked is null ? [] : [RootName(asked)], [], new FolderStateCounts(0, 0, 0), rootPaths, NotScanned: asked is { LastOnlineUtc: null });
             }
 
             dir = top.DirId;
@@ -121,13 +122,14 @@ internal sealed partial class LiveUiData
     /// <summary>
     /// Whether each folder answers, all asked at once with one shared wait: a share that is gone can take minutes, so
     /// a folder that has not answered within <see cref="ProbeWait"/> of its check starting counts as not connected.
-    /// Its check keeps running on its pool thread; the next load takes that one instead of starting another, and does
-    /// not wait for it again once its time is up.
+    /// Its check keeps running on its pool thread; a load meanwhile takes that one instead of starting another, and does
+    /// not wait for it again once its time is up. A check leaves once it answers, so no load takes an old answer.
     /// </summary>
-    internal static Dictionary<string, bool> AreConnected(IEnumerable<string> paths)
+    internal static Dictionary<string, bool> AreConnected(IEnumerable<string> paths, Func<string, bool>? exists = null, TimeSpan? probeWait = null)
     {
+        Func<string, bool> check = exists ?? Directory.Exists;
         long now = Environment.TickCount64;
-        long wait = (long)ProbeWait.TotalMilliseconds;
+        long wait = (long)(probeWait ?? ProbeWait).TotalMilliseconds;
         Dictionary<string, Probe> probes = new(StringComparer.OrdinalIgnoreCase);
         lock (ProbesLock)
         {
@@ -137,7 +139,7 @@ internal sealed partial class LiveUiData
                 {
                     if (!Probes.TryGetValue(path, out Probe? probe))
                     {
-                        probe = new Probe(Task.Run(() => Directory.Exists(path)), now);
+                        probe = new Probe(Task.Run(() => Ask(path, check)), now);
                         Probes[path] = probe;
                     }
 
@@ -152,21 +154,26 @@ internal sealed partial class LiveUiData
             _ = Task.WaitAll([.. waiting.Select(p => p.Check)], TimeSpan.FromMilliseconds(waiting.Max(p => p.StartedMs) + wait - now));
         }
 
-        Dictionary<string, bool> connected = new(StringComparer.OrdinalIgnoreCase);
-        lock (ProbesLock)
+        return probes.ToDictionary(p => p.Key, p => p.Value.Check.IsCompletedSuccessfully && p.Value.Check.Result, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// One folder check. It leaves <see cref="Probes"/> before its task completes (only it removes its entry, and a new
+    /// check for the folder starts only once it has gone), so the next load asks again.
+    /// </summary>
+    private static bool Ask(string path, Func<string, bool> exists)
+    {
+        try
         {
-            foreach ((string path, Probe probe) in probes)
+            return exists(path);
+        }
+        finally
+        {
+            lock (ProbesLock)
             {
-                connected[path] = probe.Check.IsCompletedSuccessfully && probe.Check.Result;
-                if (probe.Check.IsCompleted && Probes.TryGetValue(path, out Probe? kept) && ReferenceEquals(kept, probe))
-                {
-                    // Answered: the next load asks again.
-                    Probes.Remove(path);
-                }
+                Probes.Remove(path);
             }
         }
-
-        return connected;
     }
 
     /// <summary>A folder check and when it started (<see cref="Environment.TickCount64"/>).</summary>

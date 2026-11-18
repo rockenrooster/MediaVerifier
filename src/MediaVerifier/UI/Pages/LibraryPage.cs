@@ -405,22 +405,23 @@ internal sealed class LibraryPage : PageBase
     private void ShowEmptyState(BrowseData browse)
     {
         _empty.Visible = browse.Ids.Length == 0;
-        if (!_empty.Visible)
+        if (_empty.Visible)
         {
-            return;
+            (_empty.Icon, _empty.Headline) = EmptyMessage(browse);
+            _empty.Body = string.Empty;
+            _empty.Invalidate();
         }
-
-        (_empty.Icon, _empty.Headline) = browse.Query switch
-        {
-            { Search: string text } => (IconName.Search, string.Format(CultureInfo.CurrentCulture, Strings.Library.NoSearchResults, text.Trim())),
-            { State: not BrowseState.All } => (IconName.Filter, Strings.Issues.FilteredHeadline),
-            { DirId: null, RootId: null } => (IconName.FolderAdd, Strings.Issues.NoFoldersHeadline),
-            { DirId: null } => (IconName.Scans, Strings.Library.NotScannedYet),
-            _ => (IconName.Folder, Strings.Library.NoFilesHere),
-        };
-        _empty.Body = string.Empty;
-        _empty.Invalidate();
     }
+
+    /// <summary>Why the table is empty: a chip leaves out the files there are, no folder, no name matches, no scan yet, or no files.</summary>
+    internal static (IconName Icon, string Headline) EmptyMessage(BrowseData browse) => browse switch
+    {
+        { Query.State: not BrowseState.All, Counts.All: > 0 } => (IconName.Filter, Strings.Issues.FilteredHeadline),
+        { RootPaths.Count: 0 } => (IconName.FolderAdd, Strings.Issues.NoFoldersHeadline),
+        { Query.Search: string text } => (IconName.Search, string.Format(CultureInfo.CurrentCulture, Strings.Library.NoSearchResults, text.Trim())),
+        { NotScanned: true } => (IconName.Scans, Strings.Library.NotScannedYet),
+        _ => (IconName.Folder, Strings.Library.NoFilesHere),
+    };
 
     /// <summary>
     /// The tree of a new snapshot. Folders the user opened stay open (the old items' expansion, by folder id), the path to
@@ -547,18 +548,25 @@ internal sealed class LibraryPage : PageBase
 
     private async Task LoadRowsAsync(List<long> ids)
     {
+        BrowseData? requested = _browse;
         _loadingRows = true;
         try
         {
             IReadOnlyList<FileRow> rows = await Task.Run(() => Services.Data.LoadFileRows(ids)).ConfigureAwait(true);
-            foreach (FileRow row in rows)
+
+            // A new snapshot came in meanwhile: these rows may be older than it, and the repaint asks for its own.
+            bool current = ReferenceEquals(requested, _browse);
+            if (current)
             {
-                Store(row);
+                foreach (FileRow row in rows)
+                {
+                    Store(row);
+                }
             }
 
             // Ids whose rows are gone (a file moved or removed since the snapshot) come back empty: no repaint, so
             // painting does not ask for them again and again.
-            if (rows.Count > 0)
+            if (rows.Count > 0 || !current)
             {
                 _table.Invalidate();
             }
@@ -1021,7 +1029,7 @@ internal sealed class LibraryPage : PageBase
         UiTask.Run(ShowFolderDialogAsync(owner, null, path));
     }
 
-    /// <summary>Folders dropped together: the Add folder dialog for each in turn.</summary>
+    /// <summary>Folders dropped together: the Add folder dialog for each in turn, until one is cancelled.</summary>
     private void AddFolders(IReadOnlyList<string> paths)
     {
         if (FindForm() is Form owner)
@@ -1032,7 +1040,9 @@ internal sealed class LibraryPage : PageBase
 
     private async Task AddFoldersAsync(Form owner, IReadOnlyList<string> paths)
     {
-        foreach (string path in paths)
+        IReadOnlyList<string> folders = paths.Count > 1 ? await FoldersAmongAsync(paths).ConfigureAwait(true) : paths;
+        int watched = await Task.Run(() => Services.Database.Roots.List().Count).ConfigureAwait(true);
+        foreach (string path in folders)
         {
             if (IsDisposed)
             {
@@ -1040,7 +1050,29 @@ internal sealed class LibraryPage : PageBase
             }
 
             await ShowFolderDialogAsync(owner, null, path).ConfigureAwait(true);
+
+            // A dialog that added no folder was cancelled: the rest are not asked about.
+            int now = await Task.Run(() => Services.Database.Roots.List().Count).ConfigureAwait(true);
+            if (now <= watched)
+            {
+                return;
+            }
+
+            watched = now;
         }
+    }
+
+    /// <summary>
+    /// The dropped paths that may be folders: files are left out, checked off the UI thread with one 2-second wait for
+    /// all. A path that has not answered by then (an offline share) stays, and its dialog says when it cannot be
+    /// reached. When none is a folder, the first path, so its dialog says why.
+    /// </summary>
+    internal static async Task<IReadOnlyList<string>> FoldersAmongAsync(IReadOnlyList<string> paths)
+    {
+        Task<bool>[] checks = [.. paths.Select(path => Task.Run(() => Directory.Exists(path)))];
+        await Task.WhenAny(Task.WhenAll(checks), Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+        string[] folders = [.. paths.Where((_, i) => checks[i] is not { IsCompletedSuccessfully: true, Result: false })];
+        return folders.Length > 0 ? folders : [paths[0]];
     }
 
     internal void EditFolder(FolderCard card)
@@ -1375,7 +1407,7 @@ internal sealed class LibraryPage : PageBase
         }
     }
 
-    /// <summary>The dashed drop area under the cards: folders dropped here open the Add folder dialog, one after another.</summary>
+    /// <summary>The dashed drop area under the cards: folders dropped here open the Add folder dialog, one after another, until one is cancelled.</summary>
     private sealed class DropArea : KitControl
     {
         private readonly System.Drawing.Drawing2D.GraphicsPath _outline = new();
@@ -1465,8 +1497,8 @@ internal sealed class LibraryPage : PageBase
 
         /// <summary>
         /// The dropped paths, without touching the disk: checking them here held the window (and the drag) for minutes
-        /// when one was a network folder that had gone offline. The Add folder dialog checks each off the UI thread and
-        /// says when it is not a folder.
+        /// when one was a network folder that had gone offline. The page leaves out files off the UI thread, and the Add
+        /// folder dialog says when a path is not a folder.
         /// </summary>
         private static string[] DroppedPaths(IDataObject? data) =>
             data?.GetData(DataFormats.FileDrop) is string[] paths ? paths : [];
