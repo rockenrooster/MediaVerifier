@@ -46,6 +46,8 @@ internal static class Program
 
     private static int RunGui(LaunchOptions options)
     {
+        // First, so that a failure while loading the settings or opening the library is at least written to the log.
+        InstallExceptionHandlers();
         using NamedMutexLock? instance = NamedMutexLock.TryAcquire(NamedMutexLock.SingleInstanceName, TimeSpan.Zero);
         string pipeName = IpcNames.PipeNameForCurrentSession();
         if (instance is null)
@@ -64,23 +66,90 @@ internal static class Program
         }
 
         using AppState state = AppState.Load(AppPaths.Default);
-        InstallExceptionHandlers();
         ApplicationConfiguration.Initialize();
         ThemeService.Apply(state.Settings.Theme);
         state.Log.Info($"{AppInfo.WindowTitle} starting");
 
-        using IpcServer ipc = new(pipeName);
-        ipc.Start();
         Core.Storage.Database.UiThreadId = Environment.CurrentManagedThreadId;
-        using UiServices services = UiServices.CreateLive(state);
-        using MainForm form = new(services, options, ipc);
-        using UiWatchdog? watchdog = UiWatchdog.Enabled && SynchronizationContext.Current is SynchronizationContext ui
-            ? new UiWatchdog(ui, (waited, marks) => state.Log.Warning(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"UI thread blocked for {waited.TotalMilliseconds:0} ms; recent activity: {marks}")))
-            : null;
-        Application.Run(form);
-        ThemeService.StopListening();
-        state.Log.Info("Exiting");
+        if (OpenServices(state, s => UiServices.CreateLive(s), ReportStartupFailure) is not UiServices services)
+        {
+            return 1;
+        }
+
+        using (services)
+        {
+            // The command pipe starts listening with the window (MainForm.OnHandleCreated), once its handler is ready: a
+            // link, or a scheduled scan forwarded while the window was starting, used to be dropped.
+            using IpcServer ipc = new(pipeName);
+            using MainForm form = new(services, options, ipc);
+            using UiWatchdog? watchdog = UiWatchdog.Enabled && SynchronizationContext.Current is SynchronizationContext ui
+                ? new UiWatchdog(ui, (waited, marks) => state.Log.Warning(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"UI thread blocked for {waited.TotalMilliseconds:0} ms; recent activity: {marks}")))
+                : null;
+            Application.Run(form);
+            ThemeService.StopListening();
+            state.Log.Info("Exiting");
+        }
+
         return 0;
+    }
+
+    /// <summary>
+    /// Opens the library and the services. When the library cannot be opened, logs why, reports it through
+    /// <paramref name="report"/> (the start-up dialog) and returns null, and the start ends with exit code 1, instead of
+    /// ending with no window and no message.
+    /// </summary>
+    internal static UiServices? OpenServices(AppState state, Func<AppState, UiServices> open, Action<Exception> report)
+    {
+        try
+        {
+            return open(state);
+        }
+        catch (Exception ex) when (IsLibraryOpenFailure(ex))
+        {
+            state.Log.Error("The library database could not be opened", ex);
+            ErrorLog.Write("Library database", ex);
+            report(ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The library database could not be opened: a schema newer than this version (after a downgrade), a lock held by
+    /// a backup tool past the busy timeout, a custom location on a drive that is not there, the wrong SQLite library.
+    /// </summary>
+    internal static bool IsLibraryOpenFailure(Exception exception) =>
+        exception is Core.Storage.StorageException or Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException;
+
+    /// <summary>
+    /// What the start-up refusal says. The storage layer's messages are written for people (a newer schema names both
+    /// versions, plan 03); a lock gets plain words (plan 16: busy timeout, then a visible error); anything else shows the
+    /// system's message, which names the file.
+    /// </summary>
+    internal static string StartupFailureText(Exception exception) => exception switch
+    {
+        // SQLITE_BUSY and SQLITE_LOCKED.
+        Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 } => Strings.UnhandledError.StartupLocked,
+        _ => exception.Message,
+    };
+
+    /// <summary>Says why the window cannot open, instead of ending with no window and no message.</summary>
+    private static void ReportStartupFailure(Exception exception)
+    {
+        TaskDialogButton openLog = new(Strings.UnhandledError.OpenLog);
+        TaskDialogButton close = new(Strings.UnhandledError.Close);
+        TaskDialogPage page = new()
+        {
+            Caption = Strings.ProductName,
+            Heading = Strings.UnhandledError.StartupTitle,
+            Text = StartupFailureText(exception),
+            Icon = TaskDialogIcon.Error,
+            Buttons = { openLog, close },
+            DefaultButton = close,
+        };
+        if (TaskDialog.ShowDialog(page) == openLog)
+        {
+            OpenInShell(ErrorLog.FilePath);
+        }
     }
 
     private static int ReportBadArguments(string error)

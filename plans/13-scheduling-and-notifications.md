@@ -149,7 +149,11 @@ Channel order: `ToastNotifier` → `BalloonNotifier` (only when a tray icon exis
   (a PNG written to the data folder). This is what allows an unpackaged app to raise toasts without a
   Start-menu shortcut.
 - Protocol handler `HKCU\Software\Classes\mediaverifier`: default value `URL:MediaVerifier`, empty
-  `URL Protocol` value, `shell\open\command` = `"<exe>" "%1"`.
+  `URL Protocol` value, `shell\open\command` = `"<exe>" "%1"`. `<exe>` is the **registration
+  executable**, as for the Run value of Start with Windows: the installed copy's `MediaVerifier.exe`
+  (Inno Setup's `InstallLocation`) when that file exists, otherwise the current executable path.
+  (Every start used the running exe, so a development build or a second portable copy took over the
+  installed app's notification links and Run value.)
 
 ### Raising a toast
 
@@ -185,9 +189,10 @@ are untrusted input: they select a view by integer ID and can never name a path 
 
 ### Fallback when interop is unavailable
 
-If `ToastInterop` cannot be made reliable on a supported Windows build, record it in the deviations
-log and use this fallback for headless runs: start `MediaVerifier.exe --minimized --notify <run id>`,
-which sits in the tray, shows a balloon, and exits when the user opens or dismisses it.
+When `ToastInterop` fails, a headless run shows the notification as a tray balloon from its own process
+(`SystemToast`: a temporary notification-area icon for a few seconds); the open window falls back to its
+in-app toast. (A `--minimized --notify <run id>` launch was planned for this; nothing used it and it was
+removed in the 2026-11-18 audit.)
 
 ## Optional webhook (stretch)
 

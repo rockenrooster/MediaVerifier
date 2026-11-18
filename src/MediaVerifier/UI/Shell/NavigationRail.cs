@@ -125,8 +125,20 @@ internal sealed class NavigationRail : KitControl
     {
         _issuesCount = Math.Max(0, count);
         _issuesTier = worst;
-        _issuesText = count > 999 ? "999+" : count.ToString("N0", CultureInfo.CurrentCulture);
+        _issuesText = count > 999 ? Strings.Shell.BadgeOverflow : count.ToString("N0", CultureInfo.CurrentCulture);
         Invalidate();
+    }
+
+    /// <summary>
+    /// The name an item has for screen readers and in the collapsed rail's tooltip: its label, with the Issues count
+    /// and the worst open tier in words (the badge's colour alone does not say it): <c>Issues · 96 · High</c>.
+    /// </summary>
+    internal string ItemName(int index)
+    {
+        RailItem item = _items[index];
+        return item.Kind == RailItemKind.Page && item.Page == PageId.Issues && _issuesCount > 0
+            ? UiFormat.Facts(item.Label, _issuesText, UiFormat.TierName(_issuesTier))
+            : item.Label;
     }
 
     public int LogicalWidth => _collapsed ? CollapsedWidth : ExpandedWidth;
@@ -174,7 +186,11 @@ internal sealed class NavigationRail : KitControl
         }
 
         base.OnGotFocus(e);
+        AnnounceFocus();
     }
+
+    /// <summary>The rail as a list whose items screen readers read by name, with the open page marked.</summary>
+    protected override AccessibleObject CreateAccessibilityInstance() => new RailAccessibleObject(this);
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -189,13 +205,11 @@ internal sealed class NavigationRail : KitControl
                 e.Handled = true;
                 break;
             case Keys.Home:
-                _focus = NextVisible(-1, 1);
-                Invalidate();
+                SetFocus(NextVisible(-1, 1));
                 e.Handled = true;
                 break;
             case Keys.End:
-                _focus = NextVisible(_items.Count, -1);
-                Invalidate();
+                SetFocus(NextVisible(_items.Count, -1));
                 e.Handled = true;
                 break;
             case Keys.Enter:
@@ -397,13 +411,81 @@ internal sealed class NavigationRail : KitControl
             _hover = index;
             Cursor = Cursors.Default;
             Invalidate();
+            ShowItemTip();
         }
     }
 
-    private void MoveFocus(int direction)
+    /// <summary>
+    /// The collapsed rail draws icons only, so the item under the pointer shows its name in a tooltip (subplan 09 E:
+    /// names for icon buttons). The tip waits its usual delay again for each item.
+    /// </summary>
+    private void ShowItemTip()
     {
-        _focus = NextVisible(_focus, direction);
+        string text = _collapsed && _hover >= 0 ? ItemName(_hover) : string.Empty;
+        if (text == KitToolTip.Get(this))
+        {
+            return;
+        }
+
+        KitToolTip.Hide();
+        KitToolTip.Set(this, text);
+        if (text.Length > 0)
+        {
+            // The tip starts on MouseEnter, which the rail gets once for all its items: start it again for this one.
+            base.OnMouseEnter(EventArgs.Empty);
+        }
+    }
+
+    private void MoveFocus(int direction) => SetFocus(NextVisible(_focus, direction));
+
+    private void SetFocus(int index)
+    {
+        _focus = index;
         Invalidate();
+        AnnounceFocus();
+    }
+
+    /// <summary>Tells screen readers which item has the keyboard focus (the rail is one window).</summary>
+    private void AnnounceFocus()
+    {
+        if (Focused && _focus >= 0 && _focus < _items.Count && IsHandleCreated)
+        {
+            AccessibilityNotifyClients(AccessibleEvents.Focus, VisibleIndex(_focus));
+        }
+    }
+
+    /// <summary>Position of an item among the visible ones (the accessible children), or -1.</summary>
+    private int VisibleIndex(int index)
+    {
+        if (index < 0 || index >= _items.Count || !_items[index].Visible)
+        {
+            return -1;
+        }
+
+        int position = 0;
+        for (int i = 0; i < index; i++)
+        {
+            if (_items[i].Visible)
+            {
+                position++;
+            }
+        }
+
+        return position;
+    }
+
+    /// <summary>The item at a position among the visible ones, or -1.</summary>
+    private int ItemAtVisibleIndex(int position)
+    {
+        for (int i = 0; i < _items.Count; i++)
+        {
+            if (_items[i].Visible && position-- == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private int NextVisible(int from, int direction)
@@ -431,4 +513,55 @@ internal sealed class NavigationRail : KitControl
     }
 
     private static RailItem Page(PageId id) => new(RailItemKind.Page, id, PageInfo.Icon(id), PageInfo.Title(id), bottom: false);
+
+    /// <summary>The visible items as list items: name, the open page selected, the keyboard focus (subplan 08, Accessibility).</summary>
+    private sealed class RailAccessibleObject(NavigationRail owner) : ControlAccessibleObject(owner)
+    {
+        public override AccessibleRole Role => AccessibleRole.List;
+
+        public override string? Name => owner.AccessibleName;
+
+        public override int GetChildCount() => owner._items.Count(i => i.Visible);
+
+        public override AccessibleObject? GetChild(int index) =>
+            owner.ItemAtVisibleIndex(index) is int item and >= 0 ? new RailItemAccessibleObject(owner, this, item) : null;
+
+        public override AccessibleObject? GetFocused() => owner.Focused ? GetChild(owner.VisibleIndex(owner._focus)) : base.GetFocused();
+
+        public override AccessibleObject? GetSelected() =>
+            GetChild(owner.VisibleIndex(owner._items.FindIndex(i => i.Kind == RailItemKind.Page && i.Page == owner._selected)));
+    }
+
+    private sealed class RailItemAccessibleObject(NavigationRail rail, AccessibleObject parent, int index) : AccessibleObject
+    {
+        public override AccessibleObject Parent => parent;
+
+        public override AccessibleRole Role => AccessibleRole.ListItem;
+
+        public override string? Name => rail.ItemName(index);
+
+        public override AccessibleStates State
+        {
+            get
+            {
+                RailItem item = rail._items[index];
+                AccessibleStates state = AccessibleStates.Selectable | AccessibleStates.Focusable;
+                if (item.Kind == RailItemKind.Page && item.Page == rail._selected)
+                {
+                    state |= AccessibleStates.Selected;
+                }
+
+                if (index == rail._focus && rail.Focused)
+                {
+                    state |= AccessibleStates.Focused;
+                }
+
+                return state;
+            }
+        }
+
+        public override Rectangle Bounds => rail.RectangleToScreen(rail.ItemBounds(index));
+
+        public override void DoDefaultAction() => rail.ItemInvoked?.Invoke(rail, rail._items[index]);
+    }
 }

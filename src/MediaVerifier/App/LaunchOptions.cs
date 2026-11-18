@@ -19,7 +19,6 @@ internal sealed record LaunchOptions
     public bool Minimized { get; init; }
     public long? PlanId { get; init; }
     public string? RenderDirectory { get; init; }
-    public long? NotifyRunId { get; init; }
     public string? ActivationUri { get; init; }
 }
 
@@ -31,13 +30,11 @@ internal static class CommandLineParser
     public const string RunPlan = "--run-plan";
     public const string RenderScreens = "--render-screens";
     public const string Cleanup = "--cleanup";
-    public const string Notify = "--notify";
 
     public const string Usage =
         "Usage: MediaVerifier.exe [option]\n" +
         "  (none)                          Start the app, or bring the running one forward\n" +
         "  --minimized                     Start hidden in the notification area (when that setting is on)\n" +
-        "  --minimized --notify <run id>   Announce a finished run from the notification area\n" +
         "  --self-check                    Run diagnostics without a window; exit 0 on success, 1 on failure\n" +
         "  --run-plan <id>                 Run a saved scan plan without a window\n" +
         "  --render-screens <dir>          Render every page to PNG files in <dir>, then exit\n" +
@@ -73,7 +70,6 @@ internal static class CommandLineParser
         bool selfCheck = false;
         bool cleanup = false;
         long? planId = null;
-        long? notifyRunId = null;
         string? renderDirectory = null;
         string? uri = null;
 
@@ -105,10 +101,6 @@ internal static class CommandLineParser
                 case RunPlan:
                     MarkSeen(seen, name, arg);
                     planId = ParseId(TakeValue(args, ref i, arg), arg);
-                    break;
-                case Notify:
-                    MarkSeen(seen, name, arg);
-                    notifyRunId = ParseId(TakeValue(args, ref i, arg), arg);
                     break;
                 case RenderScreens:
                     MarkSeen(seen, name, arg);
@@ -149,12 +141,7 @@ internal static class CommandLineParser
             return new LaunchOptions { ActivationUri = uri };
         }
 
-        if (notifyRunId is not null && !minimized)
-        {
-            throw new FormatException($"{Notify} is only valid together with {Minimized}.");
-        }
-
-        return new LaunchOptions { Minimized = minimized, NotifyRunId = notifyRunId };
+        return new LaunchOptions { Minimized = minimized };
     }
 
     private static void MarkSeen(HashSet<string> seen, string key, string arg)

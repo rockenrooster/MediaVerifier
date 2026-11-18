@@ -13,6 +13,12 @@ namespace MediaVerifier.UI;
 internal static class ShellActions
 {
     /// <summary>
+    /// Where the hand-offs report back: the main window's toasts (set by the main window, called on the UI thread). A
+    /// menu item that silently did nothing was the most common complaint.
+    /// </summary>
+    public static Action<Kit.Popups.ToastContent>? Toast { get; set; }
+
+    /// <summary>
     /// Opens Explorer on the file's folder with the file selected, through the shell API. A command line
     /// <c>explorer /select,…</c> fails for paths with spaces once the whole argument is quoted. A file that is
     /// gone opens its folder.
@@ -25,20 +31,34 @@ internal static class ShellActions
         }
     }
 
-    /// <summary>Opens a file in the program Windows has for its type; nothing when it is gone.</summary>
+    /// <summary>
+    /// Opens a file in the program Windows has for its type. A file that is gone (moved, deleted, or on a drive that is
+    /// not connected) is reported in a toast that offers its folder; it used to do nothing at all.
+    /// </summary>
     public static void OpenFile(string? path)
     {
-        if (!string.IsNullOrEmpty(path))
+        if (string.IsNullOrEmpty(path))
         {
-            OffUiThread("Open file", () =>
-            {
-                if (File.Exists(path))
-                {
-                    Open(path);
-                }
-            });
+            return;
         }
+
+        SynchronizationContext? ui = SynchronizationContext.Current;
+        OffUiThread("Open file", () =>
+        {
+            if (File.Exists(path))
+            {
+                Open(path);
+            }
+            else
+            {
+                Report(ui, FileNotFound(path));
+            }
+        });
     }
+
+    /// <summary>The toast for a file that is not there, with Show in folder.</summary>
+    internal static Kit.Popups.ToastContent FileNotFound(string path) =>
+        new(Core.Model.Severity.Medium, Strings.Shell.FileNotFound, Path.GetFileName(path), Strings.Menu.ShowInFolder, () => ShowInFolder(path));
 
     /// <summary>Opens a folder in Explorer.</summary>
     public static void OpenFolder(string? path)
@@ -86,14 +106,38 @@ internal static class ShellActions
         return Rules + "#" + slug;
     }
 
-    public static void CopyText(IEnumerable<string> lines)
+    /// <summary>
+    /// Copies the lines to the clipboard (UI thread) and says so in a one-line toast. When another program holds the
+    /// clipboard, Windows Forms retries for about a second and then throws: that is a toast too, not the error dialog.
+    /// Callers say what was copied through <paramref name="copied"/> instead of a toast of their own, which doubled the
+    /// toast and also claimed success when the copy had failed.
+    /// </summary>
+    /// <param name="copied">The success toast's line ("Path copied"); "Copied to the clipboard" when null.</param>
+    public static void CopyText(IEnumerable<string> lines, string? copied = null)
     {
         string text = string.Join(Environment.NewLine, lines);
-        if (text.Length > 0)
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        try
         {
             Clipboard.SetText(text);
         }
+        catch (ExternalException ex)
+        {
+            AppLog.Shared?.Warning("Copy to the clipboard failed", ex);
+            Toast?.Invoke(new Kit.Popups.ToastContent(Core.Model.Severity.Medium, Strings.Shell.CopyFailed, Strings.Shell.ClipboardBusy));
+            return;
+        }
+
+        Toast?.Invoke(new Kit.Popups.ToastContent(Core.Model.Severity.None, copied ?? Strings.Shell.Copied, string.Empty));
     }
+
+    /// <summary>Shows a toast on the UI thread the hand-off was started from (nothing when there is none).</summary>
+    private static void Report(SynchronizationContext? ui, Kit.Popups.ToastContent content) =>
+        ui?.Post(_ => Toast?.Invoke(content), null);
 
     private static void ShowInFolderNow(string path)
     {

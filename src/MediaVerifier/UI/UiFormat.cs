@@ -11,7 +11,10 @@ internal static class UiFormat
     /// <summary>Current culture grouping: <c>12,507</c>.</summary>
     public static string Count(long n) => n.ToString("N0", Culture);
 
-    /// <summary>Binary units, one decimal, none for bytes and KB: <c>412 KB</c>, <c>31.2 MB</c>, <c>3.2 TB</c>.</summary>
+    /// <summary>
+    /// Binary units, one decimal, none for bytes and KB: <c>412 KB</c>, <c>31.2 MB</c>, <c>3.2 TB</c>. The unit is chosen
+    /// after rounding, so 1,048,500 bytes is <c>1.0 MB</c>, not <c>1024 KB</c>.
+    /// </summary>
     public static string Size(long bytes)
     {
         if (bytes < 1024)
@@ -19,16 +22,16 @@ internal static class UiFormat
             return string.Format(Culture, Strings.Units.Bytes, bytes);
         }
 
-        double value = bytes / 1024.0;
-        if (value < 1024)
+        double kilobytes = Math.Round(bytes / 1024.0);
+        if (kilobytes < 1024)
         {
-            return string.Format(Culture, Strings.Units.Kilobytes, Math.Round(value));
+            return string.Format(Culture, Strings.Units.Kilobytes, kilobytes);
         }
 
         string[] units = [Strings.Units.Megabytes, Strings.Units.Gigabytes, Strings.Units.Terabytes];
         int unit = 0;
-        value /= 1024;
-        while (value >= 1024 && unit < units.Length - 1)
+        double value = bytes / (1024.0 * 1024.0);
+        while (Math.Round(value, 1, MidpointRounding.AwayFromZero) >= 1024 && unit < units.Length - 1)
         {
             value /= 1024;
             unit++;
@@ -89,29 +92,29 @@ internal static class UiFormat
     /// <summary>A date without time in the same style (<c>12 Nov</c>, <c>Yesterday</c>).</summary>
     public static string RecentDay(DateTimeOffset utc, DateTimeOffset now) => RecentDate(utc, now, withTime: false);
 
-    /// <summary><c>45 s</c>, <c>37 min</c>, <c>1 h 48 min</c>.</summary>
+    /// <summary>
+    /// <c>45 s</c>, <c>37 min</c>, <c>1 h 48 min</c>. The unit is chosen after rounding, so 59.6 s is <c>1 min</c> and
+    /// 59 min 50 s is <c>1 h 00 min</c> (they read <c>60 s</c> and <c>60 min</c>).
+    /// </summary>
     public static string Duration(TimeSpan span)
     {
-        if (span.TotalSeconds < 60)
+        long seconds = Math.Max(0, (long)Math.Round(span.TotalSeconds));
+        if (seconds < 60)
         {
-            return string.Format(Culture, Strings.Units.Seconds, Math.Max(0, (int)Math.Round(span.TotalSeconds)));
+            return string.Format(Culture, Strings.Units.Seconds, seconds);
         }
 
-        if (span.TotalMinutes < 60)
+        long minutes = (long)Math.Round(span.TotalMinutes);
+        if (minutes < 60)
         {
-            return string.Format(Culture, Strings.Units.Minutes, (int)Math.Round(span.TotalMinutes));
+            return string.Format(Culture, Strings.Units.Minutes, minutes);
         }
 
-        int hours = (int)span.TotalHours;
-        int minutes = (int)Math.Round(span.TotalMinutes - (hours * 60));
-        if (minutes == 60)
-        {
-            hours++;
-            minutes = 0;
-        }
+        long hours = minutes / 60;
+        long rest = minutes % 60;
 
         // Whole hours keep their minutes, as the scans mockup writes them (2 h 00 min).
-        return string.Format(Culture, Strings.Units.HoursMinutes, hours, minutes == 0 ? "00" : minutes.ToString(Culture));
+        return string.Format(Culture, Strings.Units.HoursMinutes, hours, rest == 0 ? "00" : rest.ToString(Culture));
     }
 
     /// <summary>An estimate: <c>About 1 h 12 min</c> (lower case in sentences: <c>about 1 h 12 min</c>).</summary>

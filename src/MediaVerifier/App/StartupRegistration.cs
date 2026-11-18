@@ -17,7 +17,7 @@ internal sealed class StartupRegistration
     public StartupRegistration(string? keyPath = null, string? executablePath = null)
     {
         _keyPath = keyPath ?? RunKeyPath;
-        _executablePath = executablePath ?? Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "MediaVerifier.exe");
+        _executablePath = executablePath ?? RegistrationTarget.ExePath();
     }
 
     public string Command => "\"" + _executablePath + "\" " + CommandLineParser.Minimized;
@@ -71,5 +71,73 @@ internal sealed class StartupRegistration
     {
         using RegistryKey? key = Registry.CurrentUser.OpenSubKey(_keyPath, writable: true);
         key?.DeleteValue(ValueName, throwOnMissingValue: false);
+    }
+}
+
+/// <summary>
+/// The executable that the per-user registrations point at: the Run value and the notification and link handler. That
+/// is the installed copy when there is one, otherwise the copy that runs. Every start used to point them at whichever
+/// copy started, so a development build (or a second portable copy) took over the installed app's notification links.
+/// A reinstall to another folder still moves them, as subplan 14 asks after an update.
+/// </summary>
+internal static class RegistrationTarget
+{
+    private const string ExeName = "MediaVerifier.exe";
+
+    /// <summary>
+    /// Found once per process. Start-up maintenance asks first, on a pool thread, so the Start with Windows switch does
+    /// not read the uninstall keys and probe install folders (one may be on a drive that is gone) on the UI thread.
+    /// </summary>
+    private static readonly Lazy<string> s_exePath = new(() =>
+        Choose(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, ExeName), InstallLocations(), File.Exists));
+
+    public static string ExePath() => s_exePath.Value;
+
+    /// <summary>The first install location that holds the executable, otherwise <paramref name="running"/>.</summary>
+    internal static string Choose(string running, IEnumerable<string?> installLocations, Func<string, bool> exists)
+    {
+        foreach (string? location in installLocations)
+        {
+            if (string.IsNullOrWhiteSpace(location))
+            {
+                continue;
+            }
+
+            try
+            {
+                string exe = Path.Combine(Path.GetFullPath(location.Trim().Trim('"')), ExeName);
+                if (exists(exe))
+                {
+                    return exe;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // A malformed InstallLocation: not a copy to point at.
+            }
+        }
+
+        return running;
+    }
+
+    /// <summary>Inno Setup's recorded install folders (per user, then per machine).</summary>
+    private static List<string?> InstallLocations()
+    {
+        List<string?> locations = [];
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+        {
+            try
+            {
+                using RegistryKey root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+                using RegistryKey? key = root.OpenSubKey(InstallDetection.UninstallKey);
+                locations.Add(key?.GetValue("InstallLocation") as string);
+            }
+            catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+            {
+                // Unreadable: treated as not installed there.
+            }
+        }
+
+        return locations;
     }
 }
