@@ -66,12 +66,13 @@ public sealed class AppLogTests
         ErrorLog.Configure(temp.Path);
         try
         {
+            // A crash-time context: those always go to error.log, whether or not an app log is installed.
             InvalidOperationException exception = new("boom");
-            ErrorLog.Write("Test", exception);
-            ErrorLog.Write("Test", exception);
+            ErrorLog.Write("Unhandled", exception);
+            ErrorLog.Write("Unhandled", exception);
 
             string text = File.ReadAllText(Path.Combine(temp.Path, "error.log"));
-            Assert.Single(text.Split("[Test]", StringSplitOptions.None).Skip(1));
+            Assert.Single(text.Split("[Unhandled]", StringSplitOptions.None).Skip(1));
             Assert.Contains("boom", text, StringComparison.Ordinal);
         }
         finally

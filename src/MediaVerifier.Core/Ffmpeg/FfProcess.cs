@@ -193,8 +193,8 @@ public sealed class FfRunner : IDisposable
             Task exited = process.WaitForExitAsync(CancellationToken.None);
             while (!exited.IsCompleted)
             {
-                Task delay = Task.Delay(TimeSpan.FromMilliseconds(250), CancellationToken.None);
-                await Task.WhenAny(exited, delay, WhenCancelled(cancellationToken)).ConfigureAwait(false);
+                // A cancelled delay ends the wait at once without throwing, and unregisters itself from the token.
+                await Task.WhenAny(exited, Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken)).ConfigureAwait(false);
                 if (exited.IsCompleted)
                 {
                     break;
@@ -333,18 +333,6 @@ public sealed class FfRunner : IDisposable
         }
 
         lines.Flush();
-    }
-
-    private static Task WhenCancelled(CancellationToken token)
-    {
-        if (!token.CanBeCanceled)
-        {
-            return Task.Delay(Timeout.Infinite, CancellationToken.None);
-        }
-
-        TaskCompletionSource source = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        token.Register(() => source.TrySetResult());
-        return source.Task;
     }
 
     private static void Kill(Process process)

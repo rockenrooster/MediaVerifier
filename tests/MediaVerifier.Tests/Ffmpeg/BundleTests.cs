@@ -104,7 +104,10 @@ public sealed class BundleTests
         string path = FixtureFactory.CopyTo("img.jpg", temp.Path, "a%03d.jpg");
         using FfRunner runner = FfmpegEnvironment.CreateRunner();
 
-        ProbeResult probe = await new ProbeProvider(runner).ProbeAsync(path, MediaKind.Photo, "jpeg");
+        // The probe exactly as ProbeArtifactProvider runs it.
+        List<string> probeArgs = ["-show_format", "-show_streams", "-show_error", "-of", "json", .. FfmpegArgs.Input(path, MediaKind.Photo, "jpeg")];
+        FfResult probed = await runner.RunAsync(new FfRequest { Tool = FfTool.Ffprobe, Arguments = probeArgs, Stdout = StdoutMode.Text });
+        ProbeResult probe = ProbeParser.Parse(probed.StdoutText, probed.Log);
         Assert.True(probe.Opened);
         Assert.Equal(1920, probe.Streams[0].Width);
 
