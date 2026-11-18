@@ -264,7 +264,7 @@ holds the initial focus.
 |-----------|---------|
 | Text box | Height 32, radius 4, text inset 10. Fill `Surface` on `Bg`; fill `Bg` when it sits on `Surface` or `Raised`. Border `Stroke`; hover `StrokeStrong`; focused 2 px `Accent` border and a 1 px `Text` caret. Placeholder in `Text3` |
 | Search box | Text box with a 16 px `search` icon at +10 and text at +34. While it has text, a 16 px `close` icon 10 px from the right clears it. Filters after 200 ms without typing |
-| Number box | Text box, right-aligned digits, Up/Down change by one step, rejects non-digits |
+| Number box | Text box, right-aligned digits, Up/Down change by one step, rejects non-digits except a leading minus sign when the range has negative values (the dBFS rule limits). Leaving the box brings the value within its limits, so the box always shows the value in use |
 | Path box | Text box followed by an 8 px gap and a secondary *Browse…* button |
 | Drop-down | Height 32 (compact 28), padding 12, label `Body`, `chevron-down` 16 px with its left edge 26 px from the right. Colours as a secondary button |
 | Drop-down list | Opens 4 px below. `Raised`, `Stroke`, radius 8, shadow, 4 px padding. Items 32 high, radius 4, label at +12. Current item: `Selected`, `Accent` bar, `BodyStrong`, 16 px `check` 14 px from the right. Hover: `Hover` + `StrokeStrong` bar |

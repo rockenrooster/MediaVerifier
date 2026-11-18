@@ -238,33 +238,40 @@ public sealed class KitBehaviourTests
         Assert.True(toggled);
     }
 
-    /// <summary>The render harness prints the edit: the placeholder of an empty box is part of the picture.</summary>
+    /// <summary>
+    /// The render harness prints the edit: the placeholder of an empty box and the text of a filled one are part of
+    /// the picture.
+    /// </summary>
     [Fact]
-    public void A_printed_empty_box_shows_its_placeholder()
+    public void A_printed_box_shows_its_placeholder_or_text()
     {
-        int differing = 0;
+        int placeholder = 0;
+        int text = 0;
         Sta.Run(() =>
         {
             using Form owner = OffscreenForm();
             SearchBox named = new() { Placeholder = "Search files", Bounds = new Rectangle(10, 10, 240, 32) };
             SearchBox blank = new() { Bounds = new Rectangle(10, 60, 240, 32) };
-            owner.Controls.AddRange([named, blank]);
+            SearchBox filled = new() { Text = "overpass", Bounds = new Rectangle(10, 110, 240, 32) };
+            owner.Controls.AddRange([named, blank, filled]);
             owner.Show();
             Application.DoEvents();
-            using Bitmap withText = Print(Edit(named));
             using Bitmap without = Print(Edit(blank));
-            for (int x = 0; x < withText.Width; x++)
+            using (Bitmap withPlaceholder = Print(Edit(named)))
             {
-                for (int y = 0; y < withText.Height; y++)
-                {
-                    differing += withText.GetPixel(x, y).ToArgb() != without.GetPixel(x, y).ToArgb() ? 1 : 0;
-                }
+                placeholder = Differing(withPlaceholder, without);
+            }
+
+            using (Bitmap withText = Print(Edit(filled)))
+            {
+                text = Differing(withText, without);
             }
 
             owner.Close();
         });
 
-        Assert.True(differing > 20, $"only {differing} pixels show the placeholder");
+        Assert.True(placeholder > 20, $"only {placeholder} pixels show the placeholder");
+        Assert.True(text > 20, $"only {text} pixels show the text");
     }
 
     /// <summary>Arrow keys move between controls that can be selected: passive cards and pages are not among them.</summary>
@@ -551,6 +558,20 @@ public sealed class KitBehaviourTests
         Assert.Same(shown, drop.ShownText);
         drop.SelectedIndex = 1;
         Assert.Equal("Group: Folder", drop.ShownText);
+    }
+
+    private static int Differing(Bitmap a, Bitmap b)
+    {
+        int count = 0;
+        for (int x = 0; x < a.Width; x++)
+        {
+            for (int y = 0; y < a.Height; y++)
+            {
+                count += a.GetPixel(x, y).ToArgb() != b.GetPixel(x, y).ToArgb() ? 1 : 0;
+            }
+        }
+
+        return count;
     }
 
     private static bool Near(Color actual, Color expected) =>
