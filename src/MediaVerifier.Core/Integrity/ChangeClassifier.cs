@@ -112,16 +112,4 @@ public static class ScrubPolicy
             .ThenBy(c => c.RelDir, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)];
     }
-
-    /// <summary>Days a full pass takes at a given nightly budget, for the dashboard recommendation.</summary>
-    public static int DaysForFullPass(long totalBytes, TimeSpan budgetPerRun, double bytesPerSecond)
-    {
-        if (budgetPerRun <= TimeSpan.Zero || bytesPerSecond <= 0)
-        {
-            return 0;
-        }
-
-        double perRun = budgetPerRun.TotalSeconds * bytesPerSecond;
-        return (int)Math.Ceiling(totalBytes / perRun);
-    }
 }

@@ -36,17 +36,6 @@ public sealed class PolicyTests
     {
         Assert.Equal(Severity.Low, SeverityPolicy.CapForConfidence(Severity.High, 0.49f));
         Assert.Equal(Severity.High, SeverityPolicy.CapForConfidence(Severity.High, 0.5f));
-        Assert.Equal(Severity.Low, SeverityPolicy.FromConfidence(RuleCatalog.Get("AUD-FAKE-LOSSLESS"), 0.3f));
-        Assert.Equal(Severity.High, SeverityPolicy.FromConfidence(RuleCatalog.Get("AUD-FAKE-LOSSLESS"), 0.9f));
-        Assert.Equal(Severity.Medium, SeverityPolicy.FromConfidence(RuleCatalog.Get("AUD-FAKE-LOSSLESS"), 0.6f));
-    }
-
-    [Fact]
-    public void FileStatusIsTheWorstOpenSeverity()
-    {
-        Assert.Equal(Severity.None, SeverityPolicy.Aggregate([]));
-        Assert.Equal(Severity.High, SeverityPolicy.Aggregate([Severity.Low, Severity.High, Severity.Medium]));
-        Assert.True(Severity.Critical > Severity.High && Severity.High > Severity.Medium && Severity.Medium > Severity.Low && Severity.Low > Severity.None);
     }
 
     [Fact]

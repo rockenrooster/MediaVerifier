@@ -166,16 +166,6 @@ public sealed class IoGates : IDisposable
         _readersFor = readersFor;
     }
 
-    /// <summary>Default readers per storage class (subplan 05).</summary>
-    public static int DefaultReaders(StorageClass storage) => storage switch
-    {
-        StorageClass.Hdd => 1,
-        StorageClass.Ssd => 4,
-        StorageClass.Network => 2,
-        StorageClass.Removable => 1,
-        _ => 2,
-    };
-
     public CpuGate For(VolumeInfo volume)
     {
         lock (_gate)

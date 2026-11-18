@@ -371,7 +371,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
     /// </summary>
     public async Task<string?> UndoAsync(long operationId, long batchId, CancellationToken token)
     {
-        OperationRecord? operation = await Task.Run(() => Operation(operationId), token).ConfigureAwait(false);
+        OperationRecord? operation = await Task.Run(() => database.Journal.Get(operationId), token).ConfigureAwait(false);
         if (operation is { Status: OperationStatus.Done, UndoJson: null, BackupPath: string setAsideBefore } && UndoneOperation(operation) is not null)
         {
             return await PutBackAsync(operation, setAsideBefore, token).ConfigureAwait(false);
@@ -512,7 +512,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
     /// <summary>Permanently deletes the original one operation kept in quarantine (the caller confirms first); returns the bytes freed.</summary>
     public async Task<long> PurgeOneAsync(long operationId, CancellationToken token = default)
     {
-        OperationRecord? operation = await Task.Run(() => Operation(operationId), token).ConfigureAwait(false);
+        OperationRecord? operation = await Task.Run(() => database.Journal.Get(operationId), token).ConfigureAwait(false);
         if (operation?.BackupPath is not string backup || !backup.Contains(QuarantineFolder, StringComparison.OrdinalIgnoreCase))
         {
             return 0;
@@ -725,7 +725,7 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
                 return false;
             }
 
-            if (File.Exists(operation.SourcePath) && Operation(undone) is { Status: OperationStatus.Done, BackupPath: string kept } done && !File.Exists(kept))
+            if (File.Exists(operation.SourcePath) && database.Journal.Get(undone) is { Status: OperationStatus.Done, BackupPath: string kept } done && !File.Exists(kept))
             {
                 if (done.UndoJson is string json && JsonSerializer.Deserialize(json, RemediationJsonContext.Default.UndoData) is UndoData undo
                     && done.FileId is long fileId && database.Files.Get(fileId) is FileRecord file)
@@ -974,31 +974,6 @@ public sealed class OperationRunner(Database database, FfRunner runner, IMediaFi
             },
             ChangeFlags.Operations,
             token);
-
-    /// <summary>One journal row by id.</summary>
-    private OperationRecord? Operation(long id) => database.Read(connection =>
-    {
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT id, batch_id, utc, action_id, file_id, status, source_path, result_path, backup_path, undo_json, detail_json FROM operations WHERE id = $id";
-        command.Add("$id", id);
-        using SqliteDataReader r = command.ExecuteReader();
-        return r.Read()
-            ? new OperationRecord
-            {
-                Id = r.GetInt64(0),
-                BatchId = r.GetInt64(1),
-                Utc = r.GetInt64(2),
-                ActionId = r.GetString(3),
-                FileId = r.GetInt64OrNull(4),
-                Status = (OperationStatus)r.GetInt32(5),
-                SourcePath = r.GetString(6),
-                ResultPath = r.GetStringOrNull(7),
-                BackupPath = r.GetStringOrNull(8),
-                UndoJson = r.GetStringOrNull(9),
-                DetailJson = r.GetStringOrNull(10),
-            }
-            : null;
-    });
 
     private async Task FinishAsync(long operationId, OperationStatus status, string? result, string? backup, UndoData? undo, string? reason, OperationContext context)
     {

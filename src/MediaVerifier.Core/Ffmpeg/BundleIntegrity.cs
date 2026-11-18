@@ -34,23 +34,13 @@ public sealed class BundleInfo
     [JsonPropertyName("licence")]
     public string? Licence { get; set; }
 
-    [JsonPropertyName("sourceArchive")]
-    public string? SourceArchive { get; set; }
 
-    [JsonPropertyName("sourceSha256")]
-    public string? SourceSha256 { get; set; }
 
-    [JsonPropertyName("buildImage")]
-    public string? BuildImage { get; set; }
 
-    [JsonPropertyName("buildconf")]
-    public string? Buildconf { get; set; }
 
     [JsonPropertyName("files")]
     public Dictionary<string, string> Files { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    [JsonPropertyName("builtUtc")]
-    public string? BuiltUtc { get; set; }
 }
 
 public sealed record BundleCheck(BundleState State, BundleInfo? Info, IReadOnlyList<string> ChangedFiles, IReadOnlyList<string> MissingFiles, string? Detail)

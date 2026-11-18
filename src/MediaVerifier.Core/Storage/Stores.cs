@@ -370,6 +370,16 @@ public sealed class Journal(Database database)
     public Task ClearBackupAsync(long operationId, CancellationToken cancellationToken = default) =>
         database.Writer.ExecuteAsync(context => ClearBackup(context, operationId), ChangeFlags.Operations, cancellationToken);
 
+    /// <summary>One row by id; null when there is none.</summary>
+    public OperationRecord? Get(long id) => database.Read(connection =>
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT " + Columns + " FROM operations WHERE id = $id";
+        command.Add("$id", id);
+        using SqliteDataReader r = command.ExecuteReader();
+        return r.Read() ? Read(r) : null;
+    });
+
     public List<OperationRecord> List(int limit = 500, long? batchId = null, OperationStatus? status = null) => database.Read(connection =>
     {
         using SqliteCommand command = connection.CreateCommand();
@@ -381,24 +391,26 @@ public sealed class Journal(Database database)
         List<OperationRecord> rows = [];
         while (r.Read())
         {
-            rows.Add(new OperationRecord
-            {
-                Id = r.GetInt64(0),
-                BatchId = r.GetInt64(1),
-                Utc = r.GetInt64(2),
-                ActionId = r.GetString(3),
-                FileId = r.GetInt64OrNull(4),
-                Status = (OperationStatus)r.GetInt32(5),
-                SourcePath = r.GetString(6),
-                ResultPath = r.GetStringOrNull(7),
-                BackupPath = r.GetStringOrNull(8),
-                UndoJson = r.GetStringOrNull(9),
-                DetailJson = r.GetStringOrNull(10),
-            });
+            rows.Add(Read(r));
         }
 
         return rows;
     });
+
+    private static OperationRecord Read(SqliteDataReader r) => new()
+    {
+        Id = r.GetInt64(0),
+        BatchId = r.GetInt64(1),
+        Utc = r.GetInt64(2),
+        ActionId = r.GetString(3),
+        FileId = r.GetInt64OrNull(4),
+        Status = (OperationStatus)r.GetInt32(5),
+        SourcePath = r.GetString(6),
+        ResultPath = r.GetStringOrNull(7),
+        BackupPath = r.GetStringOrNull(8),
+        UndoJson = r.GetStringOrNull(9),
+        DetailJson = r.GetStringOrNull(10),
+    };
 }
 
 /// <summary>Compact per-file analysis summaries for re-evaluation without I/O (subplan 05).</summary>

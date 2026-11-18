@@ -16,7 +16,4 @@ public static class AppInfo
     /// <summary>Window title, also used to find the running instance's window.</summary>
     public static string WindowTitle { get; } = $"{ProductName} {VersionText}";
 
-    /// <summary>Informational, for logs: version plus the build's file version.</summary>
-    public static string FileVersion { get; } =
-        typeof(AppInfo).Assembly.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? VersionText;
 }

@@ -7,6 +7,7 @@ using MediaVerifier.Core.Engine;
 using MediaVerifier.Core.Integrity;
 using MediaVerifier.Core.Model;
 using MediaVerifier.Core.Rules;
+using MediaVerifier.Core.Settings;
 using MediaVerifier.Core.Storage;
 using MediaVerifier.Tests.TestSupport;
 
@@ -255,7 +256,7 @@ public sealed class EngineUnitTests
     [Fact]
     public void IoGatesUseTheDefaultReadersPerClass()
     {
-        using IoGates gates = new(IoGates.DefaultReaders);
+        using IoGates gates = new(new ScanSettings().ReadersFor);
         Assert.Equal(1, gates.LimitFor(new VolumeInfo("hdd", StorageClass.Hdd)));
         Assert.Equal(4, gates.LimitFor(new VolumeInfo("ssd", StorageClass.Ssd)));
         Assert.Equal(2, gates.LimitFor(new VolumeInfo("nas", StorageClass.Network)));
@@ -383,7 +384,6 @@ public sealed class EngineUnitTests
 
         IReadOnlyList<ScrubCandidate> budgeted = ScrubPolicy.Select(candidates, now, TimeSpan.FromDays(90), TimeSpan.FromSeconds(2), bytesPerSecond: 1000);
         Assert.Equal([2L, 1], budgeted.Select(c => c.FileId));
-        Assert.Equal(41, ScrubPolicy.DaysForFullPass(41L * 2 * 3600 * 1000, TimeSpan.FromHours(2), 1000));
     }
 
     [Theory]

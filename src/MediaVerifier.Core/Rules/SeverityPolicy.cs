@@ -66,33 +66,6 @@ public static class SeverityPolicy
         return severity;
     }
 
-    /// <summary>A file's status is the worst severity among its open findings.</summary>
-    public static Severity Aggregate(IEnumerable<Severity> openSeverities)
-    {
-        Severity worst = Severity.None;
-        foreach (Severity severity in openSeverities)
-        {
-            if (severity > worst)
-            {
-                worst = severity;
-            }
-        }
-
-        return worst;
-    }
-
-    /// <summary>Maps a confidence onto a rule's range, for heuristics whose "severity follows confidence".</summary>
-    public static Severity FromConfidence(RuleDefinition rule, float confidence)
-    {
-        Severity severity = Wording(confidence) switch
-        {
-            ConfidenceWording.Fact or ConfidenceWording.Likely => rule.MaxSeverity,
-            ConfidenceWording.Possibly => (Severity)Math.Max((int)rule.MinSeverity, (int)rule.MaxSeverity - 1),
-            _ => rule.MinSeverity,
-        };
-        return CapForConfidence(ClampToRule(severity, rule), confidence);
-    }
-
     private static string LowerFirst(string text)
     {
         if (text.Length >= 2 && char.IsUpper(text[0]) && char.IsLower(text[1]))

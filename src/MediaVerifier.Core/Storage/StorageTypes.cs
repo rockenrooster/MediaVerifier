@@ -148,8 +148,6 @@ public sealed record RootRecord
     public DateTimeOffset? LastOnlineUtc { get; init; }
 }
 
-public sealed record DirRecord(long Id, long RootId, long? ParentId, string RelPath, string Name);
-
 /// <summary>A file row (subplan 03, files). Media summary columns are denormalised for display.</summary>
 public sealed record FileRecord
 {
