@@ -122,7 +122,6 @@ internal static class Strings
 
         // Feedback the plans do not word (design cases of the 2026-11-18 audit, plan 09 D's toast patterns).
         public const string ScanQueued = "Scan queued";
-        public const string ScanQueuedText = "It starts when the current scan ends";
         public const string NothingToUndo = "Nothing to undo";
         public const string Copied = "Copied to the clipboard";
         public const string CopyFailed = "Could not copy";

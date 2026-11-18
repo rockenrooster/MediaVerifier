@@ -71,16 +71,8 @@ internal static class Program
         state.Log.Info($"{AppInfo.WindowTitle} starting");
 
         Core.Storage.Database.UiThreadId = Environment.CurrentManagedThreadId;
-        UiServices services;
-        try
+        if (OpenServices(state, s => UiServices.CreateLive(s), ReportStartupFailure) is not UiServices services)
         {
-            services = UiServices.CreateLive(state);
-        }
-        catch (Exception ex) when (IsLibraryOpenFailure(ex))
-        {
-            state.Log.Error("The library database could not be opened", ex);
-            ErrorLog.Write("Library database", ex);
-            ReportStartupFailure(ex);
             return 1;
         }
 
@@ -99,6 +91,26 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Opens the library and the services. When the library cannot be opened, logs why, reports it through
+    /// <paramref name="report"/> (the start-up dialog) and returns null, and the start ends with exit code 1, instead of
+    /// ending with no window and no message.
+    /// </summary>
+    internal static UiServices? OpenServices(AppState state, Func<AppState, UiServices> open, Action<Exception> report)
+    {
+        try
+        {
+            return open(state);
+        }
+        catch (Exception ex) when (IsLibraryOpenFailure(ex))
+        {
+            state.Log.Error("The library database could not be opened", ex);
+            ErrorLog.Write("Library database", ex);
+            report(ex);
+            return null;
+        }
     }
 
     /// <summary>

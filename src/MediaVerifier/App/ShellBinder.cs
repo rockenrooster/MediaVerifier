@@ -18,7 +18,7 @@ namespace MediaVerifier.App;
 /// process (subplan 13, task SCH-06) shows in the strip with its checkpointed counts, polled every second, and its
 /// Stop signals that process. A scan started here shows in the strip at once. A change of the folders, findings,
 /// ignores, notifications or repairs anywhere reloads the badge, the bell and the counts that decide whether Scan is
-/// enabled; a request that waited for this window's scan starts when it ends.
+/// enabled; a request that waited for this window's scan starts when it ends, unless Stop withdrew it.
 /// </summary>
 internal sealed class ShellBinder : IDisposable
 {
@@ -334,7 +334,8 @@ internal sealed class ShellBinder : IDisposable
 
     /// <summary>
     /// Scan a folder…: the enabled Library folders in a second menu below Scan, and the chosen one is scanned at the
-    /// default depth, as its card's Scan does. With one folder there is nothing to choose; with none it says to add one.
+    /// default depth, after the large-scan question when it applies. With one folder there is nothing to choose; with
+    /// none it says to add one.
     /// (It only opened the Library page, and on the Library page it did nothing at all.)
     /// </summary>
     internal async Task ScanFolderAsync()
@@ -373,9 +374,28 @@ internal sealed class ShellBinder : IDisposable
         });
     }
 
+    /// <summary>
+    /// Scans one Library folder, asking first when it is large, as Scan does (subplan 09, Before a large scan): with one
+    /// Library folder this is the whole library, and it started without the question.
+    /// </summary>
     private async Task ScanRootAsync(RootRecord root)
     {
-        await _services.StartScanAsync([new ScanScope(root.Id)], _services.State.Settings.Scanning.DefaultDepth, FolderName(root)).ConfigureAwait(true);
+        ScanDepth depth = _services.State.Settings.Scanning.DefaultDepth;
+        if (_services.State.Settings.Scanning.AskBeforeLargeScans)
+        {
+            ScanEstimate estimate = await Task.Run(() => _services.Data.LoadScanEstimate([root.Id])).ConfigureAwait(true);
+            if (estimate.IsLarge)
+            {
+                if (_form.IsDisposed || LargeScanDialog.Ask(_form, estimate, depth) is not ScanDepth chosen)
+                {
+                    return;
+                }
+
+                depth = chosen;
+            }
+        }
+
+        await _services.StartScanAsync([new ScanScope(root.Id)], depth, FolderName(root)).ConfigureAwait(true);
         Poll();
     }
 
@@ -457,6 +477,9 @@ internal sealed class ShellBinder : IDisposable
         bool background = !_services.Scans.Status.IsActive && _services.BackgroundRunActive();
         if (MessageDialog.Confirm(_form, Strings.Shell.StopTitle, Strings.Shell.StopText, Strings.Shell.KeepScanning, Strings.Shell.StopButton, destructive: false))
         {
+            // Stop means no more scanning: a request queued behind this scan, which nothing shows, started the moment
+            // the stopped scan ended.
+            _services.ClearQueuedScans();
             if (background)
             {
                 // The headless run treats its stop event as Cancel (subplan 13, GUI opened during a headless run).
@@ -472,16 +495,21 @@ internal sealed class ShellBinder : IDisposable
     }
 
     /// <summary>
-    /// Enter searches Library → Browse. The key press is suppressed too, or the single-line box beeped at every search.
-    /// (Esc, which clears the box, is the search box's own.)
+    /// Enter searches Library → Browse. The key press is suppressed too, empty box included, or the single-line box
+    /// beeped. (Esc, which clears the box, is the search box's own.)
     /// </summary>
     internal void OnSearchKey(object? sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.Enter && _form.Header.Search.Text.Trim().Length > 0)
+        if (e.KeyCode != Keys.Enter)
         {
-            e.Handled = true;
-            e.SuppressKeyPress = true;
-            _services.Navigate?.Invoke(PageId.Library, new LibrarySearchRequest(_form.Header.Search.Text.Trim()));
+            return;
+        }
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+        if (_form.Header.Search.Text.Trim() is { Length: > 0 } text)
+        {
+            _services.Navigate?.Invoke(PageId.Library, new LibrarySearchRequest(text));
         }
     }
 }

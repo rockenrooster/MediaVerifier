@@ -83,11 +83,8 @@ Daily uses `<ScheduleByDay><DaysInterval>n</DaysInterval></ScheduleByDay>`; mont
 `<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth><Months>` with all twelve months `</Months> </ScheduleByMonth>`. Escape the description and paths as XML text.
 
 Reconciliation at app start and whenever plans change: for every plan make the task exist with the
-current XML and the **registration executable**: the installed copy's `MediaVerifier.exe` (Inno
-Setup's `InstallLocation`) when that file exists, otherwise the current executable path (the path
-changes if a portable exe is moved); delete tasks whose plan no longer exists. (Every start used the
-running exe, so a development build or a second portable copy took over the installed app's tasks,
-notification links and Run value; a copy without its media engine then ran the schedules.) `MediaVerifier.exe --cleanup` removes all tasks and per-user
+current XML and the **current executable path** (the path changes if a portable exe is moved); delete
+tasks whose plan no longer exists. `MediaVerifier.exe --cleanup` removes all tasks and per-user
 registrations; the uninstaller calls it (subplan 14).
 
 Next-run times shown in the UI are computed by `ScheduleCalculator` (pure, tested with a fake clock),
@@ -152,8 +149,11 @@ Channel order: `ToastNotifier` → `BalloonNotifier` (only when a tray icon exis
   (a PNG written to the data folder). This is what allows an unpackaged app to raise toasts without a
   Start-menu shortcut.
 - Protocol handler `HKCU\Software\Classes\mediaverifier`: default value `URL:MediaVerifier`, empty
-  `URL Protocol` value, `shell\open\command` = `"<exe>" "%1"`, where `<exe>` is the registration
-  executable (see Reconciliation above), as for the Run value of Start with Windows.
+  `URL Protocol` value, `shell\open\command` = `"<exe>" "%1"`. `<exe>` is the **registration
+  executable**, as for the Run value of Start with Windows: the installed copy's `MediaVerifier.exe`
+  (Inno Setup's `InstallLocation`) when that file exists, otherwise the current executable path.
+  (Every start used the running exe, so a development build or a second portable copy took over the
+  installed app's notification links and Run value.)
 
 ### Raising a toast
 

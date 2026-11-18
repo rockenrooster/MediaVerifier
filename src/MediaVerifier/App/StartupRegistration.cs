@@ -75,18 +75,23 @@ internal sealed class StartupRegistration
 }
 
 /// <summary>
-/// The executable that the per-user registrations point at: the Run value, the notification and link handler, and the
-/// scheduled tasks. That is the installed copy when there is one, otherwise the copy that runs. Every start used to
-/// point them at whichever copy started, so a development build (or a second portable copy) took over the installed
-/// app's notification links, and a schedule could run a copy without its media engine. A reinstall to another folder
-/// still moves them, as subplan 14 asks after an update.
+/// The executable that the per-user registrations point at: the Run value and the notification and link handler. That
+/// is the installed copy when there is one, otherwise the copy that runs. Every start used to point them at whichever
+/// copy started, so a development build (or a second portable copy) took over the installed app's notification links.
+/// A reinstall to another folder still moves them, as subplan 14 asks after an update.
 /// </summary>
 internal static class RegistrationTarget
 {
     private const string ExeName = "MediaVerifier.exe";
 
-    public static string ExePath() =>
-        Choose(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, ExeName), InstallLocations(), File.Exists);
+    /// <summary>
+    /// Found once per process. Start-up maintenance asks first, on a pool thread, so the Start with Windows switch does
+    /// not read the uninstall keys and probe install folders (one may be on a drive that is gone) on the UI thread.
+    /// </summary>
+    private static readonly Lazy<string> s_exePath = new(() =>
+        Choose(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, ExeName), InstallLocations(), File.Exists));
+
+    public static string ExePath() => s_exePath.Value;
 
     /// <summary>The first install location that holds the executable, otherwise <paramref name="running"/>.</summary>
     internal static string Choose(string running, IEnumerable<string?> installLocations, Func<string, bool> exists)

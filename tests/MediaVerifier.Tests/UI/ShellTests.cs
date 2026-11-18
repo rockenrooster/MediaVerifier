@@ -33,14 +33,17 @@ public sealed class ShellTests
 
     /// <summary>
     /// Ctrl+Z undid the newest repair batch in the journal, however old, even right after an Ignore whose toast offered
-    /// Undo. Now it runs the newest toast's Undo, once, whether from the button or the key.
+    /// Undo. Now it runs the newest toast's Undo, once, whether from the button or the key, and the key closes that
+    /// toast, so no Undo button that can no longer do anything stays on show.
     /// </summary>
     [Fact]
-    public void Ctrl_Z_runs_the_newest_toasts_Undo_once()
+    public void Ctrl_Z_runs_the_newest_toasts_Undo_once_and_closes_that_toast()
     {
         using TempDirectory temp = new("shell-undo");
         using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
         using UiServices services = Live(state, temp, new FakeScans());
+        List<ToastContent> dismissed = [];
+        services.DismissToast = dismissed.Add;
         int repairUndone = 0;
         int ignoreUndone = 0;
         ToastContent repair = services.TrackUndo(new ToastContent(Severity.None, "Index rebuilt for 1 file", string.Empty, Strings.Dialogs.Undo, () => repairUndone++));
@@ -51,6 +54,7 @@ public sealed class ShellTests
         Assert.True(services.CanUndo);
         Assert.True(services.UndoLast());
         Assert.Equal((0, 1), (repairUndone, ignoreUndone));
+        Assert.Same(ignore, Assert.Single(dismissed));
 
         // Its button afterwards does nothing more, and Ctrl+Z does not reach back to the older repair.
         ignore.Action!();
@@ -58,10 +62,11 @@ public sealed class ShellTests
         Assert.False(services.CanUndo);
         Assert.False(services.UndoLast());
 
-        // The repair's own toast still undoes it, once.
+        // The repair's own toast still undoes it, once (its button closes it by itself).
         repair.Action!();
         repair.Action!();
         Assert.Equal((1, 1), (repairUndone, ignoreUndone));
+        Assert.Single(dismissed);
     }
 
     [Fact]
@@ -94,12 +99,18 @@ public sealed class ShellTests
         Assert.Equal([Strings.Shell.NothingToUndo, "Ignored for 2 problems", Strings.Shell.NothingToUndo], toasts);
     }
 
-    /// <summary>Scan a folder… only opened the Library page (and on it did nothing). It now asks which folder and scans it.</summary>
+    /// <summary>
+    /// Scan a folder… only opened the Library page (and on it did nothing). Chosen from the Scan menu, it now asks which
+    /// folder, asks first when that folder is large (as Scan does: the demo estimate is 58,210 files), and scans it at the
+    /// depth chosen there.
+    /// </summary>
     [Fact]
-    public void Scan_a_folder_offers_the_enabled_Library_folders_and_scans_the_chosen_one()
+    public void Scan_a_folder_from_the_Scan_menu_offers_the_Library_folders_asks_before_a_large_one_and_scans_it()
     {
         FakeScans scans = new();
+        string? scanMenuChoice = null;
         List<string> offered = [];
+        string? asked = null;
         long music = 0;
         string scope = string.Empty;
         Sta.Run(() =>
@@ -113,24 +124,45 @@ public sealed class ShellTests
             _ = AddRoot(services, temp.Combine("Backup"), "Backup", RootRole.Backup);
             using MainForm form = new(services);
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            using System.Windows.Forms.Timer answer = new() { Interval = 50 };
+            answer.Tick += (_, _) =>
+            {
+                if (asked is null && Application.OpenForms.OfType<LargeScanDialog>().FirstOrDefault(d => d.Visible) is LargeScanDialog dialog)
+                {
+                    asked = dialog.Text;
+                    Descendants(dialog).OfType<OptionRow>().Single(o => o.Text == Strings.Depths.Quick).Checked = true;
+                    dialog.DialogResult = DialogResult.OK;
+                }
+            };
+            answer.Start();
 
-            ScreenRenderer.WaitFor(form.Binder!.ScanFolderAsync());
-            PopupList menu = Application.OpenForms.OfType<PopupList>().Single(p => p.Visible);
-            offered.AddRange(((IReadOnlyList<PopupItem>)typeof(PopupList).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(menu)!).Select(i => i.Text));
-            Key(menu, Keys.Down);
-            Key(menu, Keys.Enter);
+            // Alt+Down on Scan opens its menu; Scan a folder… is the last item.
+            PopupList scanMenu = OpenMenu(() => KeyDown(form.Header.Scan, Keys.Alt | Keys.Down));
+            scanMenuChoice = Items(scanMenu)[^1].Text;
+            PopupList folders = OpenMenu(() =>
+            {
+                Key(scanMenu, Keys.End);
+                Key(scanMenu, Keys.Enter);
+            });
+            offered.AddRange(Items(folders).Select(i => i.Text));
+            Key(folders, Keys.Down);
+            Key(folders, Keys.Enter);
             Settle(() => scans.Started.Count > 0);
             scope = scans.ScopeText;
             form.Close();
         });
 
+        Assert.Equal(Strings.Shell.ScanFolder, scanMenuChoice);
         Assert.Equal(["Music", "Photos"], offered);
+        Assert.False(string.IsNullOrEmpty(asked), "Scan a folder… did not ask before a large scan.");
         ScanRequest request = Assert.Single(scans.Started);
         Assert.Equal(music, Assert.Single(request.Scopes).RootId);
         Assert.Equal(RunTrigger.Manual, request.Trigger);
+        Assert.Equal(ScanDepth.Quick, request.Depth);
         Assert.Equal("Music", scope);
     }
 
+    /// <summary>With Ask before large scans off, the only Library folder is scanned at once, with no menu and no question.</summary>
     [Fact]
     public void Scan_a_folder_scans_the_only_Library_folder_at_once_and_says_to_add_one_when_there_is_none()
     {
@@ -141,6 +173,7 @@ public sealed class ShellTests
         {
             using TempDirectory temp = new("shell-folder-one");
             using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            state.Settings.Scanning.AskBeforeLargeScans = false;
             using UiServices services = Live(state, temp, scans);
             using MainForm form = new(services);
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
@@ -162,12 +195,15 @@ public sealed class ShellTests
         Assert.Equal(only, Assert.Single(Assert.Single(scans.Started).Scopes).RootId);
     }
 
-    /// <summary>Subplan 05: a second manual request while a scan runs is queued, not refused. It starts when the scan ends.</summary>
+    /// <summary>
+    /// Subplan 05: a second manual request while a scan runs is queued, not refused. It starts when the scan ends. The
+    /// toast that says so is an information toast: one line (subplan 09, D).
+    /// </summary>
     [Fact]
     public void A_scan_asked_for_during_a_scan_waits_for_it_and_then_starts()
     {
         FakeScans scans = new() { Status = DemoScanControl.Running };
-        List<string> toasts = [];
+        List<(string Title, string Text)> toasts = [];
         bool accepted = false;
         int queued = -1;
         int startedWhileBusy = -1;
@@ -181,7 +217,7 @@ public sealed class ShellTests
             Action<ToastContent> show = services.ShowToast!;
             services.ShowToast = content =>
             {
-                toasts.Add(content.Title);
+                toasts.Add((content.Title, content.Text));
                 show(content);
             };
 
@@ -203,10 +239,47 @@ public sealed class ShellTests
         Assert.True(accepted);
         Assert.Equal(1, queued);
         Assert.Equal(0, startedWhileBusy);
-        Assert.Equal([Strings.Shell.ScanQueued, Strings.Shell.ScanQueued], toasts);
+        Assert.Equal([(Strings.Shell.ScanQueued, string.Empty), (Strings.Shell.ScanQueued, string.Empty)], toasts);
         ScanRequest request = Assert.Single(scans.Started);
         Assert.Equal(new long[] { 42 }, Assert.Single(request.Scopes).FileIds);
         Assert.Equal(ScanDepth.Standard, request.Depth);
+    }
+
+    /// <summary>
+    /// Stop withdraws the scans queued behind the stopped one. Nothing shows a queued scan, and it started the moment
+    /// the stopped scan ended, so Stop went straight on to the next scan.
+    /// </summary>
+    [Fact]
+    public void Stop_withdraws_the_scans_queued_behind_the_running_one()
+    {
+        FakeScans scans = new() { Status = DemoScanControl.Running };
+        int queued = -1;
+        int queuedAfterStop = -1;
+        string? asked = null;
+        Sta.Run(() =>
+        {
+            using TempDirectory temp = new("shell-stop-queue");
+            using AppState state = AppState.Load(temp.CreateAppPaths(), installSharedLog: false);
+            using UiServices services = Live(state, temp, scans);
+            using MainForm form = new(services);
+            ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            ScreenRenderer.WaitFor(services.StartScanAsync([new ScanScope(7)], ScanDepth.Quick, "Music"));
+            queued = services.QueuedScanCount;
+            form.PollScan();
+
+            // The status strip's Stop, confirmed.
+            asked = ConfirmNext(form.StatusStrip.Stop.PerformClick);
+            form.PollScan();
+            Settle(() => false, TimeSpan.FromMilliseconds(200));
+            queuedAfterStop = services.QueuedScanCount;
+            form.Close();
+        });
+
+        Assert.Equal(1, queued);
+        Assert.Equal(Strings.Shell.StopTitle, asked);
+        Assert.False(scans.Status.IsActive);
+        Assert.Equal(0, queuedAfterStop);
+        Assert.Empty(scans.Started);
     }
 
     /// <summary>
@@ -297,10 +370,16 @@ public sealed class ShellTests
         Assert.Equal((0, 1), (before, after));
     }
 
-    /// <summary>Enter in the header search no longer reaches the single-line box, which answered it with the system beep.</summary>
+    /// <summary>
+    /// Enter in the header search no longer reaches the single-line box, which answered it with the system beep: not
+    /// with a search, and not in an empty box either, where it searches nothing.
+    /// </summary>
     [Fact]
     public void Enter_in_the_header_search_opens_Browse_without_the_beep()
     {
+        bool emptySuppressed = false;
+        PageId before = PageId.Library;
+        PageId afterEmpty = PageId.Library;
         bool suppressed = false;
         PageId page = PageId.Dashboard;
         Sta.Run(() =>
@@ -310,6 +389,13 @@ public sealed class ShellTests
             using UiServices services = DemoUiData.CreateServices(state, temp.Path);
             using MainForm form = new(services);
             ScreenRenderer.PrepareOffscreen(form, MainForm.DefaultClientSize);
+            before = form.CurrentPage;
+            form.Header.Search.Text = "   ";
+            KeyEventArgs empty = new(Keys.Enter);
+            form.Binder!.OnSearchKey(form.Header.Search, empty);
+            emptySuppressed = empty.SuppressKeyPress && empty.Handled;
+            afterEmpty = form.CurrentPage;
+
             form.Header.Search.Text = "overpass";
             KeyEventArgs enter = new(Keys.Enter);
             form.Binder!.OnSearchKey(form.Header.Search, enter);
@@ -319,6 +405,9 @@ public sealed class ShellTests
             form.Close();
         });
 
+        Assert.True(emptySuppressed);
+        Assert.NotEqual(PageId.Library, before);
+        Assert.Equal(before, afterEmpty);
         Assert.True(suppressed);
         Assert.Equal(PageId.Library, page);
     }
@@ -492,7 +581,8 @@ public sealed class ShellTests
 
     /// <summary>
     /// A library database from a newer version (after a downgrade, or a dev build's migration on the shared profile)
-    /// ended the start with no window and no message. The failure is one the start-up catches and words.
+    /// ended the start with no window and no message. The start-up's own path now opens the services, reports the
+    /// failure in words that name the version, and gives nothing to run (the start ends with exit code 1).
     /// </summary>
     [Fact]
     public void A_library_database_that_cannot_be_opened_is_reported_with_its_reason()
@@ -509,13 +599,78 @@ public sealed class ShellTests
             command.ExecuteNonQuery();
         }
 
-        Exception error = Assert.ThrowsAny<Exception>(() => UiServices.CreateLive(state, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: "MediaVerifier.Tests.Engine." + Guid.NewGuid().ToString("N")));
+        Exception? reported = null;
+        UiServices? services = Program.OpenServices(
+            state,
+            s => UiServices.CreateLive(s, new FfmpegLocation(temp.Combine("ffmpeg"), IsOverride: false), startupMaintenance: false, engineMutexName: "MediaVerifier.Tests.Engine." + Guid.NewGuid().ToString("N")),
+            ex => reported = ex);
 
-        Assert.True(Program.IsLibraryOpenFailure(error), error.GetType().Name);
-        Assert.Contains("99", Program.StartupFailureText(error), StringComparison.Ordinal);
+        Assert.Null(services);
+        Assert.NotNull(reported);
+        Assert.Contains("99", Program.StartupFailureText(reported), StringComparison.Ordinal);
         Assert.Equal(Strings.UnhandledError.StartupLocked, Program.StartupFailureText(new SqliteException("database is locked", 5)));
         Assert.True(Program.IsLibraryOpenFailure(new IOException("in use")));
-        Assert.False(Program.IsLibraryOpenFailure(new NullReferenceException()));
+
+        // A bug is not a library that cannot be opened: it still reaches the crash handlers.
+        Assert.Throws<InvalidOperationException>(() => Program.OpenServices(state, _ => throw new InvalidOperationException("a bug"), _ => reported = null));
+        Assert.NotNull(reported);
+    }
+
+    /// <summary>
+    /// Closing the app during a scan: the engine stops the scan and writes the run's end while the database can still
+    /// write (plan 01, reverse order of creation). The database went first, so the end was lost with a
+    /// ChannelClosedException in error.log, and the next start dated the end to itself.
+    /// </summary>
+    [FixtureFact]
+    public void A_scan_running_at_exit_writes_its_end_before_the_database_closes()
+    {
+        using TempDirectory temp = new("shell-exit-scan");
+        string library = Directory.CreateDirectory(temp.Combine("My Music")).FullName;
+        for (int i = 0; i < 30; i++)
+        {
+            File.SetLastWriteTimeUtc(FixtureFactory.CopyTo("src16.flac", library, $"track{i:00}.flac"), DateTime.UtcNow.AddHours(-1));
+        }
+
+        AppPaths paths = temp.CreateAppPaths();
+        bool activeAtExit = false;
+        Sta.Run(() =>
+        {
+            using AppState state = AppState.Load(paths, installSharedLog: false);
+            UiServices services = UiServices.CreateLive(state, FfmpegEnvironment.Engine, startupMaintenance: false, engineMutexName: "MediaVerifier.Tests.Engine." + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Task<long> add = services.Database.Roots.AddAsync(new RootRecord { Path = library, Label = "My Music", Role = RootRole.Library, MediaMask = MediaKindMask.All });
+                Settle(() => add.IsCompleted);
+                Task<bool> scan = services.StartScanAsync([new ScanScope(add.Result)], ScanDepth.Standard, "My Music");
+                Settle(() => scan.IsCompleted);
+                Assert.True(scan.Result, "The scan did not start.");
+                Settle(() => services.Scans.Status.FilesDone >= 3, TimeSpan.FromSeconds(60));
+                activeAtExit = services.Scans.Status.IsActive;
+            }
+            finally
+            {
+                services.Dispose();
+            }
+        });
+
+        Assert.True(activeAtExit, "The scan ended before the exit.");
+
+        // Read as the file is left, before a later start would call a run still marked running interrupted.
+        using (SqliteConnection connection = new($"Data Source={paths.DefaultDatabaseFile};Pooling=False"))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT status, ended_utc FROM runs ORDER BY id DESC LIMIT 1";
+            using SqliteDataReader row = command.ExecuteReader();
+            Assert.True(row.Read());
+            Assert.NotEqual((long)RunStatus.Running, row.GetInt64(0));
+            Assert.False(row.IsDBNull(1), "The run's end was not written.");
+        }
+
+        string errorLog = Path.Combine(paths.LogsDirectory, "error.log");
+        string errors = File.Exists(errorLog) ? File.ReadAllText(errorLog) : string.Empty;
+        Assert.DoesNotContain("End of run", errors, StringComparison.Ordinal);
+        Assert.DoesNotContain("ChannelClosed", errors, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -738,6 +893,58 @@ public sealed class ShellTests
         Message message = Message.Create(list.Handle, WmKeyDown, (IntPtr)(int)key, IntPtr.Zero);
         _ = list.PreFilterMessage(ref message);
         Application.DoEvents();
+    }
+
+    /// <summary>A key as the control's own key handling sees it (Alt+Down on a split button opens its menu).</summary>
+    private static void KeyDown(Control control, Keys keys)
+    {
+        MethodInfo keyDown = typeof(Control).GetMethod("OnKeyDown", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        _ = keyDown.Invoke(control, [new KeyEventArgs(keys)]);
+        Application.DoEvents();
+    }
+
+    /// <summary>Runs <paramref name="open"/> and returns the menu it opened (a visible pop-up list that was not there before).</summary>
+    private static PopupList OpenMenu(Action open)
+    {
+        PopupList[] before = [.. Application.OpenForms.OfType<PopupList>()];
+        open();
+        PopupList? menu = null;
+        Settle(() => (menu = Application.OpenForms.OfType<PopupList>().FirstOrDefault(p => p.Visible && !before.Contains(p))) is not null);
+        return menu ?? throw new InvalidOperationException("No menu opened.");
+    }
+
+    private static IReadOnlyList<PopupItem> Items(PopupList list) =>
+        (IReadOnlyList<PopupItem>)typeof(PopupList).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(list)!;
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (Control nested in Descendants(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    /// <summary>Runs <paramref name="show"/>, answers the first dialog it shows with OK, and returns that dialog's title.</summary>
+    private static string? ConfirmNext(Action show)
+    {
+        string? title = null;
+        using System.Windows.Forms.Timer timer = new() { Interval = 50 };
+        timer.Tick += (_, _) =>
+        {
+            if (title is null && Application.OpenForms.OfType<KitDialog>().FirstOrDefault(d => d.Visible) is KitDialog dialog)
+            {
+                title = dialog.Text;
+                dialog.DialogResult = DialogResult.OK;
+            }
+        };
+        timer.Start();
+        show();
+        Settle(() => title is not null && !Application.OpenForms.OfType<KitDialog>().Any());
+        return title;
     }
 
     private static void Mouse(Control control, Point point)

@@ -92,7 +92,7 @@ internal sealed class UiServices : IDisposable
 {
     private readonly List<IDisposable> _owned = [];
     private readonly Queue<QueuedScan> _queuedScans = new();
-    private Action? _lastUndo;
+    private UI.Kit.Popups.ToastContent? _lastUndo;
     private RuleSettings _rules = RuleSettings.Defaults;
 
     public required AppState State { get; init; }
@@ -142,6 +142,12 @@ internal sealed class UiServices : IDisposable
         ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.Medium, UI.Strings.Activity.CouldNotRun, reason));
 
     /// <summary>
+    /// Takes a toast off the screen before its time (set by the main window). Ctrl+Z closes the toast whose Undo it
+    /// ran, so no Undo button that can no longer do anything stays on show.
+    /// </summary>
+    public Action<UI.Kit.Popups.ToastContent>? DismissToast { get; set; }
+
+    /// <summary>
     /// Remembers the Undo of a toast for Ctrl+Z (subplan 09, Keyboard: "Undo the last operation that allows it") and
     /// returns the toast to show, its Undo now running at most once, from the button or from Ctrl+Z. The newest toast
     /// with Undo wins; a repair from an earlier session is undone from Tools → Operations, never by Ctrl+Z.
@@ -155,38 +161,42 @@ internal sealed class UiServices : IDisposable
         }
 
         bool done = false;
-        Action? once = null;
-        once = () =>
+        UI.Kit.Popups.ToastContent? shown = null;
+        shown = content with
         {
-            if (done)
+            Action = () =>
             {
-                return;
-            }
+                if (done)
+                {
+                    return;
+                }
 
-            done = true;
-            if (ReferenceEquals(_lastUndo, once))
-            {
-                _lastUndo = null;
-            }
+                done = true;
+                if (ReferenceEquals(_lastUndo, shown))
+                {
+                    _lastUndo = null;
+                }
 
-            undo();
+                undo();
+            },
         };
-        _lastUndo = once;
-        return content with { Action = once };
+        _lastUndo = shown;
+        return shown;
     }
 
     /// <summary>True while a toast's Undo is waiting for Ctrl+Z.</summary>
     public bool CanUndo => _lastUndo is not null;
 
-    /// <summary>Ctrl+Z: runs the newest toast's Undo once; false when there is nothing to undo.</summary>
+    /// <summary>Ctrl+Z: closes the newest toast with Undo and runs its Undo once; false when there is nothing to undo.</summary>
     public bool UndoLast()
     {
-        if (_lastUndo is not Action undo)
+        if (_lastUndo is not UI.Kit.Popups.ToastContent toast)
         {
             return false;
         }
 
-        undo();
+        DismissToast?.Invoke(toast);
+        toast.Action!();
         return true;
     }
 
@@ -404,7 +414,8 @@ internal sealed class UiServices : IDisposable
                     _queuedScans.Enqueue(request);
                 }
 
-                ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.None, UI.Strings.Shell.ScanQueued, UI.Strings.Shell.ScanQueuedText));
+                // Information toasts are a single line (subplan 09, D).
+                ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.None, UI.Strings.Shell.ScanQueued, string.Empty));
                 return true;
             }
 
@@ -429,6 +440,9 @@ internal sealed class UiServices : IDisposable
 
     /// <summary>Requests asked for during this window's scan, waiting until no scan runs.</summary>
     public int QueuedScanCount => _queuedScans.Count;
+
+    /// <summary>Withdraws the waiting requests (Stop: the user asked for no more scanning, not for the next scan).</summary>
+    public void ClearQueuedScans() => _queuedScans.Clear();
 
     /// <summary>
     /// Starts the oldest queued request once a scan can start (the shell calls it whenever scanning stops: this window's
