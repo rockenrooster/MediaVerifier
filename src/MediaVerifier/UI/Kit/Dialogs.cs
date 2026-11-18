@@ -15,7 +15,9 @@ internal enum DialogWidth
 /// A modal dialog (subplan 08, Dialog): Raised, Stroke, radius 8, shadow, over the scrim, centred in the
 /// window. Padding 24; title in Subtitle centred 34 px below the top; body from 60 px; buttons at the
 /// bottom right, 24 px from the edges, 8 px apart, primary on the right. Esc cancels, Enter triggers the
-/// focused button, Tab stays inside, and focus returns to the invoker on close.
+/// focused button, Tab stays inside, and focus returns to the invoker on close. A title too long for one
+/// line takes two (the second centred 24 px lower) and moves the body down 24 px: the folder in
+/// "Ignore '{rule}' in {folder}?" was the part the ellipsis cut.
 /// <para>
 /// Built like Disk Monitor 2.0's dialog: one borderless window over the owner's client area that paints a
 /// picture of the owner, the scrim, the shadow and the dialog itself, so no separate scrim or shadow window
@@ -43,6 +45,7 @@ internal class KitDialog : Form
         }
     }
 
+    private const int TitleLineHeight = 24;
     private readonly List<KitButton> _buttons = [];
     private readonly Panel _body;
     private readonly IconButton? _close;
@@ -51,6 +54,9 @@ internal class KitDialog : Form
     private Point _backdropAt;
     private Rectangle _surface;
     private bool _placed;
+    private List<string> _titleLines = [];
+    private string? _titleLinesFor;
+    private int _titleLinesDpi;
 
     protected KitDialog(string title, DialogWidth width, bool closeButton = false)
     {
@@ -246,15 +252,41 @@ internal class KitDialog : Form
         base.Dispose(disposing);
     }
 
-    internal int TotalLogicalHeight() => 60 + _bodyHeight + 24 + 32 + 24;
+    internal int TotalLogicalHeight() => 60 + TitleExtra() + _bodyHeight + 24 + 32 + 24;
+
+    /// <summary>The title as drawn: one line, or two when it does not fit (the second cut with an ellipsis if need be).</summary>
+    internal IReadOnlyList<string> TitleLines()
+    {
+        int dpi = DeviceDpi;
+        if (_titleLinesFor != Text || _titleLinesDpi != dpi)
+        {
+            Font font = TypeRamp.For(dpi).Subtitle;
+            int width = Dpi.Scale(LogicalWidth - TitleInset, dpi);
+            _titleLines = KitPaint.MeasureWidth(Text, font) <= width ? [Text] : TextWrap.Lines(Text, font, width, 2);
+            _titleLinesFor = Text;
+            _titleLinesDpi = dpi;
+        }
+
+        return _titleLines;
+    }
+
+    private int TitleInset => _close is null ? 48 : 72;
+
+    /// <summary>Logical pixels a second title line adds above the body.</summary>
+    private int TitleExtra() => TitleLines().Count > 1 ? TitleLineHeight : 0;
 
     private static void DrawFrame(Graphics g, Rectangle bounds, string title, int dpi, int titleInset)
+    {
+        DrawSurface(g, bounds, dpi);
+        KitPaint.DrawText(g, title, TypeRamp.For(dpi).Subtitle, ThemeService.Tokens.Text, bounds.X + Dpi.Scale(24, dpi), bounds.Y + Dpi.Scale(34, dpi), bounds.Width - Dpi.Scale(titleInset, dpi));
+    }
+
+    private static void DrawSurface(Graphics g, Rectangle bounds, int dpi)
     {
         ThemeTokens t = ThemeService.Tokens;
         float radius = Dpi.ScaleF(8, dpi);
         KitPaint.FillRoundedRect(g, bounds, radius, t.Raised);
         KitPaint.StrokeRoundedRect(g, bounds, radius, t.Stroke, Dpi.ScaleF(1, dpi));
-        KitPaint.DrawText(g, title, TypeRamp.For(dpi).Subtitle, t.Text, bounds.X + Dpi.Scale(24, dpi), bounds.Y + Dpi.Scale(34, dpi), bounds.Width - Dpi.Scale(titleInset, dpi));
     }
 
     /// <summary>
@@ -301,7 +333,7 @@ internal class KitDialog : Form
     {
         Size size = new(S(LogicalWidth), S(TotalLogicalHeight()));
         _surface = new Rectangle((ClientSize.Width - size.Width) / 2, (ClientSize.Height - size.Height) / 2, size.Width, size.Height);
-        _body.Bounds = new Rectangle(_surface.X + S(24), _surface.Y + S(60), _surface.Width - S(48), S(_bodyHeight));
+        _body.Bounds = new Rectangle(_surface.X + S(24), _surface.Y + S(60 + TitleExtra()), _surface.Width - S(48), S(_bodyHeight));
         int x = _surface.Right - S(24);
         int y = _surface.Bottom - S(24) - S(32);
         for (int i = _buttons.Count - 1; i >= 0; i--)
@@ -334,7 +366,12 @@ internal class KitDialog : Form
         }
 
         ShadowCache.Draw(g, _surface, 8, DeviceDpi, t.Shadow);
-        DrawFrame(g, _surface, Text, DeviceDpi, _close is null ? 48 : 72);
+        DrawSurface(g, _surface, DeviceDpi);
+        IReadOnlyList<string> lines = TitleLines();
+        for (int i = 0; i < lines.Count; i++)
+        {
+            KitPaint.DrawText(g, lines[i], TypeRamp.For(DeviceDpi).Subtitle, t.Text, _surface.X + S(24), _surface.Y + S(34 + (i * TitleLineHeight)), _surface.Width - S(TitleInset));
+        }
     }
 
     private void OnThemeChanged(object? sender, EventArgs e)

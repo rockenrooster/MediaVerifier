@@ -23,7 +23,9 @@ internal abstract class LayeredPopup : Form
     private const byte AcSrcOver = 0;
     private const byte AcSrcAlpha = 1;
     private const int WmMouseActivate = 0x0021;
+    private const int WmNcHitTest = 0x0084;
     private const int MaNoActivate = 3;
+    private const int HtTransparent = -1;
 
     private Point _contentScreenLocation;
     private Bitmap? _frame;
@@ -55,6 +57,15 @@ internal abstract class LayeredPopup : Form
     /// <summary>Corner radius of the content in logical pixels.</summary>
     protected virtual int Radius => 8;
 
+    /// <summary>
+    /// Menus, lists and tooltips stay above every window while they show; a toast belongs to its window only, so it never
+    /// floats over another program (Disk Monitor 2.0's toast is not topmost either).
+    /// </summary>
+    protected virtual bool TopMostPopup => true;
+
+    /// <summary>A tooltip takes no mouse input at all: the pointer stays on the control it explains.</summary>
+    protected virtual bool ClickThrough => false;
+
     /// <summary>The content rectangle in screen coordinates.</summary>
     public Rectangle ContentScreenBounds => new(_contentScreenLocation, ContentSize);
 
@@ -68,12 +79,23 @@ internal abstract class LayeredPopup : Form
     /// window on WM_MOUSEACTIVATE, and the owner losing activation closes menus and drop-down lists on the
     /// mouse-down, so the click fell through to the window beneath and the item never ran (Disk Monitor 2.0
     /// answers MA_NOACTIVATE the same way).
+    /// <para>
+    /// The shadow is part of the window, and a per-pixel-alpha window takes every click where its alpha is not 0: the
+    /// shadow swallowed clicks on the lower part of a drop-down and on the status strip's Pause and Stop under a toast.
+    /// Outside the content the window answers HTTRANSPARENT, so the click goes to the window beneath.
+    /// </para>
     /// </summary>
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == WmMouseActivate)
         {
             m.Result = MaNoActivate;
+            return;
+        }
+
+        if (m.Msg == WmNcHitTest && (ClickThrough || !ContentScreenBounds.Contains(PointFromLParam(m.LParam))))
+        {
+            m.Result = HtTransparent;
             return;
         }
 
@@ -85,28 +107,57 @@ internal abstract class LayeredPopup : Form
         get
         {
             CreateParams cp = base.CreateParams;
-            cp.ExStyle |= WsExLayered | WsExToolWindow | WsExNoActivate | WsExTopMost;
+            cp.ExStyle |= WsExLayered | WsExToolWindow | WsExNoActivate;
+            if (TopMostPopup)
+            {
+                cp.ExStyle |= WsExTopMost;
+            }
+
             return cp;
         }
     }
 
-    /// <summary>Shows (or moves) the popup so that its content's top-left corner is at <paramref name="screen"/>.</summary>
+    /// <summary>
+    /// Shows (or moves) the popup so that its content's top-left corner is at <paramref name="screen"/>: painted once
+    /// before it shows, so it never shows a previous frame (the shared tooltip showed the last tip's text first).
+    /// </summary>
     public void ShowAt(Point screen, IWin32Window? owner = null)
     {
         _contentScreenLocation = screen;
-        if (!Visible)
+        if (!Visible && owner is Form ownerForm)
         {
-            if (owner is Form ownerForm)
-            {
-                Owner = ownerForm;
-            }
+            Owner = ownerForm;
+        }
 
-            CreateControl();
-            Render();
-            Show();
+        if (!IsHandleCreated)
+        {
+            CreateHandle();
         }
 
         Render();
+        if (!Visible)
+        {
+            Show();
+        }
+    }
+
+    /// <summary>Moves the popup without painting it again (a toast following its window as it is dragged).</summary>
+    public void MoveContentTo(Point screen)
+    {
+        int dx = screen.X - _contentScreenLocation.X;
+        int dy = screen.Y - _contentScreenLocation.Y;
+        _contentScreenLocation = screen;
+        if (_frame is null || (dx == 0 && dy == 0))
+        {
+            return;
+        }
+
+        _frameLocation.Offset(dx, dy);
+        if (IsHandleCreated)
+        {
+            // The layered image stays with the window when it moves.
+            Location = _frameLocation;
+        }
     }
 
     /// <summary>Repaints the popup after its content changed.</summary>
@@ -224,6 +275,13 @@ internal abstract class LayeredPopup : Form
         return new Point(client.X - pad, client.Y - pad);
     }
 
+    /// <summary>The point packed in a mouse message's LPARAM (signed: monitors left of or above the primary are negative).</summary>
+    internal static Point PointFromLParam(IntPtr lParam)
+    {
+        long value = lParam.ToInt64();
+        return new Point((short)(value & 0xFFFF), (short)((value >> 16) & 0xFFFF));
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -332,4 +390,321 @@ internal abstract class LayeredPopup : Form
 
     [DllImport("gdi32.dll")]
     private static extern bool GdiFlush();
+}
+
+/// <summary>
+/// A popup that closes itself: menus, drop-down lists and the notifications flyout (one copy of the rules, which both
+/// used to implement). It never takes focus; while it is open it watches the thread's messages:
+/// <list type="bullet">
+/// <item>Esc and F4 close it; Tab and Alt with another key close it and go on (Alt+F4 still closes the window); Alt+Down
+/// and Alt+Up only close it; every other key goes to <see cref="OnKey"/>, which by default swallows it.</item>
+/// <item>A press outside closes it and goes on to what it was aimed at. A press on the button that opened it (its
+/// toggle area) only closes it, and the release that follows is swallowed too, so the button does not open it again.</item>
+/// <item>The wheel over it goes to <see cref="OnWheel"/>; elsewhere it closes it. The window moving or losing activation
+/// closes it.</item>
+/// </list>
+/// What the user chose runs once it has closed, from a posted message (<see cref="CloseWith"/>): never inside the message
+/// filter, where WinForms keeps calling the filters it started with, so the closed popup went on swallowing the keys of a
+/// dialog the action opened, and an exception thrown by the action was dropped without a word.
+/// </summary>
+internal abstract class TransientPopup : LayeredPopup, IMessageFilter
+{
+    private const int WmKeyDown = 0x0100;
+    private const int WmSysKeyDown = 0x0104;
+    private const int WmSysKeyUp = 0x0105;
+    private const int WmMouseFirst = 0x0200;
+    private const int WmLButtonDown = 0x0201;
+    private const int WmLButtonDblClk = 0x0203;
+    private const int WmRButtonDown = 0x0204;
+    private const int WmRButtonDblClk = 0x0206;
+    private const int WmMButtonDown = 0x0207;
+    private const int WmMButtonDblClk = 0x0209;
+    private const int WmMouseWheel = 0x020A;
+    private const int WmXButtonDown = 0x020B;
+    private const int WmXButtonDblClk = 0x020D;
+    private const int WmNcLButtonDown = 0x00A1;
+    private const int WmNcRButtonDown = 0x00A4;
+    private const int WmNcMButtonDown = 0x00A7;
+    private const int WmNcXButtonDown = 0x00AB;
+
+    private Form? _ownerForm;
+    private bool _filtering;
+    private bool _closed;
+
+    /// <summary>Raised when the popup closes, whatever closed it; before a chosen action runs.</summary>
+    public event EventHandler? Dismissed;
+
+    /// <summary>Screen area of the button that opened the popup: a left press inside it only closes the popup.</summary>
+    internal Rectangle ToggleArea { get; set; }
+
+    /// <summary>Closes the popup without choosing anything.</summary>
+    public void Dismiss() => CloseWith(null);
+
+    public bool PreFilterMessage(ref Message m)
+    {
+        // WinForms rebuilds its list of filters only between messages, so a closed popup can still be asked: it lets
+        // everything through.
+        if (!_filtering)
+        {
+            return false;
+        }
+
+        switch (m.Msg)
+        {
+            case WmKeyDown:
+                return FilterKey((Keys)(int)m.WParam);
+            case WmSysKeyDown:
+                {
+                    // Alt alone waits for the key that follows it.
+                    Keys key = (Keys)(int)m.WParam;
+                    if (key == Keys.Menu)
+                    {
+                        return false;
+                    }
+
+                    CloseWith(null);
+                    return key is Keys.Down or Keys.Up;
+                }
+
+            case WmSysKeyUp:
+                // Alt pressed and released on its own.
+                if ((Keys)(int)m.WParam == Keys.Menu)
+                {
+                    CloseWith(null);
+                }
+
+                return false;
+            case WmMouseWheel:
+                {
+                    // The wheel message goes to the window under the pointer or to the focused one; the pointer decides.
+                    Point pointer = PointFromLParam(m.LParam);
+                    if (ContentScreenBounds.Contains(pointer))
+                    {
+                        OnWheel((short)((m.WParam.ToInt64() >> 16) & 0xFFFF), pointer);
+                        return true;
+                    }
+
+                    CloseWith(null);
+                    return false;
+                }
+
+            case WmLButtonDown or WmLButtonDblClk or WmRButtonDown or WmRButtonDblClk or WmMButtonDown or WmMButtonDblClk
+                or WmXButtonDown or WmXButtonDblClk or WmNcLButtonDown or WmNcRButtonDown or WmNcMButtonDown or WmNcXButtonDown:
+                {
+                    Point point = ScreenPointOf(m);
+                    if (m.HWnd == Handle && ContentScreenBounds.Contains(point))
+                    {
+                        return false;
+                    }
+
+                    CloseWith(null);
+                    if ((m.Msg is WmLButtonDown or WmLButtonDblClk) && ToggleArea.Contains(point))
+                    {
+                        ReleaseSwallower.Arm();
+                        return true;
+                    }
+
+                    return false;
+                }
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Shows the popup with its content's top-left corner at <paramref name="contentTopLeft"/>, over the window of
+    /// <paramref name="anchor"/>, and starts watching. A left press inside <paramref name="toggleArea"/> (screen
+    /// coordinates; the button that opened the popup) only closes it.
+    /// </summary>
+    protected void Watch(Control anchor, Point contentTopLeft, Rectangle toggleArea)
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+        _ownerForm = anchor.FindForm();
+        ToggleArea = toggleArea;
+        ShowAt(contentTopLeft, _ownerForm);
+        if (_ownerForm is not null)
+        {
+            _ownerForm.Deactivate += OnOwnerChanged;
+            _ownerForm.Move += OnOwnerChanged;
+        }
+
+        Application.AddMessageFilter(this);
+        _filtering = true;
+        KitToolTip.Hide();
+    }
+
+    /// <summary>A key pressed while the popup is open (Esc, F4 and Tab are handled already); true swallows it.</summary>
+    protected virtual bool OnKey(Keys key) => true;
+
+    /// <summary>The wheel turned over the popup (<paramref name="delta"/> positive away from the user).</summary>
+    protected virtual void OnWheel(int delta, Point screen)
+    {
+    }
+
+    /// <summary>
+    /// Closes the popup (hides it and raises <see cref="Dismissed"/>), then runs <paramref name="then"/> and disposes the
+    /// popup from a posted message, on the normal message loop: a dialog it opens gets its own keys, and an exception
+    /// reaches the app's error report.
+    /// </summary>
+    protected void CloseWith(Action? then)
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        _closed = true;
+        StopWatching();
+        Hide();
+        Dismissed?.Invoke(this, EventArgs.Empty);
+        if (IsHandleCreated)
+        {
+            BeginInvoke(() => Finish(then));
+        }
+        else
+        {
+            Finish(then);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _closed = true;
+            StopWatching();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private static Point ScreenPointOf(Message m)
+    {
+        Point point = PointFromLParam(m.LParam);
+        if (m.Msg < WmMouseFirst)
+        {
+            // Non-client messages carry screen coordinates already.
+            return point;
+        }
+
+        NativePoint native = new() { X = point.X, Y = point.Y };
+        _ = ClientToScreen(m.HWnd, ref native);
+        return new Point(native.X, native.Y);
+    }
+
+    private bool FilterKey(Keys key)
+    {
+        switch (key)
+        {
+            case Keys.Escape:
+            case Keys.F4:
+                CloseWith(null);
+                return true;
+            case Keys.Tab:
+                CloseWith(null);
+                return false;
+            default:
+                return OnKey(key);
+        }
+    }
+
+    private void Finish(Action? then)
+    {
+        try
+        {
+            then?.Invoke();
+        }
+        finally
+        {
+            Dispose();
+        }
+    }
+
+    private void OnOwnerChanged(object? sender, EventArgs e) => CloseWith(null);
+
+    private void StopWatching()
+    {
+        if (_filtering)
+        {
+            Application.RemoveMessageFilter(this);
+            _filtering = false;
+        }
+
+        if (_ownerForm is not null)
+        {
+            _ownerForm.Deactivate -= OnOwnerChanged;
+            _ownerForm.Move -= OnOwnerChanged;
+            _ownerForm = null;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ClientToScreen(IntPtr hwnd, ref NativePoint point);
+
+    /// <summary>
+    /// Swallows the release of a press that only closed a popup, so the button under it does not act on half a click
+    /// (a drop-down opens on the release). It stands down at the next press, or when the pointer moves with the button
+    /// up (the release went to another program).
+    /// </summary>
+    private sealed class ReleaseSwallower : IMessageFilter
+    {
+        private const int WmMouseMove = 0x0200;
+        private const int WmLButtonUp = 0x0202;
+        private const long MkLButton = 0x0001;
+
+        [ThreadStatic]
+        private static ReleaseSwallower? t_armed;
+
+        private bool _done;
+
+        public static void Arm()
+        {
+            if (t_armed is null)
+            {
+                t_armed = new ReleaseSwallower();
+                Application.AddMessageFilter(t_armed);
+            }
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (_done)
+            {
+                return false;
+            }
+
+            switch (m.Msg)
+            {
+                case WmLButtonUp:
+                    StandDown();
+                    return true;
+                case WmMouseMove when (m.WParam.ToInt64() & MkLButton) == 0:
+                case WmLButtonDown or WmLButtonDblClk or WmRButtonDown or WmRButtonDblClk or WmMButtonDown or WmMButtonDblClk
+                    or WmXButtonDown or WmXButtonDblClk or WmNcLButtonDown or WmNcRButtonDown or WmNcMButtonDown or WmNcXButtonDown:
+                    StandDown();
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        private void StandDown()
+        {
+            _done = true;
+            if (t_armed == this)
+            {
+                t_armed = null;
+            }
+
+            Application.RemoveMessageFilter(this);
+        }
+    }
 }
