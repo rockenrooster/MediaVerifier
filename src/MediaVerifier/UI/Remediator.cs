@@ -23,8 +23,11 @@ internal static class Remediator
     /// <summary>The batch running now (UI thread only); null when none runs.</summary>
     private static CancellationTokenSource? s_running;
 
-    /// <summary>True while a repair batch runs.</summary>
+    /// <summary>True while a repair batch or an undo runs (UI thread): closing the window or installing an update would cut it short.</summary>
     public static bool IsRunning => s_running is not null;
+
+    /// <summary>Stops the running batch (UI thread): the file in hand is stopped and put back, the rest are not started.</summary>
+    public static void Stop() => s_running?.Cancel();
 
     /// <summary>
     /// The fix offered for a set of rules when nothing is known about the files (Library's row menu): one that is
