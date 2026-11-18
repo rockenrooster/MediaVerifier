@@ -25,7 +25,8 @@ public sealed class ToolsPageTests
     /// <summary>
     /// The audit's trace: with a row chosen in Quarantine, a newer original arrives and the page reloads. The selection
     /// stays on the original the user chose (it was kept by row number and moved to another file), and Delete for good
-    /// deletes that one alone and says so.
+    /// deletes that one alone and says so. While it deletes, Restore, Delete for good and Delete all… wait and say why
+    /// (nothing showed it, and a second one could start on the same originals).
     /// </summary>
     [Fact]
     public void Delete_for_good_after_a_reload_deletes_only_the_chosen_original()
@@ -35,6 +36,7 @@ public sealed class ToolsPageTests
         bool othersKept = false;
         string? question = null;
         List<string> toasts = [];
+        List<bool> waiting = [];
         Sta.Run(() =>
         {
             using TempDirectory temp = new("tools-selection");
@@ -62,6 +64,11 @@ public sealed class ToolsPageTests
             chosen.AddRange(tools.ChosenKept().Select(e => Path.GetFileName(e.Operation.SourcePath)));
 
             question = Answer<MessageDialog>(() => Find<KitButton>(tools, x => x.Text == Strings.Tools.DeleteForGood && x.Visible).PerformClick(), d => d.DialogResult = DialogResult.OK);
+
+            // The dialog has closed and the deletion runs on a pool thread; nothing has been pumped since.
+            waiting.AddRange(new[] { Strings.Tools.Restore, Strings.Tools.DeleteForGood, Strings.Tools.DeleteAll }
+                .Select(text => Find<KitButton>(tools, x => x.Text == text && x.Visible))
+                .Select(button => !button.Enabled && KitToolTip.Get(button) == Strings.Tools.Working));
             Settle(() => toasts.Count > 0);
             Settle(() => tools.Loading.IsCompleted);
             aGone = !File.Exists(a);
@@ -71,6 +78,7 @@ public sealed class ToolsPageTests
 
         Assert.Equal(["a.flac"], chosen);
         Assert.Equal("Delete a.flac for good?", question);
+        Assert.Equal([true, true, true], waiting);
         Assert.True(aGone, "The chosen original is still there.");
         Assert.True(othersKept, "An original the user did not choose was deleted.");
         Assert.Contains(toasts, t => t.StartsWith(Strings.Tools.DeletedForGood, StringComparison.Ordinal));
