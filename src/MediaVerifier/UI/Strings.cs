@@ -188,6 +188,7 @@ internal static class Strings
         public const string ScanFinished = "Scan finished";
         public const string StoppedByYou = "Scan stopped by you";
         public const string CouldNotRun = "Scan could not run";
+        public const string Interrupted = "Scan interrupted";
         public const string Restored = "{0} files restored from backup";
         public const string RestoredOne = "1 file restored from backup";
         public const string Repaired = "{0} files repaired";

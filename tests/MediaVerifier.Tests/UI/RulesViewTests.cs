@@ -248,6 +248,10 @@ public sealed class RulesViewTests
         {
         }
 
+        public void Interrupt()
+        {
+        }
+
         public async Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds)
         {
             Runs++;

@@ -132,6 +132,13 @@ internal static class UpdateInstaller
             return;
         }
 
+        if (UI.Remediator.IsRunning)
+        {
+            // The installer closes the app: a repair would be cut short in the middle of a file.
+            services.ShowToast?.Invoke(new UI.Kit.Popups.ToastContent(Core.Model.Severity.Medium, Strings.Shell.RepairRunning, Strings.Repair.TryAfterScan));
+            return;
+        }
+
         // Every step is logged and every failure shown: a failure that is only swallowed looks like a dead button.
         bool scanStopped = false;
         try
@@ -151,8 +158,9 @@ internal static class UpdateInstaller
             services.State.Log.Info($"Update to {result.LatestVersionText}: downloaded and verified");
             if (ownScan)
             {
-                // Cancel cleanly: the run is checkpointed before the installer closes the app.
-                services.Scans.Cancel();
+                // Stop cleanly as interrupted (plan 09: it can be resumed after the update); the run is checkpointed
+                // before the installer closes the app.
+                services.Scans.Interrupt();
                 await WaitIdleAsync(services, TimeSpan.FromSeconds(30)).ConfigureAwait(true);
                 scanStopped = true;
             }

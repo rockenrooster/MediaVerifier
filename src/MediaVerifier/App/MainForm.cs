@@ -62,6 +62,8 @@ internal sealed class MainForm : Form
     private TrayIcon? _tray;
     private bool _startHidden;
     private bool _exiting;
+    private bool _stoppingRepair;
+    private bool _repairStopped;
     private bool _firstPaintLogged;
     private FormWindowState _restoreState = FormWindowState.Normal;
 
@@ -415,8 +417,37 @@ internal sealed class MainForm : Form
             return;
         }
 
+        if (UI.Remediator.IsRunning && !_repairStopped && e.CloseReason is CloseReason.UserClosing or CloseReason.ApplicationExitCall)
+        {
+            // A repair in progress is stopped cleanly first (the file in hand is put back), then the window closes.
+            e.Cancel = true;
+            if (!_stoppingRepair)
+            {
+                _stoppingRepair = true;
+                UI.Remediator.Stop();
+                UI.UiTask.Run(CloseWhenRepairStoppedAsync());
+            }
+
+            return;
+        }
+
         SavePlacement();
         base.OnFormClosing(e);
+    }
+
+    private async Task CloseWhenRepairStoppedAsync()
+    {
+        System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+        while (UI.Remediator.IsRunning && waited.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            await Task.Delay(100).ConfigureAwait(true);
+        }
+
+        _repairStopped = true;
+        if (!IsDisposed)
+        {
+            Close();
+        }
     }
 
     protected override void Dispose(bool disposing)

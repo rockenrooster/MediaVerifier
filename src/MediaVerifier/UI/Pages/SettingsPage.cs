@@ -444,7 +444,7 @@ internal sealed class SettingsPage : PageBase
         bool available = Services.UpdateAvailable;
         if (available != UpdateAvailable)
         {
-            UpdateAvailable = available || UpdateAvailable;
+            UpdateAvailable = available;
             _nav.Invalidate();
         }
 

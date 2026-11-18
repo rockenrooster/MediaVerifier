@@ -152,4 +152,8 @@ internal sealed class DemoScanControl : IScanControl
     public void Cancel()
     {
     }
+
+    public void Interrupt()
+    {
+    }
 }

@@ -326,7 +326,8 @@ internal static class Remediator
 
         if (result.failed == 0)
         {
-            services.ShowToast?.Invoke(new ToastContent(Severity.None, Strings.Repair.Undone, string.Empty));
+            // Says what came back, as the partial case does ("Undone for 3 files").
+            services.ShowToast?.Invoke(new ToastContent(Severity.None, string.Format(CultureInfo.CurrentCulture, Strings.Repair.ResultFor, Strings.Repair.Undone, UiFormat.Plural(result.undone, Strings.Repair.OneFile, Strings.Repair.ManyFiles)), string.Empty));
         }
         else
         {

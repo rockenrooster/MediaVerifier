@@ -111,6 +111,9 @@ public sealed class ScanEngine : IDisposable
 
     public void Cancel() => Volatile.Read(ref _current)?.Cancel();
 
+    /// <summary>Stops the run as interrupted (the app closes or updates): it can be continued later.</summary>
+    public void Interrupt() => Volatile.Read(ref _current)?.Interrupt();
+
     /// <summary>
     /// Re-evaluates stored artifacts after a rule setting changed (subplan 05: no file I/O). Only rules in
     /// <paramref name="ruleIds"/> are judged; other findings are untouched. Returns what changed: open findings

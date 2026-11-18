@@ -195,6 +195,7 @@ internal sealed partial class LiveUiData(Database database, Func<ScanSettings> s
             {
                 RunStatus.Completed or RunStatus.BudgetReached => run.Trigger == RunTrigger.Scheduled ? Strings.Activity.ScheduledFinished : Strings.Activity.ScanFinished,
                 RunStatus.Cancelled => Strings.Activity.StoppedByYou,
+                RunStatus.Interrupted => Strings.Activity.Interrupted,
                 _ => Strings.Activity.CouldNotRun,
             };
             items.Add(new ActivityItem(text, Ticks(run.EndedUtc ?? run.StartedUtc)));

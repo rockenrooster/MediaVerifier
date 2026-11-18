@@ -27,6 +27,9 @@ internal interface IScanControl
 
     void Cancel();
 
+    /// <summary>Stops the scan as interrupted, not as the user's Stop: Continue is offered afterwards (an update).</summary>
+    void Interrupt();
+
     /// <summary>Re-judges stored analysis after a rule setting changed (no file is read again).</summary>
     Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds);
 }
@@ -68,6 +71,8 @@ internal sealed class EngineScanControl(ScanEngine engine) : IScanControl, IDisp
     public void Resume() => engine.Resume();
 
     public void Cancel() => engine.Cancel();
+
+    public void Interrupt() => engine.Interrupt();
 
     public void Dispose() => engine.Dispose();
 }

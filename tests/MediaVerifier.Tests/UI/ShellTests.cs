@@ -999,6 +999,8 @@ public sealed class ShellTests
 
         public void Cancel() => Status = EngineStatus.Idle;
 
+        public void Interrupt() => Status = EngineStatus.Idle;
+
         public Task<ReevaluationResult> ReevaluateAsync(IReadOnlyCollection<string> ruleIds) => Task.FromResult(new ReevaluationResult(0, 0, 0));
     }
 
