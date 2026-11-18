@@ -149,10 +149,19 @@ public sealed class SettingsSaveTests
         string path = temp.Combine("settings.json");
         new SettingsStore(path).Save(new AppSettings { Theme = ThemeMode.Light });
         using FileStream held = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        using System.Threading.Timer unlock = new(_ => held.Dispose(), null, 50, Timeout.Infinite);
+
+        // Released from a thread of its own: a thread-pool timer fired too late while the whole suite kept the pool busy.
+        Thread unlock = new(() =>
+        {
+            Thread.Sleep(50);
+            held.Dispose();
+        })
+        { IsBackground = true };
+        unlock.Start();
 
         SettingsStore store = new(path);
         AppSettings loaded = store.Load();
+        unlock.Join();
 
         Assert.Equal(ThemeMode.Light, loaded.Theme);
         Assert.False(store.SavingDisabled);
